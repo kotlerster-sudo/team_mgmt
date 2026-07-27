@@ -7,6 +7,7 @@ import { loadTodayDriver } from "@/lib/operations/today";
 import { resolveViewContext, loadViewAsCandidates } from "@/lib/operations/viewAs";
 import { PreviewBanner } from "./_shared/PreviewBanner";
 import { ViewAsPicker } from "./_shared/ViewAsPicker";
+import { TodayDriver } from "./_shared/TodayDriver";
 import type { Activity } from "@/app/(app)/home/_lib/types";
 
 export const dynamic = "force-dynamic";
@@ -44,7 +45,7 @@ export default async function OperationsHomePage({
     if (dom) overdueByTheme.set(dom, (overdueByTheme.get(dom) ?? 0) + 1);
   }
 
-  const whoseCentres = preview ? `${preview.name ?? "User"}'s` : "Your";
+  const whose = preview ? `${preview.name ?? "User"}'s` : "Your";
 
   return (
     <SurfaceProvider id="operations.today">
@@ -66,6 +67,16 @@ export default async function OperationsHomePage({
           {ctx.isAdmin && !preview && candidates.length > 0 && <ViewAsPicker candidates={candidates} />}
         </header>
 
+        {/* Today's driver — everything due today + overdue across all
+            programmes, completable in place so no drill-in is needed. */}
+        <TodayDriver
+          today={driver.today}
+          overdue={driver.overdue}
+          checklists={driver.checklists}
+          readOnly={!!preview}
+          storageKey={`operations-today-${userId}`}
+        />
+
         {/* Month planner — always available. */}
         {!preview && (
           <Link
@@ -82,11 +93,11 @@ export default async function OperationsHomePage({
 
         <section>
           <h2 className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider mb-3">
-            {whoseCentres} centres
+            {whose} programmes
           </h2>
           {tiles.length === 0 ? (
             <div className="rounded-xl border border-dashed border-stone-200 p-8 text-center text-sm text-stone-400">
-              No centres assigned yet.
+              No programmes assigned yet.
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
