@@ -2,6 +2,7 @@
 // itemKey format: "domain.parameter" (domain lowercase)
 
 import { SANITATION_RATES, SANITATION_COMPUTED_KEYS } from "@/lib/sanitation/rates";
+import { RO_WATER_RATES, RO_WATER_COMPUTED_KEYS } from "@/lib/ro-water/rates";
 
 export type CostItem = {
   domain: string | null;
@@ -19,6 +20,7 @@ export type ComputedRegistryKey = { key: string; formula: string };
 
 export const ALL_COMPUTED_REGISTRY_KEYS: ComputedRegistryKey[] = [
   ...SANITATION_COMPUTED_KEYS,
+  ...RO_WATER_COMPUTED_KEYS,
 ];
 
 export const DEFAULT_COSTS: CostItem[] = [
@@ -211,16 +213,29 @@ export const DEFAULT_COSTS: CostItem[] = [
   { domain: "FoodDistribution", itemKey: "food.kitchen_equipment_one_time",          unitCost: 0,      unit: "₹/kitchen",           notes: "Set to ₹75.39L for in-house kitchen; 0 for vendor-procured" },
 
   // ── RO Water Plant (standalone budget domain; figures ≈ RO-water model @1000 LPH) ──
-  { domain: "RO_Water", itemKey: "ro.capex_ro_plant",         unitCost: 600000, unit: "₹/plant",       notes: "RO skid + membranes + UV" },
-  { domain: "RO_Water", itemKey: "ro.capex_atm",              unitCost: 150000, unit: "₹/plant",       notes: "Water ATM dispensing unit" },
-  { domain: "RO_Water", itemKey: "ro.capex_tanks",            unitCost: 80000,  unit: "₹/plant",       notes: "Raw + product storage tanks" },
-  { domain: "RO_Water", itemKey: "ro.capex_civil",            unitCost: 200000, unit: "₹/plant",       notes: "Civil works (room, foundation)" },
-  { domain: "RO_Water", itemKey: "ro.capex_plumbing",         unitCost: 100000, unit: "₹/plant",       notes: "Plumbing & electrical" },
-  { domain: "RO_Water", itemKey: "ro.capex_borewell",         unitCost: 75000,  unit: "₹/plant",       notes: "Borewell / source connection" },
-  { domain: "RO_Water", itemKey: "ro.capex_solar",            unitCost: 200000, unit: "₹/plant",       notes: "Solar PV backup" },
-  { domain: "RO_Water", itemKey: "ro.capex_iot",              unitCost: 50000,  unit: "₹/plant",       notes: "Payment + IoT" },
-  { domain: "RO_Water", itemKey: "ro.capex_surveys",          unitCost: 50000,  unit: "₹/plant",       notes: "Pre-install surveys & design" },
-  { domain: "RO_Water", itemKey: "ro.capex_contingency",      unitCost: 150500, unit: "₹/plant",       notes: "10% of capex subtotal" },
+  // ── RO_Water — LEGACY aggregate capex (deprecated 2026-07-27) ──
+  // Kept so historical budgets that still reference these keys resolve. New
+  // RO budgets use the parametric per-unit rates below (RO_WATER_RATES) driven
+  // by LineTemplate.formula.
+  { domain: "RO_Water", itemKey: "ro.capex_ro_plant",         unitCost: 600000, unit: "₹/plant",       notes: "DEPRECATED — use ro.plant_per_lph × LPH" },
+  { domain: "RO_Water", itemKey: "ro.capex_atm",              unitCost: 150000, unit: "₹/plant",       notes: "DEPRECATED — use ro.atm_fixed" },
+  { domain: "RO_Water", itemKey: "ro.capex_tanks",            unitCost: 80000,  unit: "₹/plant",       notes: "DEPRECATED — use ro.tanks_per_litre × litres" },
+  { domain: "RO_Water", itemKey: "ro.capex_civil",            unitCost: 200000, unit: "₹/plant",       notes: "DEPRECATED — use ro.civil_fixed" },
+  { domain: "RO_Water", itemKey: "ro.capex_plumbing",         unitCost: 100000, unit: "₹/plant",       notes: "DEPRECATED — use ro.plumbing_fixed" },
+  { domain: "RO_Water", itemKey: "ro.capex_borewell",         unitCost: 75000,  unit: "₹/plant",       notes: "DEPRECATED — gate ro.borewell_fixed on inp.hasBorewell" },
+  { domain: "RO_Water", itemKey: "ro.capex_solar",            unitCost: 200000, unit: "₹/plant",       notes: "DEPRECATED — use ro.solar_per_kwp × kWp" },
+  { domain: "RO_Water", itemKey: "ro.capex_iot",              unitCost: 50000,  unit: "₹/plant",       notes: "DEPRECATED — use ro.iot_fixed" },
+  { domain: "RO_Water", itemKey: "ro.capex_surveys",          unitCost: 50000,  unit: "₹/plant",       notes: "DEPRECATED — use ro.surveys_fixed" },
+  { domain: "RO_Water", itemKey: "ro.capex_contingency",      unitCost: 150500, unit: "₹/plant",       notes: "DEPRECATED — now derived: ro.contingency_pct_of_subtotal" },
+
+  // ── RO_Water — parametric per-unit rates (from lib/ro-water/rates.ts) ──
+  ...RO_WATER_RATES.map(r => ({
+    domain: "RO_Water" as string | null,
+    itemKey: r.key,
+    unitCost: r.standardUnitCost,
+    unit: r.costUnit,
+    notes: r.notes,
+  })),
   { domain: "RO_Water", itemKey: "ro.salary_operator",        unitCost: 12000,  unit: "₹/month" },
   { domain: "RO_Water", itemKey: "ro.operators_per_plant",    unitCost: 1,      unit: "operators" },
   { domain: "RO_Water", itemKey: "ro.salary_assistant",       unitCost: 5000,   unit: "₹/month" },

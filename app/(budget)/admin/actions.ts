@@ -202,6 +202,11 @@ const STANDARD_PROG_INPUTS = [
   // RO Water + Sanitation Complex (standalone domains)
   { itemKey: "inp.nRO_Plants",                unit: "count",    unitCost: 1,     notes: "No. of RO water plants",                displayGroup: "facilities" },
   { itemKey: "inp.roPlantRentPerMonth",       unit: "₹/month",  unitCost: 0,     notes: "RO plant site rent / mo",               displayGroup: "facilities" },
+  // RO_Water — capacity mix (drives parametric formulas)
+  { itemKey: "inp.roLph",                     unit: "L/hour",   unitCost: 1000,  notes: "RO plant capacity per plant",           displayGroup: "capacity"   },
+  { itemKey: "inp.roTankLitres",              unit: "L",        unitCost: 4000,  notes: "Storage tanks (raw + product) per plant", displayGroup: "capacity" },
+  { itemKey: "inp.roSolarKwp",                unit: "kWp",      unitCost: 2.5,   notes: "Solar PV backup per plant",             displayGroup: "capacity"   },
+  { itemKey: "inp.hasBorewell",               unit: "0/1",      unitCost: 1,     notes: "1 = includes borewell + source connection; 0 = municipal supply only", displayGroup: "facilities" },
   { itemKey: "inp.nSanitationComplexes",      unit: "count",    unitCost: 1,     notes: "No. of sanitation complexes",           displayGroup: "facilities" },
   { itemKey: "inp.sanitationComplexRentPerMonth", unit: "₹/month", unitCost: 0,  notes: "Sanitation complex rent / mo",          displayGroup: "facilities" },
   // Sanitation Complex — capacity mix (drives parametric formulas)

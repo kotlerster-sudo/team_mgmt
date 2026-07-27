@@ -15,11 +15,23 @@ const prisma = new PrismaClient({ adapter });
 const TEMPLATE_KEY = "ro_water";
 
 async function main() {
-  await prisma.modelTemplate.deleteMany({ where: { key: TEMPLATE_KEY } });
-
-  const template = await prisma.modelTemplate.create({
-    data: {
+  // Additive upsert — preserves ModelInstances (user scenarios + publicSlug)
+  // across re-seeds. Same pattern as the sanitation seed.
+  const template = await prisma.modelTemplate.upsert({
+    where: { key: TEMPLATE_KEY },
+    create: {
       key: TEMPLATE_KEY,
+      name: "RO Water Plant (community)",
+      description:
+        "Funder-facing financial model for a community RO water plant in a Bangalore/Chennai " +
+        "urban slum. 60-month / 5-year horizon. Translated from the v2 Excel model.",
+      horizons: [
+        { key: "monthly", length: 60 },
+        { key: "annual", length: 5 },
+      ],
+      sortOrder: 10,
+    },
+    update: {
       name: "RO Water Plant (community)",
       description:
         "Funder-facing financial model for a community RO water plant in a Bangalore/Chennai " +
@@ -53,12 +65,25 @@ async function main() {
     capex_in: "finance", financial: "finance", ops: "sim",
   };
   const groups: Record<string, string> = {};
+  const seedGroupKeys = new Set<string>();
   for (let i = 0; i < groupDefs.length; i++) {
     const [key, label] = groupDefs[i];
-    const g = await prisma.modelGroup.create({
-      data: { templateId: template.id, key, label, order: i, surface: groupSurface[key] ?? "both" },
+    seedGroupKeys.add(key);
+    const g = await prisma.modelGroup.upsert({
+      where: { templateId_key: { templateId: template.id, key } },
+      create: { templateId: template.id, key, label, order: i, surface: groupSurface[key] ?? "both" },
+      update: { label, order: i, surface: groupSurface[key] ?? "both" },
     });
     groups[key] = g.id;
+  }
+  const staleGroups = await prisma.modelGroup.findMany({
+    where: { templateId: template.id, key: { notIn: [...seedGroupKeys] } },
+    select: { id: true, key: true },
+  });
+  if (staleGroups.length > 0) {
+    await prisma.modelNode.deleteMany({ where: { groupId: { in: staleGroups.map(g => g.id) } } });
+    await prisma.modelGroup.deleteMany({ where: { id: { in: staleGroups.map(g => g.id) } } });
+    console.log(`  pruned ${staleGroups.length} stale group(s): ${staleGroups.map(g => g.key).join(", ")}`);
   }
 
   type NodeIn = {
@@ -120,8 +145,12 @@ async function main() {
     { group: "capex", key: "capex_tanks", label: "Storage tanks (raw + product)", kind: "formula", dataType: "currency", formula: "tank_litres * capex_tanks_per_litre", unit: "INR", notes: "Scales with tank_litres" },
     { group: "capex_in", key: "capex_civil", label: "Civil works (room, foundation)", kind: "input", dataType: "currency", defaultJson: 200000, unit: "INR" },
     { group: "capex_in", key: "capex_plumbing", label: "Plumbing & electrical works", kind: "input", dataType: "currency", defaultJson: 100000, unit: "INR" },
-    { group: "capex_in", key: "capex_borewell", label: "Borewell / water source connection", kind: "input", dataType: "currency", defaultJson: 75000, unit: "INR" },
-    { group: "capex_in", key: "capex_solar", label: "Solar PV system", kind: "input", dataType: "currency", defaultJson: 200000, unit: "INR", notes: "2–3 kWp backup" },
+    { group: "capex_in", key: "has_borewell", label: "Include borewell", kind: "input", dataType: "int", defaultJson: 1, unit: "0/1", notes: "1 = includes borewell + source connection; 0 = municipal supply only." },
+    { group: "capex_in", key: "capex_borewell_amount", label: "Borewell + source cost", kind: "input", dataType: "currency", defaultJson: 75000, unit: "INR", surface: "finance", notes: "Cost per plant when borewell is included." },
+    { group: "capex_in", key: "capex_borewell", label: "Borewell / water source connection", kind: "formula", dataType: "currency", formula: "has_borewell * capex_borewell_amount", unit: "INR" },
+    { group: "capex_in", key: "solar_kwp", label: "Solar PV capacity", kind: "input", dataType: "number", defaultJson: 2.5, unit: "kWp", ui: { min: 0, max: 10, step: 0.5 } },
+    { group: "capex_in", key: "capex_solar_per_kwp", label: "Solar cost per kWp", kind: "input", dataType: "currency", defaultJson: 80000, unit: "INR/kWp", surface: "finance", notes: "Community-scale PV installed rate." },
+    { group: "capex_in", key: "capex_solar", label: "Solar PV system", kind: "formula", dataType: "currency", formula: "solar_kwp * capex_solar_per_kwp", unit: "INR" },
     { group: "capex_in", key: "capex_iot", label: "Payment & IoT system (RFID, cloud)", kind: "input", dataType: "currency", defaultJson: 50000, unit: "INR" },
     { group: "capex_in", key: "capex_surveys", label: "Pre-installation surveys & design", kind: "input", dataType: "currency", defaultJson: 50000, unit: "INR" },
     { group: "capex_in", key: "capex_contingency_pct", label: "Contingency (% of subtotal)", kind: "input", dataType: "percent", defaultJson: 0.10, unit: "%", notes: "Standard 8–12% buffer" },
@@ -313,10 +342,13 @@ async function main() {
     { group: "ops", key: "peak_concentration", label: "Peak concentration", kind: "input", dataType: "number", defaultJson: 100, unit: "", notes: "Higher = sharper morning/evening rush", surface: "sim", ui: { min: 60, max: 200, step: 5 } },
   ];
 
+  const seedNodeKeys = new Set<string>();
   for (let i = 0; i < nodes.length; i++) {
     const n = nodes[i];
-    await prisma.modelNode.create({
-      data: {
+    seedNodeKeys.add(n.key);
+    await prisma.modelNode.upsert({
+      where: { templateId_key: { templateId: template.id, key: n.key } },
+      create: {
         templateId: template.id, groupId: groups[n.group],
         key: n.key, label: n.label, kind: n.kind, dataType: n.dataType,
         shape: n.shape ?? { kind: "scalar" },
@@ -328,8 +360,24 @@ async function main() {
         uiJson: n.ui === undefined ? undefined : (n.ui as never),
         order: i,
       },
+      update: {
+        groupId: groups[n.group],
+        label: n.label, kind: n.kind, dataType: n.dataType,
+        shape: n.shape ?? { kind: "scalar" },
+        defaultJson: n.defaultJson === undefined ? undefined : (n.defaultJson as never),
+        formula: n.formula ?? null,
+        unit: n.unit ?? null, notes: n.notes ?? null,
+        surface: n.surface ?? "both",
+        tier: n.tier ?? "basic",
+        uiJson: n.ui === undefined ? undefined : (n.ui as never),
+        order: i,
+      },
     });
   }
+  const pruned = await prisma.modelNode.deleteMany({
+    where: { templateId: template.id, key: { notIn: [...seedNodeKeys] } },
+  });
+  if (pruned.count > 0) console.log(`  pruned ${pruned.count} stale node(s)`);
 
   // ── Outputs ─────────────────────────────────────────────────────────────
   type OutputIn = { key: string; label: string; kind: string; config: Record<string, unknown>; order: number };
@@ -386,32 +434,41 @@ async function main() {
       config: {
         domainName: "RO_Water",
         years: 1,
+        // templateKey links each promoted BudgetLine to its LineTemplate row →
+        // regenerate-safe (same shape as Sanitation_Complex).
         capexLines: [
-          { nodeKey: "capex_ro_plant",   description: "RO plant (skid + membranes + UV)" },
-          { nodeKey: "capex_atm",        description: "Water ATM dispensing unit" },
-          { nodeKey: "capex_tanks",      description: "Storage tanks (raw + product)" },
-          { nodeKey: "capex_civil",      description: "Civil works (room, foundation)" },
-          { nodeKey: "capex_plumbing",   description: "Plumbing & electrical works" },
-          { nodeKey: "capex_borewell",   description: "Borewell / water source connection" },
-          { nodeKey: "capex_solar",      description: "Solar PV system" },
-          { nodeKey: "capex_iot",        description: "Payment & IoT system" },
-          { nodeKey: "capex_surveys",    description: "Pre-installation surveys & design" },
-          { nodeKey: "capex_contingency", description: "Contingency" },
+          { nodeKey: "capex_ro_plant",    description: "RO plant (skid + membranes + UV)", templateKey: "ro.cap_plant" },
+          { nodeKey: "capex_atm",         description: "Water ATM dispensing unit",         templateKey: "ro.cap_atm" },
+          { nodeKey: "capex_tanks",       description: "Storage tanks (raw + product)",     templateKey: "ro.cap_tanks" },
+          { nodeKey: "capex_civil",       description: "Civil works (room, foundation)",    templateKey: "ro.cap_civil" },
+          { nodeKey: "capex_plumbing",    description: "Plumbing & electrical works",       templateKey: "ro.cap_plumbing" },
+          { nodeKey: "capex_borewell",    description: "Borewell / water source connection", templateKey: "ro.cap_borewell" },
+          { nodeKey: "capex_solar",       description: "Solar PV system",                   templateKey: "ro.cap_solar" },
+          { nodeKey: "capex_iot",         description: "Payment & IoT system",              templateKey: "ro.cap_iot" },
+          { nodeKey: "capex_surveys",     description: "Pre-installation surveys & design", templateKey: "ro.cap_surveys" },
+          { nodeKey: "capex_contingency", description: "Contingency",                       templateKey: "ro.cap_contingency" },
         ],
         opexLines: [
-          { nodeKey: "salary_operator", description: "Operator salary", costCategory: "Salary", months: 10 },
-          { nodeKey: "salary_assistant", description: "Assistant / helper", costCategory: "Salary", months: 10 },
-          { nodeKey: "opex_steady_electricity", description: "Electricity", costCategory: "Other", months: 12 },
-          { nodeKey: "opex_steady_source_water", description: "Source water", costCategory: "Other", months: 12 },
-          { nodeKey: "opex_steady_membrane", description: "Membrane (amortised)", costCategory: "Other", months: 12 },
-          { nodeKey: "prefilter_monthly", description: "Pre-filter cartridges", costCategory: "Other", months: 10 },
-          { nodeKey: "uv_monthly", description: "UV lamp & consumables", costCategory: "Other", months: 10 },
-          { nodeKey: "amc_monthly", description: "Maintenance / AMC reserve", costCategory: "Other", months: 10 },
-          { nodeKey: "tech_monthly", description: "Technology / monitoring", costCategory: "Other", months: 10 },
-          { nodeKey: "mobile_monthly", description: "Mobile / internet", costCategory: "Other", months: 10 },
-          { nodeKey: "cleaning_monthly", description: "Cleaning supplies", costCategory: "Other", months: 10 },
-          { nodeKey: "opex_steady_lab", description: "Water quality testing", costCategory: "Other", months: 10 },
+          { nodeKey: "salary_operator",            description: "Operator salary",         costCategory: "Salary", months: 10, templateKey: "ro.operator" },
+          { nodeKey: "salary_assistant",           description: "Assistant / helper",      costCategory: "Salary", months: 10, templateKey: "ro.assistant" },
+          { nodeKey: "opex_steady_electricity",    description: "Electricity",             costCategory: "Other",  months: 12, templateKey: "ro.electricity" },
+          { nodeKey: "opex_steady_source_water",   description: "Source water",            costCategory: "Other",  months: 12, templateKey: "ro.source_water" },
+          { nodeKey: "opex_steady_membrane",       description: "Membrane (amortised)",    costCategory: "Other",  months: 12, templateKey: "ro.membrane" },
+          { nodeKey: "prefilter_monthly",          description: "Pre-filter cartridges",   costCategory: "Other",  months: 10, templateKey: "ro.prefilter" },
+          { nodeKey: "uv_monthly",                 description: "UV lamp & consumables",   costCategory: "Other",  months: 10, templateKey: "ro.uv" },
+          { nodeKey: "amc_monthly",                description: "Maintenance / AMC reserve", costCategory: "Other", months: 10, templateKey: "ro.amc" },
+          { nodeKey: "tech_monthly",               description: "Technology / monitoring", costCategory: "Other",  months: 10, templateKey: "ro.tech" },
+          { nodeKey: "mobile_monthly",             description: "Mobile / internet",       costCategory: "Other",  months: 10, templateKey: "ro.mobile" },
+          { nodeKey: "cleaning_monthly",           description: "Cleaning supplies",       costCategory: "Other",  months: 10, templateKey: "ro.cleaning" },
+          { nodeKey: "opex_steady_lab",            description: "Water quality testing",   costCategory: "Other",  months: 10, templateKey: "ro.lab" },
         ],
+        // Model input key → budget inp.* key (drop "inp." prefix in the value).
+        inputMapping: {
+          plant_lph: "roLph",
+          tank_litres: "roTankLitres",
+          solar_kwp: "roSolarKwp",
+          has_borewell: "hasBorewell",
+        },
       } },
 
     // Operations day-in-the-life sim. Reads the same instance inputs via this
@@ -431,20 +488,37 @@ async function main() {
         presentation: DEFAULT_RO_PRESENTATION,
       } },
   ];
+  const seedOutputKeys = new Set<string>();
   for (const o of outputs) {
-    await prisma.modelOutput.create({
-      data: { templateId: template.id, key: o.key, label: o.label, kind: o.kind, config: o.config as never, order: o.order },
+    seedOutputKeys.add(o.key);
+    const payload = { label: o.label, kind: o.kind, config: o.config as never, order: o.order };
+    await prisma.modelOutput.upsert({
+      where: { templateId_key: { templateId: template.id, key: o.key } },
+      create: { templateId: template.id, key: o.key, ...payload },
+      update: payload,
+    });
+  }
+  const outputPruned = await prisma.modelOutput.deleteMany({
+    where: { templateId: template.id, key: { notIn: [...seedOutputKeys] } },
+  });
+  if (outputPruned.count > 0) console.log(`  pruned ${outputPruned.count} stale output(s)`);
+
+  const existingCount = await prisma.modelInstance.count({ where: { templateId: template.id } });
+  let instance;
+  if (existingCount === 0) {
+    instance = await prisma.modelInstance.create({
+      data: { templateId: template.id, name: "RO Water — Base", scenarioName: "Base" },
     });
   }
 
-  const instance = await prisma.modelInstance.create({
-    data: { templateId: template.id, name: "RO Water — Base", scenarioName: "Base" },
-  });
-
   console.log(`✔ Template ${template.id} (${TEMPLATE_KEY})`);
   console.log(`  ${nodes.length} nodes, ${outputs.length} outputs`);
-  console.log(`✔ Instance ${instance.id}`);
-  console.log(`→ Visit /models/${instance.id}`);
+  if (instance) {
+    console.log(`✔ Instance ${instance.id} (initial Base created)`);
+    console.log(`→ Visit /models/${instance.id}`);
+  } else {
+    console.log(`  ${existingCount} existing instance(s) preserved`);
+  }
 }
 
 main().then(() => prisma.$disconnect()).catch(e => { console.error(e); prisma.$disconnect(); process.exit(1); });

@@ -19,11 +19,23 @@ const prisma = new PrismaClient({ adapter });
 const TEMPLATE_KEY = "sanitation_complex";
 
 async function main() {
-  await prisma.modelTemplate.deleteMany({ where: { key: TEMPLATE_KEY } });
-
-  const template = await prisma.modelTemplate.create({
-    data: {
+  // Additive upsert — preserves ModelInstances (user scenarios) + publicSlug
+  // across re-seeds. Historical destructive re-seed lost the "ISC" scenario
+  // and the /models-public/sanitation-complex slug 2026-07-27.
+  const template = await prisma.modelTemplate.upsert({
+    where: { key: TEMPLATE_KEY },
+    create: {
       key: TEMPLATE_KEY,
+      name: "Sanitation Complex (multi-service)",
+      description:
+        "Multi-service community sanitation complex: toilet, bath, laundry, RO water, monthly pass.",
+      horizons: [
+        { key: "monthly", length: 60 },
+        { key: "annual", length: 5 },
+      ],
+      sortOrder: 20,
+    },
+    update: {
       name: "Sanitation Complex (multi-service)",
       description:
         "Multi-service community sanitation complex: toilet, bath, laundry, RO water, monthly pass.",
@@ -58,12 +70,28 @@ async function main() {
     capex_in: "finance", financial: "finance", ops: "sim",
   };
   const groups: Record<string, string> = {};
+  const seedGroupKeys = new Set<string>();
   for (let i = 0; i < groupDefs.length; i++) {
     const [key, label] = groupDefs[i];
-    const g = await prisma.modelGroup.create({
-      data: { templateId: template.id, key, label, order: i, surface: groupSurface[key] ?? "both" },
+    seedGroupKeys.add(key);
+    const g = await prisma.modelGroup.upsert({
+      where: { templateId_key: { templateId: template.id, key } },
+      create: { templateId: template.id, key, label, order: i, surface: groupSurface[key] ?? "both" },
+      update: { label, order: i, surface: groupSurface[key] ?? "both" },
     });
     groups[key] = g.id;
+  }
+  // Prune groups no longer in the seed (their nodes cascade via templateId FK
+  // on ModelNode.groupId? no — nodes don't cascade on groupId. Delete stale
+  // nodes first, then the stale group.).
+  const staleGroups = await prisma.modelGroup.findMany({
+    where: { templateId: template.id, key: { notIn: [...seedGroupKeys] } },
+    select: { id: true, key: true },
+  });
+  if (staleGroups.length > 0) {
+    await prisma.modelNode.deleteMany({ where: { groupId: { in: staleGroups.map(g => g.id) } } });
+    await prisma.modelGroup.deleteMany({ where: { id: { in: staleGroups.map(g => g.id) } } });
+    console.log(`  pruned ${staleGroups.length} stale group(s): ${staleGroups.map(g => g.key).join(", ")}`);
   }
 
   type NodeIn = {
@@ -512,23 +540,33 @@ async function main() {
     { group: "ops", key: "ro_recovery_rate", label: "RO recovery rate", kind: "input", dataType: "percent", defaultJson: 0.55, unit: "%", surface: "sim", tier: "advanced", ui: { min: 0.3, max: 0.8, step: 0.05 } },
   ];
 
+  const seedNodeKeys = new Set<string>();
   for (let i = 0; i < nodes.length; i++) {
     const n = nodes[i];
-    await prisma.modelNode.create({
-      data: {
-        templateId: template.id, groupId: groups[n.group],
-        key: n.key, label: n.label, kind: n.kind, dataType: n.dataType,
-        shape: n.shape ?? { kind: "scalar" },
-        defaultJson: n.defaultJson === undefined ? undefined : (n.defaultJson as never),
-        formula: n.formula ?? null,
-        unit: n.unit ?? null, notes: n.notes ?? null,
-        surface: n.surface ?? "both",
-        tier: n.tier ?? "basic",
-        uiJson: n.ui === undefined ? undefined : (n.ui as never),
-        order: i,
-      },
+    seedNodeKeys.add(n.key);
+    const payload = {
+      groupId: groups[n.group],
+      label: n.label, kind: n.kind, dataType: n.dataType,
+      shape: n.shape ?? { kind: "scalar" },
+      defaultJson: n.defaultJson === undefined ? undefined : (n.defaultJson as never),
+      formula: n.formula ?? null,
+      unit: n.unit ?? null, notes: n.notes ?? null,
+      surface: n.surface ?? "both",
+      tier: n.tier ?? "basic",
+      uiJson: n.ui === undefined ? undefined : (n.ui as never),
+      order: i,
+    };
+    await prisma.modelNode.upsert({
+      where: { templateId_key: { templateId: template.id, key: n.key } },
+      create: { templateId: template.id, key: n.key, ...payload },
+      update: payload,
     });
   }
+  // Prune nodes no longer in the seed.
+  const pruned = await prisma.modelNode.deleteMany({
+    where: { templateId: template.id, key: { notIn: [...seedNodeKeys] } },
+  });
+  if (pruned.count > 0) console.log(`  pruned ${pruned.count} stale node(s)`);
 
   // ── Outputs ─────────────────────────────────────────────────────────────
   type OutputIn = { key: string; label: string; kind: string; config: Record<string, unknown>; order: number };
@@ -660,20 +698,39 @@ async function main() {
         presentation: DEFAULT_COMPLEX_PRESENTATION,
       } },
   ];
+  const seedOutputKeys = new Set<string>();
   for (const o of outputs) {
-    await prisma.modelOutput.create({
-      data: { templateId: template.id, key: o.key, label: o.label, kind: o.kind, config: o.config as never, order: o.order },
+    seedOutputKeys.add(o.key);
+    const payload = { label: o.label, kind: o.kind, config: o.config as never, order: o.order };
+    await prisma.modelOutput.upsert({
+      where: { templateId_key: { templateId: template.id, key: o.key } },
+      create: { templateId: template.id, key: o.key, ...payload },
+      update: payload,
+    });
+  }
+  const outputPruned = await prisma.modelOutput.deleteMany({
+    where: { templateId: template.id, key: { notIn: [...seedOutputKeys] } },
+  });
+  if (outputPruned.count > 0) console.log(`  pruned ${outputPruned.count} stale output(s)`);
+
+  // Ensure at least one Base instance exists — but never overwrite existing
+  // instances (user scenarios + published slug survive re-seeds).
+  const existingCount = await prisma.modelInstance.count({ where: { templateId: template.id } });
+  let instance;
+  if (existingCount === 0) {
+    instance = await prisma.modelInstance.create({
+      data: { templateId: template.id, name: "Sanitation Complex — Base", scenarioName: "Base" },
     });
   }
 
-  const instance = await prisma.modelInstance.create({
-    data: { templateId: template.id, name: "Sanitation Complex — Base", scenarioName: "Base" },
-  });
-
   console.log(`✔ Template ${template.id} (${TEMPLATE_KEY})`);
   console.log(`  ${nodes.length} nodes, ${outputs.length} outputs`);
-  console.log(`✔ Instance ${instance.id}`);
-  console.log(`→ Visit /models/${instance.id}`);
+  if (instance) {
+    console.log(`✔ Instance ${instance.id} (initial Base created)`);
+    console.log(`→ Visit /models/${instance.id}`);
+  } else {
+    console.log(`  ${existingCount} existing instance(s) preserved`);
+  }
 }
 
 main().then(() => prisma.$disconnect()).catch(e => { console.error(e); prisma.$disconnect(); process.exit(1); });
