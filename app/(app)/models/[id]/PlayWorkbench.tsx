@@ -7,6 +7,7 @@ import { compute, computeSensitivity } from "@/lib/models/engine";
 import type { DaySimConfig, InstanceInputs, ModelNode, ModelOutput, ModelTemplate, NodeValue } from "@/lib/models/types";
 import { forkScenario, promoteToBudget, saveInstanceInputs, searchPitstops, setInstancePitstop } from "./actions";
 import OperationsSim from "./OperationsSim";
+import { pickersForTemplate, managedNodeKeys, expandPickerValue, inferPickerValue, type EnumPicker } from "./inputEnumPickers";
 
 type Sibling = { id: string; name: string; scenarioName: string | null };
 
@@ -121,8 +122,24 @@ export default function PlayWorkbench({ instanceId, instanceName, scenarioName, 
     if (gs && gs !== "both") return gs;
     return "both";
   };
+  // Enum pickers translate a single dropdown into multiple sentinel inputs
+  // (exactly one is 1). Managed nodes are hidden from the numeric list; the
+  // picker renders in the same group instead.
+  const enumPickers = useMemo(() => pickersForTemplate(template.key), [template.key]);
+  const managedKeys = useMemo(() => managedNodeKeys(template.key), [template.key]);
+  const nodeDefaults = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const n of template.nodes) {
+      if ((n.kind === "input" || n.kind === "constant") && typeof n.default === "number") {
+        out[n.key] = n.default;
+      }
+    }
+    return out;
+  }, [template.nodes]);
+
   const inputNodes = template.nodes.filter(n => {
     if (n.kind !== "input" && n.kind !== "constant") return false;
+    if (managedKeys.has(n.key)) return false;
     const es = effSurface(n);
     if (es !== "both" && es !== activeSurface) return false;
     if (mode === "sim" && simTier === "basic" && n.tier === "advanced") return false;
@@ -148,11 +165,43 @@ export default function PlayWorkbench({ instanceId, instanceName, scenarioName, 
     const n = Number(raw);
     if (Number.isFinite(n)) setInputs({ ...inputs, [key]: n });
   };
+  // Enum picker: writes all sentinel keys at once.
+  const setPickerVal = (picker: EnumPicker, value: string) => {
+    dirtyRef.current = true;
+    setSaveState("dirty");
+    setInputs({ ...inputs, ...expandPickerValue(picker, value) });
+  };
+  // Which pickers belong in a given group's render pass, filtered by the
+  // active surface (so sim tab doesn't show finance-only pickers). We infer
+  // surface from the first managed node — pickers manage sibling sentinels.
+  const pickersForGroup = (groupKey: string): EnumPicker[] =>
+    enumPickers.filter(p => {
+      if (p.groupKey !== groupKey) return false;
+      const anyManaged = template.nodes.find(n => p.managedNodeKeys.includes(n.key));
+      if (!anyManaged) return false;
+      const es = effSurface(anyManaged);
+      return es === "both" || es === activeSurface;
+    });
   const resetInputs = () => {
     dirtyRef.current = true;
     setSaveState("dirty");
     setInputs({});
   };
+
+  const renderPicker = (p: EnumPicker) => (
+    <label key={p.pickerKey} className="block">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-xs text-stone-600 truncate" title={p.label}>{p.label}</span>
+      </div>
+      <select
+        value={inferPickerValue(p, inputs, nodeDefaults)}
+        onChange={e => setPickerVal(p, e.target.value)}
+        className="mt-1 w-full px-2 py-1 rounded-md border border-stone-200 text-sm focus:border-sky-400 focus:ring-1 focus:ring-sky-400 outline-none"
+      >
+        {p.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    </label>
+  );
 
   const tabBtn = (m: ViewMode) =>
     `px-3 py-1 text-xs rounded ${mode === m ? "bg-white shadow text-stone-900" : "text-stone-500 hover:text-stone-700"}`;
@@ -286,8 +335,8 @@ export default function PlayWorkbench({ instanceId, instanceName, scenarioName, 
             </summary>
             <div className="px-5 pb-5 pt-2 border-t border-stone-100">
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3">
-                {orderedGroupKeys.flatMap(gk =>
-                  inputsByGroup[gk]
+                {orderedGroupKeys.flatMap(gk => [
+                  ...inputsByGroup[gk]
                     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
                     .map(n => {
                       const current = inputs[n.key];
@@ -310,8 +359,9 @@ export default function PlayWorkbench({ instanceId, instanceName, scenarioName, 
                           />
                         </label>
                       );
-                    })
-                )}
+                    }),
+                  ...pickersForGroup(gk).map(renderPicker),
+                ])}
               </div>
               <div className="mt-4 pt-3 border-t border-stone-100">{actionButtons}</div>
               <div className="mt-4">
@@ -380,6 +430,7 @@ export default function PlayWorkbench({ instanceId, instanceName, scenarioName, 
                             onChange={raw => setInputVal(n.key, raw)}
                           />
                         ))}
+                      {pickersForGroup(gk).map(renderPicker)}
                     </div>
                   </div>
                 ))}
@@ -463,6 +514,7 @@ export default function PlayWorkbench({ instanceId, instanceName, scenarioName, 
                       </label>
                     );
                   })}
+                {pickersForGroup(gk).map(renderPicker)}
               </div>
             </div>
           ))}
