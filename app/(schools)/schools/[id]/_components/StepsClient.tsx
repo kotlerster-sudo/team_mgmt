@@ -1,16 +1,24 @@
 "use client";
 
-import { Fragment, useMemo, useState, useTransition } from "react";
+import { Fragment, useEffect, useMemo, useState, useTransition } from "react";
 import {
   setStepStatus, setStepOwner, setStepDueDate, setStepOwnerRole, setStepDueWeek,
   addSubstep, updateSubstep, setSubstepStatus, deleteSubstep,
   setSubstepOwnerRole, setSubstepDueWeek, setSubstepDueDate,
-  addCategory, renameCategory, deleteCategory,
-  addStep, updateStep, deleteStep,
+  addCategory, renameCategory, deleteCategory, reorderCategories,
+  addStep, updateStep, deleteStep, reorderStepsInCategory,
 } from "../../actions";
 import { StepChip } from "../../_shared";
 import { weekLabel } from "@/lib/seeding/weeks";
 import type { SchoolPlanStepStatusValue } from "@/lib/schoolPlan/types";
+import {
+  DndContext, closestCenter, PointerSensor, useSensor, useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext, verticalListSortingStrategy, useSortable, arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 type Substep = {
   id: string;
@@ -33,6 +41,7 @@ type Step = {
   description: string | null;
   planSection: string | null;
   requiredArtifactType: string | null;
+  blocksSignoff: boolean;
   status: SchoolPlanStepStatusValue;
   ownerUserId: string | null;
   ownerLabel: string | null;
@@ -143,7 +152,17 @@ export default function StepsClient({
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
   const [stepDraftTitle, setStepDraftTitle] = useState("");
   const [stepDraftDesc, setStepDraftDesc] = useState("");
+  const [stepDraftBlocks, setStepDraftBlocks] = useState(true);
+  const [newStepBlocks, setNewStepBlocks] = useState(true);
   const [collapsedCats, setCollapsedCats] = useState<Set<string>>(() => new Set());
+
+  // Optimistic ordering overrides for drag-reorder. Cleared when server props
+  // change (revalidatePath after the action refreshes). Null = use server order.
+  const [catOrderOverride, setCatOrderOverride] = useState<string[] | null>(null);
+  const [stepOrderOverride, setStepOrderOverride] = useState<Map<string, string[]>>(new Map());
+  useEffect(() => { setCatOrderOverride(null); setStepOrderOverride(new Map()); }, [categories, steps]);
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const launchDate = launchDateIso ? new Date(launchDateIso) : null;
   const weeksEnabled = !!launchDate;
@@ -152,7 +171,8 @@ export default function StepsClient({
   // Bucket steps by category, preserving DB order (steps are already sorted by
   // (sortOrder, stepNo) in the server query). Steps whose categoryId no longer
   // matches a live category (e.g. category was deleted, SetNull kicked in) land
-  // in the Uncategorised bucket so nothing disappears from the UI.
+  // in the Uncategorised bucket so nothing disappears from the UI. Any active
+  // drag-reorder override wins over server order until props refresh.
   const catIds = useMemo(() => new Set(categories.map(c => c.id)), [categories]);
   const stepsByCategory = useMemo(() => {
     const m = new Map<string, Step[]>();
@@ -162,11 +182,22 @@ export default function StepsClient({
       const bucket = s.categoryId && catIds.has(s.categoryId) ? s.categoryId : UNCATEGORISED_ID;
       m.get(bucket)!.push(s);
     }
+    // Apply per-category step-order overrides.
+    for (const [catId, order] of stepOrderOverride) {
+      const list = m.get(catId);
+      if (!list) continue;
+      const byId = new Map(list.map(s => [s.id, s]));
+      m.set(catId, order.map(id => byId.get(id)).filter((s): s is Step => !!s));
+    }
     return m;
-  }, [categories, steps, catIds]);
+  }, [categories, steps, catIds, stepOrderOverride]);
 
   const displayCategories = useMemo(() => {
-    const list: Category[] = [...categories];
+    let list: Category[] = [...categories];
+    if (catOrderOverride) {
+      const byId = new Map(list.map(c => [c.id, c]));
+      list = catOrderOverride.map(id => byId.get(id)).filter((c): c is Category => !!c);
+    }
     if ((stepsByCategory.get(UNCATEGORISED_ID)?.length ?? 0) > 0) {
       list.push({
         id: UNCATEGORISED_ID,
@@ -177,7 +208,36 @@ export default function StepsClient({
       });
     }
     return list;
-  }, [categories, stepsByCategory]);
+  }, [categories, stepsByCategory, catOrderOverride]);
+
+  const handleCategoryDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    // Uncategorised bucket is a UI-only pseudo-row; never persist its position.
+    const orderedIds = displayCategories.filter(c => c.id !== UNCATEGORISED_ID).map(c => c.id);
+    const oldIndex = orderedIds.indexOf(String(active.id));
+    const newIndex = orderedIds.indexOf(String(over.id));
+    if (oldIndex === -1 || newIndex === -1) return;
+    const next = arrayMove(orderedIds, oldIndex, newIndex);
+    setCatOrderOverride(next);
+    startTransition(() => { void reorderCategories(planId, next); });
+  };
+
+  const handleStepDragEnd = (categoryId: string) => (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const current = (stepsByCategory.get(categoryId) ?? []).map(s => s.id);
+    const oldIndex = current.indexOf(String(active.id));
+    const newIndex = current.indexOf(String(over.id));
+    if (oldIndex === -1 || newIndex === -1) return;
+    const next = arrayMove(current, oldIndex, newIndex);
+    setStepOrderOverride(prev => {
+      const m = new Map(prev);
+      m.set(categoryId, next);
+      return m;
+    });
+    startTransition(() => { void reorderStepsInCategory(planId, categoryId, next); });
+  };
 
   const toggle = (id: string) => setExpanded(prev => {
     const next = new Set(prev);
@@ -215,8 +275,9 @@ export default function StepsClient({
     const title = newStepTitle.trim();
     if (!title) return;
     startTransition(async () => {
-      await addStep(planId, { categoryId, title });
+      await addStep(planId, { categoryId, title, blocksSignoff: newStepBlocks });
       setNewStepTitle("");
+      setNewStepBlocks(true);
       setAddingStepFor(null);
     });
   };
@@ -225,14 +286,17 @@ export default function StepsClient({
     const title = stepDraftTitle.trim();
     if (!title) return;
     startTransition(async () => {
-      await updateStep(stepId, { title, description: stepDraftDesc });
+      await updateStep(stepId, { title, description: stepDraftDesc, blocksSignoff: stepDraftBlocks });
       setEditingStepId(null);
       setStepDraftTitle("");
       setStepDraftDesc("");
+      setStepDraftBlocks(true);
     });
   };
 
   return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleCategoryDragEnd}>
+      <SortableContext items={displayCategories.filter(c => c.id !== UNCATEGORISED_ID).map(c => c.id)} strategy={verticalListSortingStrategy}>
     <div className="space-y-4">
       {displayCategories.map((cat) => {
         const isUncat = cat.id === UNCATEGORISED_ID;
@@ -240,9 +304,20 @@ export default function StepsClient({
         const isCollapsed = collapsedCats.has(cat.id);
         const isEditingCat = editingCategoryId === cat.id;
         return (
-          <section key={cat.id} className="rounded-2xl border border-stone-200 bg-white overflow-hidden">
+          <SortableSection key={cat.id} id={cat.id} disabled={!canEdit || isUncat}
+            className="rounded-2xl border border-stone-200 bg-white overflow-hidden">
+            {(dragHandle) => (<>
             <header className="flex items-start justify-between gap-3 px-4 py-3 bg-stone-50 border-b border-stone-100">
               <div className="flex items-start gap-2 min-w-0 flex-1">
+                {canEdit && !isUncat && (
+                  <button
+                    type="button"
+                    {...dragHandle}
+                    className="text-stone-300 hover:text-stone-600 cursor-grab active:cursor-grabbing mt-0.5"
+                    aria-label="Drag to reorder category"
+                    title="Drag to reorder"
+                  >⋮⋮</button>
+                )}
                 <button
                   type="button"
                   onClick={() => toggleCat(cat.id)}
@@ -317,9 +392,12 @@ export default function StepsClient({
                     {canEdit && !isUncat && ` Add one below.`}
                   </div>
                 ) : (
+                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleStepDragEnd(cat.id)}>
+                  <SortableContext items={catSteps.map(s => s.id)} strategy={verticalListSortingStrategy}>
                   <table className="w-full text-xs">
                     <thead className="bg-white text-stone-500 text-[10px] uppercase tracking-widest border-b border-stone-100">
                       <tr>
+                        {canEdit && !isUncat && <th className="w-4"></th>}
                         <th className="text-left px-3 py-2 font-medium w-6"></th>
                         <th className="text-left px-3 py-2 font-medium">#</th>
                         <th className="text-left px-3 py-2 font-medium">Step</th>
@@ -336,7 +414,19 @@ export default function StepsClient({
                         const isEditingStep = editingStepId === s.id;
                         return (
                           <Fragment key={s.id}>
-                            <tr className="border-t border-stone-100 align-top">
+                            <SortableTr id={s.id} disabled={!canEdit || isUncat} className="border-t border-stone-100 align-top">
+                              {(stepDragHandle) => (<>
+                              {canEdit && !isUncat && (
+                                <td className="px-1 py-2 text-stone-300">
+                                  <button
+                                    type="button"
+                                    {...stepDragHandle}
+                                    className="hover:text-stone-600 cursor-grab active:cursor-grabbing"
+                                    aria-label="Drag to reorder step"
+                                    title="Drag to reorder"
+                                  >⋮⋮</button>
+                                </td>
+                              )}
                               <td className="px-2 py-2 text-stone-400">
                                 <button
                                   type="button"
@@ -370,11 +460,20 @@ export default function StepsClient({
                                       placeholder="Description (optional)"
                                       disabled={pending}
                                     />
+                                    <label className="flex items-center gap-1.5 text-[11px] text-stone-600 select-none">
+                                      <input
+                                        type="checkbox"
+                                        checked={stepDraftBlocks}
+                                        onChange={(e) => setStepDraftBlocks(e.target.checked)}
+                                        disabled={pending}
+                                      />
+                                      <span>Block sign-off until this step is Done / N/A</span>
+                                    </label>
                                     <div className="flex gap-2 text-[11px]">
                                       <button type="submit" disabled={pending || !stepDraftTitle.trim()}
                                         className="px-2 py-0.5 rounded bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50">Save</button>
                                       <button type="button"
-                                        onClick={() => { setEditingStepId(null); setStepDraftTitle(""); setStepDraftDesc(""); }}
+                                        onClick={() => { setEditingStepId(null); setStepDraftTitle(""); setStepDraftDesc(""); setStepDraftBlocks(true); }}
                                         className="text-stone-500 hover:text-stone-800">Cancel</button>
                                     </div>
                                     {canEdit && !isUncat && categories.length > 1 && (
@@ -404,6 +503,7 @@ export default function StepsClient({
                                     <div className="font-medium text-stone-800">
                                       {s.title}
                                       {hasSubs && <span className="ml-2 text-[10px] text-stone-400 font-normal">· {s.substeps.length} substep{s.substeps.length === 1 ? "" : "s"} (rolled up)</span>}
+                                      {!s.blocksSignoff && <span className="ml-2 text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-1 py-0.5 font-normal" title="Optional — does not gate sign-off">optional</span>}
                                     </div>
                                     {s.description && <div className="text-[11px] text-stone-500 mt-0.5">{s.description}</div>}
                                     {s.requiredArtifactType && (
@@ -518,6 +618,7 @@ export default function StepsClient({
                                       setEditingStepId(s.id);
                                       setStepDraftTitle(s.title);
                                       setStepDraftDesc(s.description ?? "");
+                                      setStepDraftBlocks(s.blocksSignoff);
                                     }}
                                     disabled={pending}
                                     title="Edit step"
@@ -534,11 +635,12 @@ export default function StepsClient({
                                   >✕</button>
                                 </td>
                               )}
-                            </tr>
+                              </>)}
+                            </SortableTr>
 
                             {isOpen && (
                               <tr className="bg-stone-50/50">
-                                <td colSpan={canEdit ? 7 : 6} className="px-3 py-3">
+                                <td colSpan={(canEdit ? 7 : 6) + (canEdit && !isUncat ? 1 : 0)} className="px-3 py-3">
                                   <SubstepsPanel
                                     step={s}
                                     users={users}
@@ -566,28 +668,41 @@ export default function StepsClient({
                       })}
                     </tbody>
                   </table>
+                  </SortableContext>
+                  </DndContext>
                 )}
 
                 {canEdit && !isUncat && (
                   <div className="border-t border-stone-100 px-4 py-2">
                     {addingStepFor === cat.id ? (
                       <form
-                        className="flex gap-2"
+                        className="space-y-2"
                         onSubmit={(e) => { e.preventDefault(); submitAddStep(cat.id); }}
                       >
-                        <input
-                          autoFocus
-                          value={newStepTitle}
-                          onChange={(e) => setNewStepTitle(e.target.value)}
-                          placeholder="Step title"
-                          className="flex-1 text-xs rounded border border-stone-200 px-2 py-1"
-                          disabled={pending}
-                        />
-                        <button type="submit" disabled={pending || !newStepTitle.trim()}
-                          className="text-[11px] px-2 py-1 rounded bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50">Add</button>
-                        <button type="button"
-                          onClick={() => { setAddingStepFor(null); setNewStepTitle(""); }}
-                          className="text-[11px] px-2 py-1 text-stone-500 hover:text-stone-800">Cancel</button>
+                        <div className="flex gap-2">
+                          <input
+                            autoFocus
+                            value={newStepTitle}
+                            onChange={(e) => setNewStepTitle(e.target.value)}
+                            placeholder="Step title"
+                            className="flex-1 text-xs rounded border border-stone-200 px-2 py-1"
+                            disabled={pending}
+                          />
+                          <button type="submit" disabled={pending || !newStepTitle.trim()}
+                            className="text-[11px] px-2 py-1 rounded bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50">Add</button>
+                          <button type="button"
+                            onClick={() => { setAddingStepFor(null); setNewStepTitle(""); setNewStepBlocks(true); }}
+                            className="text-[11px] px-2 py-1 text-stone-500 hover:text-stone-800">Cancel</button>
+                        </div>
+                        <label className="flex items-center gap-1.5 text-[11px] text-stone-600 select-none">
+                          <input
+                            type="checkbox"
+                            checked={newStepBlocks}
+                            onChange={(e) => setNewStepBlocks(e.target.checked)}
+                            disabled={pending}
+                          />
+                          <span>Block sign-off until this step is Done / N/A</span>
+                        </label>
                       </form>
                     ) : (
                       <button
@@ -603,7 +718,8 @@ export default function StepsClient({
                 )}
               </>
             )}
-          </section>
+            </>)}
+          </SortableSection>
         );
       })}
 
@@ -641,6 +757,56 @@ export default function StepsClient({
         </div>
       )}
     </div>
+      </SortableContext>
+    </DndContext>
+  );
+}
+
+// ── sortable wrappers ────────────────────────────────────────────────────────
+
+type DragHandleProps = React.HTMLAttributes<HTMLElement> & { role?: string };
+
+function SortableSection({
+  id, disabled, className, children,
+}: {
+  id: string;
+  disabled?: boolean;
+  className?: string;
+  children: (dragHandle: DragHandleProps) => React.ReactNode;
+}) {
+  const { setNodeRef, attributes, listeners, transform, transition, isDragging } =
+    useSortable({ id, disabled });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.6 : 1,
+  };
+  return (
+    <section ref={setNodeRef} style={style} className={className}>
+      {children({ ...attributes, ...listeners } as DragHandleProps)}
+    </section>
+  );
+}
+
+function SortableTr({
+  id, disabled, className, children,
+}: {
+  id: string;
+  disabled?: boolean;
+  className?: string;
+  children: (dragHandle: DragHandleProps) => React.ReactNode;
+}) {
+  const { setNodeRef, attributes, listeners, transform, transition, isDragging } =
+    useSortable({ id, disabled });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.6 : 1,
+  };
+  return (
+    <tr ref={setNodeRef} style={style} className={className}>
+      {children({ ...attributes, ...listeners } as DragHandleProps)}
+    </tr>
   );
 }
 

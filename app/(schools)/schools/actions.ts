@@ -701,6 +701,7 @@ export async function addStep(planId: string, input: {
   description?: string | null;
   planSection?: string | null;
   requiredArtifactType?: string | null;
+  blocksSignoff?: boolean;
   ownerUserId?: string | null;
   ownerRole?: string | null;
   dueDate?: string | null;
@@ -743,6 +744,8 @@ export async function addStep(planId: string, input: {
       description: input.description?.trim() || null,
       planSection: input.planSection?.trim() || null,
       requiredArtifactType: input.requiredArtifactType?.trim() || null,
+      // Default true — a new step matters until the user says otherwise.
+      blocksSignoff: input.blocksSignoff ?? true,
       ownerUserId: input.ownerUserId || null,
       ownerRole: validateOwnerRoleKey(input.ownerRole ?? null),
       dueDate: w !== null && plan?.launchDate
@@ -760,6 +763,7 @@ export async function updateStep(stepId: string, patch: {
   description?: string | null;
   planSection?: string | null;
   requiredArtifactType?: string | null;
+  blocksSignoff?: boolean;
   categoryId?: string;
 }) {
   const step = await prisma.schoolPlanStep.findUnique({
@@ -777,6 +781,7 @@ export async function updateStep(stepId: string, patch: {
   if (patch.description !== undefined) data.description = patch.description?.trim() || null;
   if (patch.planSection !== undefined) data.planSection = patch.planSection?.trim() || null;
   if (patch.requiredArtifactType !== undefined) data.requiredArtifactType = patch.requiredArtifactType?.trim() || null;
+  if (patch.blocksSignoff !== undefined) data.blocksSignoff = patch.blocksSignoff;
   if (patch.categoryId !== undefined && patch.categoryId !== step.categoryId) {
     const cat = await prisma.schoolPlanCategory.findFirst({
       where: { id: patch.categoryId, planId: step.planId },
@@ -1038,7 +1043,12 @@ export async function loadPlanForCompleteness(planId: string): Promise<PlanForCo
   const plan = await prisma.schoolPlan.findUnique({
     where: { id: planId },
     include: {
-      steps: { select: { stepNo: true, status: true } },
+      steps: {
+        select: {
+          stepNo: true, title: true, status: true,
+          planSection: true, requiredArtifactType: true, blocksSignoff: true,
+        },
+      },
       _count: {
         select: {
           settlements: true, spaces: true, staffing: true, milestones: true, risks: true,
@@ -1070,7 +1080,14 @@ export async function loadPlanForCompleteness(planId: string): Promise<PlanForCo
     budgetId: plan.budgetId,
     ourLeadUserId: plan.ourLeadUserId,
     anchorPartnerName: plan.anchorPartnerName,
-    steps: plan.steps.map((s) => ({ stepNo: s.stepNo, status: s.status as SchoolPlanStepStatusValue })),
+    steps: plan.steps.map((s) => ({
+      stepNo: s.stepNo,
+      title: s.title,
+      status: s.status as SchoolPlanStepStatusValue,
+      planSection: s.planSection,
+      requiredArtifactType: s.requiredArtifactType,
+      blocksSignoff: s.blocksSignoff,
+    })),
     settlementsCount: plan._count.settlements,
     spacesCount: plan._count.spaces,
     servicesAssessedCount: plan.services.filter((s) => s.status !== "unknown").length,

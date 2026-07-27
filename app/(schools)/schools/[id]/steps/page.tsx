@@ -60,6 +60,7 @@ export default async function StepsPage({ params }: { params: Promise<{ id: stri
     description: s.description,
     planSection: s.planSection,
     requiredArtifactType: s.requiredArtifactType,
+    blocksSignoff: s.blocksSignoff,
     status: s.status,
     ownerUserId: s.ownerUserId,
     ownerLabel: s.owner ? (s.owner.name ?? s.owner.email) : null,

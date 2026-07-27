@@ -3820,6 +3820,12 @@ model SchoolPlanStep {
   description          String?
   planSection          String?
   requiredArtifactType String?
+  // If true (default), this step must be Done / N/A for its section (or the
+  // plan overall, when planSection is null) to be complete → gates sign-off.
+  // False = "optional" step: shown in the tracker but never blocks. Template
+  // steps default to true (existing behaviour). User-added steps default true
+  // too; the create/edit UI exposes a checkbox to opt out.
+  blocksSignoff        Boolean              @default(true)
   ownerUserId          String?
   owner                User?                @relation("SchoolStepOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
   // Role-based owner (Path C). One of SCHOOL_PLAN_ROLES keys. Independent of
