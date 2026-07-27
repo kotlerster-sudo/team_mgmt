@@ -48,6 +48,8 @@ async function seedCity(city: string) {
         costPctOf:          t.costPctOf ?? null,
         costPct:            t.costPct ?? null,
         y1UnitsZero:        t.y1UnitsZero ?? false,
+        formula:            t.formula ?? null,
+        formulaUnitType:    t.formulaUnitType ?? null,
       },
       create: {
         city,
@@ -75,6 +77,8 @@ async function seedCity(city: string) {
         costPctOf:          t.costPctOf ?? null,
         costPct:            t.costPct ?? null,
         y1UnitsZero:        t.y1UnitsZero ?? false,
+        formula:            t.formula ?? null,
+        formulaUnitType:    t.formulaUnitType ?? null,
       },
     });
     upserted++;
