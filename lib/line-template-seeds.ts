@@ -25,6 +25,12 @@ export type TemplateSpec = {
   y1UnitsZero?: boolean;
   applyY2?: boolean;
   applyY3?: boolean;
+  // Parametric branch: when set, the generator evaluates this against the
+  // augmented registry ({inp.*, cost keys, computed *_derived keys}) and
+  // ignores costKey/costPctOf/workerRatioKey. Line units default to inputVar
+  // (usually nSanitationComplexes) so a 3-complex budget = 3 × formula result.
+  formula?: string;
+  formulaUnitType?: string;
 };
 
 // Mark one-time capex (setup lines, but not the Y2+ maintenance line which uses
@@ -238,27 +244,42 @@ const RO_WATER: TemplateSpec[] = [
 
 // Sanitation Complex (standalone domain). Scales off nSanitationComplexes.
 const SANITATION: TemplateSpec[] = [
-  { templateKey: "san.caretaker",      section: "salary",    description: "Caretakers",                 costCategory: "Salary", unitType: "Per complex", inputVar: "nSanitationComplexes", workerRatioKey: "san.caretakers_per_complex",       costKey: "san.salary_caretaker" },
-  { templateKey: "san.plant_operator", section: "salary",    description: "Plant operator (RO + STP)",   costCategory: "Salary", unitType: "Per complex", inputVar: "nSanitationComplexes", workerRatioKey: "san.plant_operators_per_complex",  costKey: "san.salary_plant_operator" },
-  { templateKey: "san.laundry_sup",    section: "salary",    description: "Laundry supervisor",          costCategory: "Salary", unitType: "Per complex", inputVar: "nSanitationComplexes", workerRatioKey: "san.laundry_sups_per_complex",     costKey: "san.salary_laundry_sup" },
-  { templateKey: "san.security",       section: "salary",    description: "Security guards",             costCategory: "Salary", unitType: "Per complex", inputVar: "nSanitationComplexes", workerRatioKey: "san.security_per_complex",         costKey: "san.salary_security" },
-  { templateKey: "san.admin",          section: "salary",    description: "Admin / cashier",            costCategory: "Salary", unitType: "Per complex", inputVar: "nSanitationComplexes", workerRatioKey: "san.admin_per_complex",            costKey: "san.salary_admin_cashier" },
-  { templateKey: "san.cap_civil",       section: "capex", description: "Civil construction",           costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", costKey: "san.capex_civil" },
-  { templateKey: "san.cap_plumbing",    section: "capex", description: "Plumbing + sanitaryware",      costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", costKey: "san.capex_plumbing" },
-  { templateKey: "san.cap_washing",     section: "capex", description: "Washing machines + spin dryers", costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", costKey: "san.capex_washing_machines" },
-  { templateKey: "san.cap_ro",          section: "capex", description: "RO plant + Water ATM",         costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", costKey: "san.capex_ro" },
-  { templateKey: "san.cap_stp",         section: "capex", description: "Greywater MBBR STP",           costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", costKey: "san.capex_stp" },
-  { templateKey: "san.cap_biodigester", section: "capex", description: "Biodigester / septic",         costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", costKey: "san.capex_biodigester" },
-  { templateKey: "san.cap_tanks",       section: "capex", description: "Storage tanks (UG + OH)",      costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", costKey: "san.capex_tanks" },
-  { templateKey: "san.cap_solar",       section: "capex", description: "Solar PV system",              costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", costKey: "san.capex_solar" },
-  { templateKey: "san.cap_electrical",  section: "capex", description: "Electrical works",             costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", costKey: "san.capex_electrical" },
-  { templateKey: "san.cap_iot",         section: "capex", description: "Payment + IoT monitoring",     costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", costKey: "san.capex_iot" },
-  { templateKey: "san.cap_approval",    section: "capex", description: "Approval fees",                costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", costKey: "san.capex_approval" },
-  { templateKey: "san.cap_design",      section: "capex", description: "Design + supervision",         costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", costKey: "san.capex_design" },
-  { templateKey: "san.cap_signage",     section: "capex", description: "Signage, accessibility, furnishings", costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", costKey: "san.capex_signage" },
-  { templateKey: "san.cap_contingency", section: "capex", description: "Contingency (10%)",            costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", costKey: "san.capex_contingency" },
-  { templateKey: "san.cap_tax",         section: "capex", description: "GST + taxes (5%)",             costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", costKey: "san.capex_tax" },
-  { templateKey: "san.cap_maint",       section: "capex", description: "Complex maintenance from year 2 (2.5% of civil)", costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", costPctOf: "san.capex_civil", costPct: 2.5, y1UnitsZero: true },
+  // ── Salaries. Plant operator + laundry supervisor now gate on capacity
+  //    (0 if there's no RO/STP or no washing machines) — a toilet-only block
+  //    won't carry those roles. All others preserve the previous default
+  //    headcount ratios so a standard-config budget reconciles unchanged.
+  //    Formula returns ₹/year for that role at this complex; the generator
+  //    multiplies it by nSanitationComplexes lines.
+  { templateKey: "san.caretaker",      section: "salary",    description: "Caretakers",               costCategory: "Salary", unitType: "Per complex", inputVar: "nSanitationComplexes",
+    formula: "san.caretakers_per_complex * san.salary_caretaker * 12" },
+  { templateKey: "san.plant_operator", section: "salary",    description: "Plant operator (RO + STP)", costCategory: "Salary", unitType: "Per complex", inputVar: "nSanitationComplexes",
+    formula: "IF(inp.roLph > 0 || inp.stpKld > 0, 1, 0) * san.salary_plant_operator * 12" },
+  { templateKey: "san.laundry_sup",    section: "salary",    description: "Laundry supervisor",       costCategory: "Salary", unitType: "Per complex", inputVar: "nSanitationComplexes",
+    formula: "IF(inp.washingMachines > 0, 1, 0) * san.salary_laundry_sup * 12" },
+  { templateKey: "san.security",       section: "salary",    description: "Security guards",          costCategory: "Salary", unitType: "Per complex", inputVar: "nSanitationComplexes",
+    formula: "san.security_per_complex * san.salary_security * 12" },
+  { templateKey: "san.admin",          section: "salary",    description: "Admin / cashier",          costCategory: "Salary", unitType: "Per complex", inputVar: "nSanitationComplexes",
+    formula: "san.admin_per_complex * san.salary_admin_cashier * 12" },
+
+  // ── Capex — every line reads its computed `_derived` key (aggregation in
+  //    lib/sanitation/rates.ts SANITATION_COMPUTED_KEYS). Unit = ₹/complex
+  //    for the current capacity mix, multiplied out by nSanitationComplexes.
+  { templateKey: "san.cap_civil",       section: "capex", description: "Civil construction",           costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", formula: "san.cap_civil_derived" },
+  { templateKey: "san.cap_plumbing",    section: "capex", description: "Plumbing + sanitaryware",      costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", formula: "san.cap_plumbing_derived" },
+  { templateKey: "san.cap_washing",     section: "capex", description: "Washing machines + spin dryers", costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", formula: "san.cap_washing_machines_derived" },
+  { templateKey: "san.cap_ro",          section: "capex", description: "RO plant + Water ATM",         costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", formula: "san.cap_ro_derived" },
+  { templateKey: "san.cap_stp",         section: "capex", description: "Greywater MBBR STP",           costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", formula: "san.cap_stp_derived" },
+  { templateKey: "san.cap_biodigester", section: "capex", description: "Biodigester / septic",         costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", formula: "san.cap_biodigester_derived" },
+  { templateKey: "san.cap_tanks",       section: "capex", description: "Storage tanks (UG + OH)",      costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", formula: "san.cap_tanks_derived" },
+  { templateKey: "san.cap_solar",       section: "capex", description: "Solar PV system",              costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", formula: "san.cap_solar_derived" },
+  { templateKey: "san.cap_electrical",  section: "capex", description: "Electrical works",             costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", formula: "san.cap_electrical_derived" },
+  { templateKey: "san.cap_iot",         section: "capex", description: "Payment + IoT monitoring",     costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", formula: "san.cap_iot_derived" },
+  { templateKey: "san.cap_approval",    section: "capex", description: "Approval fees",                costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", formula: "san.cap_approval_derived" },
+  { templateKey: "san.cap_design",      section: "capex", description: "Design + supervision",         costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", formula: "san.cap_design_derived" },
+  { templateKey: "san.cap_signage",     section: "capex", description: "Signage, accessibility, furnishings", costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", formula: "san.cap_signage_derived" },
+  { templateKey: "san.cap_contingency", section: "capex", description: "Contingency (10%)",            costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", formula: "san.cap_contingency_derived" },
+  { templateKey: "san.cap_tax",         section: "capex", description: "GST + taxes (5%)",             costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", formula: "san.cap_tax_derived" },
+  { templateKey: "san.cap_maint",       section: "capex", description: "Complex maintenance from year 2 (2.5% of civil)", costCategory: "Nil", unitType: "Per complex", inputVar: "nSanitationComplexes", formula: "san.cap_civil_derived * 0.025", y1UnitsZero: true },
   { templateKey: "san.electricity",  section: "programme", description: "Electricity (net of solar)", costCategory: "Other", unitType: "Per complex", inputVar: "nSanitationComplexes", costKey: "san.electricity_per_month",    costMonthly: true },
   { templateKey: "san.water",        section: "programme", description: "Water (BWSSB net of greywater)", costCategory: "Other", unitType: "Per complex", inputVar: "nSanitationComplexes", costKey: "san.water_per_month",       costMonthly: true },
   { templateKey: "san.cleaning",     section: "programme", description: "Cleaning consumables",        costCategory: "Other", unitType: "Per complex", inputVar: "nSanitationComplexes", costKey: "san.cleaning_per_month",       costMonthly: true },

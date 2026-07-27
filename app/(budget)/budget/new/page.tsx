@@ -1,6 +1,8 @@
 import Link from "next/link";
 import prisma from "@/lib/prisma";
 import NewBudgetForm from "./NewBudgetForm";
+import { refsInFormula } from "@/lib/formula/engine";
+import { ENUM_PICKERS, ENUM_MANAGED_INPUT_KEYS, type EnumPicker } from "@/lib/budget/inputEnumOptions";
 
 const FIXED_VARS = new Set(["fixed_1", "fixed_12", "cosTotal", ""]);
 
@@ -41,7 +43,7 @@ export default async function NewBudgetPage({ searchParams }: { searchParams: Pr
     prisma.budgetDomainConfig.findMany({ where: { isActive: true }, orderBy: { position: "asc" } }),
     prisma.lineTemplate.findMany({
       where: { isActive: true },
-      select: { city: true, domain: true, inputVar: true, userInputCost: true },
+      select: { city: true, domain: true, inputVar: true, userInputCost: true, formula: true },
     }),
     prisma.costRegistry.findMany({ where: { itemKey: { startsWith: "inp." } } }),
     // Full registry minus inp.* items — these are the unit costs + programme
@@ -91,6 +93,16 @@ export default async function NewBudgetPage({ searchParams }: { searchParams: Pr
       candidates.push({ key: t.inputVar, isRent: false });
     if (t.userInputCost)
       candidates.push({ key: t.userInputCost, isRent: true });
+    // Parametric templates reference inp.* directly inside the formula;
+    // surface those as discovered inputs too so the form asks the user for them.
+    if (t.formula) {
+      for (const ref of refsInFormula(t.formula)) {
+        if (ref.startsWith("inp.")) {
+          const key = ref.slice(4);
+          if (!ENUM_MANAGED_INPUT_KEYS.has(key)) candidates.push({ key, isRent: false });
+        }
+      }
+    }
 
     for (const entry of candidates) {
       domainKeyMap[slot][entry.key] = entry;
@@ -140,7 +152,7 @@ export default async function NewBudgetPage({ searchParams }: { searchParams: Pr
           Import from Excel →
         </Link>
       </div>
-      <NewBudgetForm domains={domains} crossCuttingInputs={crossCuttingInputs} costItems={costItems} initialCity={initialCity} partners={partners} />
+      <NewBudgetForm domains={domains} crossCuttingInputs={crossCuttingInputs} costItems={costItems} initialCity={initialCity} partners={partners} enumPickers={ENUM_PICKERS as EnumPicker[]} />
     </div>
   );
 }

@@ -2419,6 +2419,12 @@ model LineTemplate {
   costPct        Float?
   y1UnitsZero    Boolean @default(false)
 
+  // Parametric unit cost. When set, evaluated against {inp.*, cost-registry keys}
+  // via lib/formula/engine — costKey / costPctOf / workerRatioKey are ignored on
+  // this line and units default to 1 (all scaling happens inside the formula).
+  formula         String?
+  formulaUnitType String?
+
   // Year applicability & expansion / reduction
   applyY1      Boolean @default(true)
   applyY2      Boolean @default(true)

@@ -1,6 +1,8 @@
 // Canonical cost registry defaults — seeded into DB, editable via admin page.
 // itemKey format: "domain.parameter" (domain lowercase)
 
+import { SANITATION_RATES, SANITATION_COMPUTED_KEYS } from "@/lib/sanitation/rates";
+
 export type CostItem = {
   domain: string | null;
   itemKey: string;
@@ -8,6 +10,16 @@ export type CostItem = {
   unit: string;
   notes?: string;
 };
+
+// Computed registry keys evaluated by lib/budget-generator.ts at generation
+// time — every LineTemplate.formula that uses `<domain>.*_derived` reads its
+// value from here. All domains merged into one list; unused domains just
+// evaluate against default inp.* = 0 and produce 0s (harmless).
+export type ComputedRegistryKey = { key: string; formula: string };
+
+export const ALL_COMPUTED_REGISTRY_KEYS: ComputedRegistryKey[] = [
+  ...SANITATION_COMPUTED_KEYS,
+];
 
 export const DEFAULT_COSTS: CostItem[] = [
   // ── Children ────────────────────────────────────────────────────────────────
@@ -224,22 +236,34 @@ export const DEFAULT_COSTS: CostItem[] = [
   { domain: "RO_Water", itemKey: "ro.cleaning_per_month",     unitCost: 800,    unit: "₹/plant/month" },
   { domain: "RO_Water", itemKey: "ro.lab_per_month",          unitCost: 1333,   unit: "₹/plant/month", notes: "₹4k/quarter ÷ 3" },
 
-  // ── Sanitation Complex (standalone budget domain; figures ≈ sanitation model @default config) ──
-  { domain: "Sanitation_Complex", itemKey: "san.capex_civil",             unitCost: 5800000, unit: "₹/complex", notes: "Civil construction" },
-  { domain: "Sanitation_Complex", itemKey: "san.capex_plumbing",          unitCost: 1150000, unit: "₹/complex" },
-  { domain: "Sanitation_Complex", itemKey: "san.capex_washing_machines",  unitCost: 480000,  unit: "₹/complex", notes: "10 machines × ₹48k" },
-  { domain: "Sanitation_Complex", itemKey: "san.capex_ro",                unitCost: 650000,  unit: "₹/complex", notes: "RO plant + ATM (1000 LPH)" },
-  { domain: "Sanitation_Complex", itemKey: "san.capex_stp",               unitCost: 1350000, unit: "₹/complex", notes: "Greywater MBBR STP (28 KLD)" },
-  { domain: "Sanitation_Complex", itemKey: "san.capex_biodigester",       unitCost: 580000,  unit: "₹/complex", notes: "52 seats" },
-  { domain: "Sanitation_Complex", itemKey: "san.capex_tanks",             unitCost: 390000,  unit: "₹/complex" },
-  { domain: "Sanitation_Complex", itemKey: "san.capex_solar",             unitCost: 450000,  unit: "₹/complex" },
-  { domain: "Sanitation_Complex", itemKey: "san.capex_electrical",        unitCost: 520000,  unit: "₹/complex" },
-  { domain: "Sanitation_Complex", itemKey: "san.capex_iot",               unitCost: 180000,  unit: "₹/complex" },
-  { domain: "Sanitation_Complex", itemKey: "san.capex_approval",          unitCost: 173000,  unit: "₹/complex" },
-  { domain: "Sanitation_Complex", itemKey: "san.capex_design",            unitCost: 650000,  unit: "₹/complex" },
-  { domain: "Sanitation_Complex", itemKey: "san.capex_signage",           unitCost: 150000,  unit: "₹/complex" },
-  { domain: "Sanitation_Complex", itemKey: "san.capex_contingency",       unitCost: 1252300, unit: "₹/complex", notes: "10% of ₹1.25Cr subtotal" },
-  { domain: "Sanitation_Complex", itemKey: "san.capex_tax",               unitCost: 626150,  unit: "₹/complex", notes: "5% of subtotal" },
+  // ── Sanitation Complex — LEGACY aggregate capex (deprecated 2026-07-27) ──
+  // Kept so historical budgets that still reference these keys resolve. New
+  // sanitation budgets use the parametric per-unit rates below (SANITATION_RATES
+  // from lib/sanitation/rates.ts) driven by LineTemplate.formula.
+  { domain: "Sanitation_Complex", itemKey: "san.capex_civil",             unitCost: 5800000, unit: "₹/complex", notes: "DEPRECATED — use san.civil_per_sqm_g2 × area" },
+  { domain: "Sanitation_Complex", itemKey: "san.capex_plumbing",          unitCost: 1150000, unit: "₹/complex", notes: "DEPRECATED — use san.plumbing_per_wc_seat etc." },
+  { domain: "Sanitation_Complex", itemKey: "san.capex_washing_machines",  unitCost: 480000,  unit: "₹/complex", notes: "DEPRECATED — use san.capex_per_washing_machine × count" },
+  { domain: "Sanitation_Complex", itemKey: "san.capex_ro",                unitCost: 650000,  unit: "₹/complex", notes: "DEPRECATED — use san.capex_per_ro_lph × LPH" },
+  { domain: "Sanitation_Complex", itemKey: "san.capex_stp",               unitCost: 1350000, unit: "₹/complex", notes: "DEPRECATED — use san.capex_stp_per_kld × KLD" },
+  { domain: "Sanitation_Complex", itemKey: "san.capex_biodigester",       unitCost: 580000,  unit: "₹/complex", notes: "DEPRECATED — use san.capex_biodigester_per_seat × seats" },
+  { domain: "Sanitation_Complex", itemKey: "san.capex_tanks",             unitCost: 390000,  unit: "₹/complex", notes: "DEPRECATED — use san.tanks_per_litre × storage" },
+  { domain: "Sanitation_Complex", itemKey: "san.capex_solar",             unitCost: 450000,  unit: "₹/complex", notes: "DEPRECATED — use san.solar_per_kwp × kWp" },
+  { domain: "Sanitation_Complex", itemKey: "san.capex_electrical",        unitCost: 520000,  unit: "₹/complex", notes: "DEPRECATED — use san.electrical_per_sqm_g2 × area" },
+  { domain: "Sanitation_Complex", itemKey: "san.capex_iot",               unitCost: 180000,  unit: "₹/complex", notes: "DEPRECATED — use san.iot_per_wc_seat etc." },
+  { domain: "Sanitation_Complex", itemKey: "san.capex_approval",          unitCost: 173000,  unit: "₹/complex", notes: "DEPRECATED — use san.approval_fixed + per_seat" },
+  { domain: "Sanitation_Complex", itemKey: "san.capex_design",            unitCost: 650000,  unit: "₹/complex", notes: "DEPRECATED — now derived: san.design_pct_of_hardware" },
+  { domain: "Sanitation_Complex", itemKey: "san.capex_signage",           unitCost: 150000,  unit: "₹/complex", notes: "DEPRECATED — use san.signage_per_fixture" },
+  { domain: "Sanitation_Complex", itemKey: "san.capex_contingency",       unitCost: 1252300, unit: "₹/complex", notes: "DEPRECATED — now derived: san.contingency_pct_of_subtotal" },
+  { domain: "Sanitation_Complex", itemKey: "san.capex_tax",               unitCost: 626150,  unit: "₹/complex", notes: "DEPRECATED — now derived: san.tax_pct_of_subtotal" },
+
+  // ── Sanitation Complex — parametric per-unit rates (from lib/sanitation/rates.ts) ──
+  ...SANITATION_RATES.map(r => ({
+    domain: "Sanitation_Complex" as string | null,
+    itemKey: r.key,
+    unitCost: r.standardUnitCost,
+    unit: r.costUnit,
+    notes: r.notes,
+  })),
   { domain: "Sanitation_Complex", itemKey: "san.salary_caretaker",        unitCost: 12000,   unit: "₹/month" },
   { domain: "Sanitation_Complex", itemKey: "san.caretakers_per_complex",  unitCost: 3,       unit: "caretakers" },
   { domain: "Sanitation_Complex", itemKey: "san.salary_plant_operator",   unitCost: 10000,   unit: "₹/month" },

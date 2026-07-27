@@ -204,6 +204,19 @@ const STANDARD_PROG_INPUTS = [
   { itemKey: "inp.roPlantRentPerMonth",       unit: "₹/month",  unitCost: 0,     notes: "RO plant site rent / mo",               displayGroup: "facilities" },
   { itemKey: "inp.nSanitationComplexes",      unit: "count",    unitCost: 1,     notes: "No. of sanitation complexes",           displayGroup: "facilities" },
   { itemKey: "inp.sanitationComplexRentPerMonth", unit: "₹/month", unitCost: 0,  notes: "Sanitation complex rent / mo",          displayGroup: "facilities" },
+  // Sanitation Complex — capacity mix (drives parametric formulas)
+  { itemKey: "inp.wcSeats",                   unit: "seats",    unitCost: 30,    notes: "Total WC seats (M + F + DA) per complex", displayGroup: "capacity"   },
+  { itemKey: "inp.bathCubicles",              unit: "cubicles", unitCost: 8,     notes: "Bathing cubicles per complex",            displayGroup: "capacity"   },
+  { itemKey: "inp.washingMachines",           unit: "machines", unitCost: 4,     notes: "Washing machines per complex (0 = no laundry)", displayGroup: "capacity" },
+  { itemKey: "inp.roLph",                     unit: "L/hour",   unitCost: 1000,  notes: "RO plant capacity (0 = no drinking water)", displayGroup: "capacity" },
+  { itemKey: "inp.stpKld",                    unit: "KL/day",   unitCost: 12,    notes: "Greywater treatment capacity (0 = no STP)", displayGroup: "capacity" },
+  { itemKey: "inp.solarKwp",                  unit: "kWp",      unitCost: 5,     notes: "Solar PV capacity per complex",           displayGroup: "capacity"   },
+  { itemKey: "inp.tankStorageLitres",         unit: "L",        unitCost: 33000, notes: "Water storage (UG + OH) per complex",     displayGroup: "capacity"   },
+  { itemKey: "inp.areaSqmOverride",           unit: "sqm",      unitCost: 0,     notes: "Built-up area override (0 = auto-derive from fixtures)", displayGroup: "facilities" },
+  // Structure type is enum, expanded to 3 sentinel numerics (exactly one is 1)
+  { itemKey: "inp.structureIsSingle",         unit: "0/1",      unitCost: 0,     notes: "Structure = single-floor (sentinel; set via structureType picker)", displayGroup: "facilities" },
+  { itemKey: "inp.structureIsG1",             unit: "0/1",      unitCost: 0,     notes: "Structure = G+1 (sentinel)",              displayGroup: "facilities" },
+  { itemKey: "inp.structureIsG2",             unit: "0/1",      unitCost: 1,     notes: "Structure = G+2 (sentinel; default)",     displayGroup: "facilities" },
   // After-School Centre (standalone)
   { itemKey: "inp.nAfterSchoolCentres",       unit: "count",    unitCost: 1,     notes: "No. of after-school centres",           displayGroup: "facilities" },
   { itemKey: "inp.targetChildrenPerDay",      unit: "count",    unitCost: 300,   notes: "Children per day (drives food-cost line)", displayGroup: "coverage" },

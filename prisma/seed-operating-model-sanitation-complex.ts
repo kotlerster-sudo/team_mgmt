@@ -8,6 +8,10 @@
 import { PrismaClient } from "../app/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { DEFAULT_COMPLEX_CONSTANTS, DEFAULT_COMPLEX_PRESENTATION } from "../lib/models/simConfig";
+import { SANITATION_RATES } from "../lib/sanitation/rates";
+
+// Strip the "san." prefix so ModelNode keys stay local to this template's namespace.
+const RATE_KEY = (k: string) => k.replace(/^san\./, "");
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });
@@ -124,36 +128,70 @@ async function main() {
     { group: "pricing", key: "monthly_pass_price", label: "Monthly household pass", kind: "input", dataType: "currency", defaultJson: 150, unit: "INR/HH/mo", ui: { min: 0, max: 400, step: 10 } },
     { group: "pricing", key: "pass_holder_share", label: "% active HH on monthly pass", kind: "input", dataType: "percent", defaultJson: 0.40, unit: "%", ui: { min: 0, max: 0.8, step: 0.05 } },
 
-    // ── 6. Capex inputs ────────────────────────────────────────────────────
-    { group: "capex_in", key: "capex_civil", label: "Civil construction", kind: "input", dataType: "currency", defaultJson: 5800000, unit: "INR" },
-    { group: "capex_in", key: "capex_plumbing", label: "Plumbing + sanitaryware", kind: "input", dataType: "currency", defaultJson: 1150000, unit: "INR" },
-    // Capacity-scaled capex — per-unit rates → derived formulas (scale with units).
-    { group: "capex_in", key: "capex_per_washing_machine", label: "Capex per washing machine", kind: "input", dataType: "currency", defaultJson: 48000, unit: "INR/machine", surface: "finance" },
-    { group: "capex_in", key: "capex_washing_machines", label: "Washing machines + spin dryers", kind: "formula", dataType: "currency", formula: "washing_machines * capex_per_washing_machine", unit: "INR" },
-    { group: "capex_in", key: "capex_per_ro_lph", label: "RO plant capex per L/hour", kind: "input", dataType: "currency", defaultJson: 650, unit: "INR/LPH", surface: "finance" },
-    { group: "capex_in", key: "capex_ro", label: "RO plant + Water ATM", kind: "formula", dataType: "currency", formula: "ro_lph * capex_per_ro_lph", unit: "INR" },
-    { group: "capex_in", key: "capex_per_stp_kld", label: "STP capex per KL/day", kind: "input", dataType: "currency", defaultJson: 48214.29, unit: "INR/KLD", surface: "finance" },
-    { group: "capex_in", key: "capex_stp", label: "Greywater MBBR STP", kind: "formula", dataType: "currency", formula: "stp_kld * capex_per_stp_kld", unit: "INR" },
-    { group: "capex_in", key: "capex_per_wc_seat_bio", label: "Biodigester capex per WC seat", kind: "input", dataType: "currency", defaultJson: 11153.85, unit: "INR/seat", surface: "finance" },
-    { group: "capex_in", key: "capex_biodigester", label: "Biodigester / septic", kind: "formula", dataType: "currency", formula: "wc_seats * capex_per_wc_seat_bio", unit: "INR" },
-    { group: "capex_in", key: "capex_tanks", label: "Storage tanks (UG + OH)", kind: "input", dataType: "currency", defaultJson: 390000, unit: "INR" },
-    { group: "capex_in", key: "capex_solar", label: "Solar PV system (5 kWp)", kind: "input", dataType: "currency", defaultJson: 450000, unit: "INR" },
-    { group: "capex_in", key: "capex_electrical", label: "Electrical works", kind: "input", dataType: "currency", defaultJson: 520000, unit: "INR" },
-    { group: "capex_in", key: "capex_iot", label: "Payment + IoT monitoring", kind: "input", dataType: "currency", defaultJson: 180000, unit: "INR" },
-    { group: "capex_in", key: "capex_approval", label: "Approval fees", kind: "input", dataType: "currency", defaultJson: 173000, unit: "INR" },
-    { group: "capex_in", key: "capex_design", label: "Design + supervision", kind: "input", dataType: "currency", defaultJson: 650000, unit: "INR" },
-    { group: "capex_in", key: "capex_signage", label: "Signage, accessibility, furnishings", kind: "input", dataType: "currency", defaultJson: 150000, unit: "INR" },
-    { group: "capex_in", key: "capex_contingency_pct", label: "Contingency (% of subtotal)", kind: "input", dataType: "percent", defaultJson: 0.10, unit: "%" },
-    { group: "capex_in", key: "capex_tax_pct", label: "GST & other taxes (% of subtotal)", kind: "input", dataType: "percent", defaultJson: 0.05, unit: "%" },
+    // ── 6. Capex — parametric ─────────────────────────────────────────────
+    // User-facing capacity inputs. Every capex line derives from these + the
+    // per-unit rate constants below (which mirror lib/sanitation/rates.ts and
+    // are seeded into CostRegistry too — one source of truth across model + budget).
+    { group: "capex_in", key: "structure_is_single", label: "Structure = single floor", kind: "input", dataType: "int", defaultJson: 0, unit: "0/1", notes: "Set to 1 for single-floor block (mutually exclusive with G+1 / G+2)." },
+    { group: "capex_in", key: "structure_is_g1", label: "Structure = G + 1", kind: "input", dataType: "int", defaultJson: 0, unit: "0/1" },
+    { group: "capex_in", key: "structure_is_g2", label: "Structure = G + 2", kind: "input", dataType: "int", defaultJson: 1, unit: "0/1", notes: "Default. Suvidha-style multi-storey." },
+    { group: "capex_in", key: "area_sqm_override", label: "Built-up area override (0 = auto)", kind: "input", dataType: "number", defaultJson: 0, unit: "sqm", notes: "0 lets the model derive area from fixtures. Set to a positive number to force a specific plot size.", surface: "finance", ui: { min: 0, max: 800, step: 10 } },
+    { group: "capex_in", key: "solar_kwp", label: "Solar PV capacity", kind: "input", dataType: "number", defaultJson: 5, unit: "kWp", ui: { min: 0, max: 15, step: 0.5 } },
+    { group: "capex_in", key: "tank_storage_litres", label: "Water storage (UG + OH)", kind: "input", dataType: "int", defaultJson: 33000, unit: "L", ui: { min: 0, max: 100000, step: 1000 } },
+
+    // Per-unit rate constants — one per SANITATION_RATES entry. Kept in sync
+    // with the budget-side CostRegistry via lib/sanitation/rates.ts. Emitted
+    // as `constant` so the admin can't accidentally edit them per-scenario;
+    // permanent changes to rates go through the shared rates module.
+    ...SANITATION_RATES.map((r, i) => ({
+      group: "capex_in",
+      key: RATE_KEY(r.key),
+      label: `Rate — ${r.notes ?? r.key}`,
+      kind: "constant" as const,
+      dataType: "number" as const,
+      defaultJson: r.standardUnitCost,
+      unit: r.costUnit,
+      notes: r.derivation ?? r.notes,
+      surface: "finance" as const,
+    })),
+
+    // Structure-type-aware ₹/sqm resolvers (mirror the budget's computed keys).
+    { group: "capex_in", key: "civil_rate_per_sqm", label: "Civil rate (₹/sqm, resolved)", kind: "formula", dataType: "currency", formula: "structure_is_g2 * civil_per_sqm_g2 + structure_is_g1 * civil_per_sqm_g1 + structure_is_single * civil_per_sqm_single", unit: "₹/sqm", surface: "finance" },
+    { group: "capex_in", key: "electrical_rate_per_sqm", label: "Electrical rate (₹/sqm, resolved)", kind: "formula", dataType: "currency", formula: "structure_is_g2 * electrical_per_sqm_g2 + structure_is_g1 * electrical_per_sqm_g1 + structure_is_single * electrical_per_sqm_single", unit: "₹/sqm", surface: "finance" },
+
+    // Auto-derived area — user's fixtures + service rooms + circulation, or override.
+    { group: "capex_in", key: "area_sqm_derived", label: "Built-up area (derived)", kind: "formula", dataType: "number", formula: "IF(area_sqm_override > 0, area_sqm_override, (wc_seats * sqm_per_wc_seat + bath_cubicles * sqm_per_bath + washing_machines * sqm_per_machine + stp_kld * sqm_per_stp_kld + sqm_ro_room_fixed + sqm_service_rooms_fixed) * (1 + sqm_circulation_pct / 100))", unit: "sqm" },
+
+    // Capex lines — each = per-unit rate × capacity (+ fixed).
+    { group: "capex_in", key: "capex_civil",             label: "Civil construction",           kind: "formula", dataType: "currency", formula: "area_sqm_derived * civil_rate_per_sqm + civil_shell_fixed", unit: "INR" },
+    { group: "capex_in", key: "capex_plumbing",          label: "Plumbing + sanitaryware",      kind: "formula", dataType: "currency", formula: "wc_seats * plumbing_per_wc_seat + bath_cubicles * plumbing_per_bath + washing_machines * plumbing_per_machine + ro_lph * plumbing_per_ro_lph + plumbing_fixed", unit: "INR" },
+    { group: "capex_in", key: "capex_washing_machines",  label: "Washing machines + spin dryers", kind: "formula", dataType: "currency", formula: "washing_machines * capex_per_washing_machine", unit: "INR" },
+    { group: "capex_in", key: "capex_ro",                label: "RO plant + Water ATM",         kind: "formula", dataType: "currency", formula: "ro_lph * capex_per_ro_lph", unit: "INR" },
+    { group: "capex_in", key: "capex_stp",               label: "Greywater MBBR STP",           kind: "formula", dataType: "currency", formula: "stp_kld * capex_stp_per_kld", unit: "INR" },
+    { group: "capex_in", key: "capex_biodigester",       label: "Biodigester / septic",         kind: "formula", dataType: "currency", formula: "wc_seats * capex_biodigester_per_seat", unit: "INR" },
+    { group: "capex_in", key: "capex_tanks",             label: "Storage tanks (UG + OH)",      kind: "formula", dataType: "currency", formula: "tank_storage_litres * tanks_per_litre + tanks_fixed", unit: "INR" },
+    { group: "capex_in", key: "capex_solar",             label: "Solar PV system",              kind: "formula", dataType: "currency", formula: "solar_kwp * solar_per_kwp", unit: "INR" },
+    { group: "capex_in", key: "capex_electrical",        label: "Electrical works",             kind: "formula", dataType: "currency", formula: "area_sqm_derived * electrical_rate_per_sqm + electrical_fixed", unit: "INR" },
+    { group: "capex_in", key: "capex_iot",               label: "Payment + IoT monitoring",     kind: "formula", dataType: "currency", formula: "wc_seats * iot_per_wc_seat + bath_cubicles * iot_per_bath + iot_fixed", unit: "INR" },
+    { group: "capex_in", key: "capex_approval",          label: "Approval fees",                kind: "formula", dataType: "currency", formula: "approval_fixed + wc_seats * approval_per_seat", unit: "INR" },
+    { group: "capex_in", key: "capex_signage",           label: "Signage, accessibility, furnishings", kind: "formula", dataType: "currency", formula: "(wc_seats + bath_cubicles + washing_machines) * signage_per_fixture + signage_fixed", unit: "INR" },
+    { group: "capex_in", key: "capex_design",            label: "Design + supervision",         kind: "formula", dataType: "currency", formula: "(capex_civil + capex_plumbing + capex_washing_machines + capex_ro + capex_stp + capex_biodigester + capex_tanks + capex_solar + capex_electrical + capex_iot + capex_approval + capex_signage) * design_pct_of_hardware / 100", unit: "INR" },
+    { group: "capex_in", key: "capex_contingency_pct", label: "Contingency (fraction, derived from rate)", kind: "formula", dataType: "percent", formula: "contingency_pct_of_subtotal / 100", unit: "%" },
+    { group: "capex_in", key: "capex_tax_pct",         label: "GST + taxes (fraction, derived from rate)", kind: "formula", dataType: "percent", formula: "tax_pct_of_subtotal / 100", unit: "%" },
 
     // ── 7. Opex inputs ─────────────────────────────────────────────────────
     // ── Staffing: headcount × salary per role. Number can move independently of
     // salary — letting the user grow the team without inflating every cost line.
     { group: "opex_in", key: "num_caretakers", label: "Caretakers (headcount)", kind: "input", dataType: "int", defaultJson: 3, unit: "people", notes: "Total caretakers on payroll. Default 3 = one per 8-hour shift × 3 shifts/day.", ui: { min: 1, max: 9, step: 1 } },
     { group: "opex_in", key: "salary_caretaker_per_shift", label: "Caretaker salary", kind: "input", dataType: "currency", defaultJson: 12000, unit: "INR/person/mo" },
-    { group: "opex_in", key: "num_plant_operators", label: "Plant operators (headcount)", kind: "input", dataType: "int", defaultJson: 1, unit: "people", notes: "Technician for the RO plant and greywater treatment unit.", ui: { min: 0, max: 4, step: 1 } },
+    // Plant operator + laundry supervisor now GATE on capacity: 0 headcount
+    // when the corresponding service is absent (a toilet-only block doesn't
+    // carry these roles). The user's override still applies via the input.
+    { group: "opex_in", key: "num_plant_operators_override", label: "Plant operators (override; 0 = auto)", kind: "input", dataType: "int", defaultJson: 0, unit: "people", notes: "0 lets the model auto-gate on capacity (1 if RO or STP > 0, else 0). Positive = force this headcount.", surface: "finance", ui: { min: 0, max: 4, step: 1 } },
+    { group: "opex_in", key: "num_plant_operators", label: "Plant operators (headcount, resolved)", kind: "formula", dataType: "int", formula: "IF(num_plant_operators_override > 0, num_plant_operators_override, IF(ro_lph > 0 || stp_kld > 0, 1, 0))", unit: "people" },
     { group: "opex_in", key: "salary_plant_operator", label: "Plant operator salary", kind: "input", dataType: "currency", defaultJson: 10000, unit: "INR/person/mo" },
-    { group: "opex_in", key: "num_laundry_supervisors", label: "Laundry supervisors (headcount)", kind: "input", dataType: "int", defaultJson: 1, unit: "people", notes: "Staff running the laundry intake and machines.", ui: { min: 0, max: 3, step: 1 } },
+    { group: "opex_in", key: "num_laundry_supervisors_override", label: "Laundry supervisors (override; 0 = auto)", kind: "input", dataType: "int", defaultJson: 0, unit: "people", notes: "0 lets the model auto-gate (1 if washing machines > 0, else 0).", surface: "finance", ui: { min: 0, max: 3, step: 1 } },
+    { group: "opex_in", key: "num_laundry_supervisors", label: "Laundry supervisors (headcount, resolved)", kind: "formula", dataType: "int", formula: "IF(num_laundry_supervisors_override > 0, num_laundry_supervisors_override, IF(washing_machines > 0, 1, 0))", unit: "people" },
     { group: "opex_in", key: "salary_laundry_supervisor", label: "Laundry supervisor salary", kind: "input", dataType: "currency", defaultJson: 8000, unit: "INR/person/mo" },
     { group: "opex_in", key: "num_security_guards", label: "Security guards (headcount)", kind: "input", dataType: "int", defaultJson: 2, unit: "people", notes: "Guards across day and night. Default 2 = day + night cover.", ui: { min: 0, max: 6, step: 1 } },
     { group: "opex_in", key: "salary_security_guard", label: "Security guard salary", kind: "input", dataType: "currency", defaultJson: 10000, unit: "INR/person/mo" },
@@ -542,40 +580,59 @@ async function main() {
       config: {
         domainName: "Sanitation_Complex",
         years: 1,
+        // templateKey on each line links the promoted BudgetLine back to a
+        // LineTemplate row → the created budget is regenerate-safe and
+        // indistinguishable from one created via /budget/new with the same inputs.
         capexLines: [
-          { nodeKey: "capex_civil", description: "Civil construction" },
-          { nodeKey: "capex_plumbing", description: "Plumbing + sanitaryware" },
-          { nodeKey: "capex_washing_machines", description: "Washing machines + spin dryers" },
-          { nodeKey: "capex_ro", description: "RO plant + Water ATM" },
-          { nodeKey: "capex_stp", description: "Greywater MBBR STP" },
-          { nodeKey: "capex_biodigester", description: "Biodigester / septic" },
-          { nodeKey: "capex_tanks", description: "Storage tanks (UG + OH)" },
-          { nodeKey: "capex_solar", description: "Solar PV system" },
-          { nodeKey: "capex_electrical", description: "Electrical works" },
-          { nodeKey: "capex_iot", description: "Payment + IoT monitoring" },
-          { nodeKey: "capex_approval", description: "Approval fees" },
-          { nodeKey: "capex_design", description: "Design + supervision" },
-          { nodeKey: "capex_signage", description: "Signage, accessibility, furnishings" },
-          { nodeKey: "capex_contingency", description: "Contingency" },
-          { nodeKey: "capex_tax", description: "GST + taxes" },
+          { nodeKey: "capex_civil",             description: "Civil construction",             templateKey: "san.cap_civil" },
+          { nodeKey: "capex_plumbing",          description: "Plumbing + sanitaryware",         templateKey: "san.cap_plumbing" },
+          { nodeKey: "capex_washing_machines",  description: "Washing machines + spin dryers",  templateKey: "san.cap_washing" },
+          { nodeKey: "capex_ro",                description: "RO plant + Water ATM",            templateKey: "san.cap_ro" },
+          { nodeKey: "capex_stp",               description: "Greywater MBBR STP",              templateKey: "san.cap_stp" },
+          { nodeKey: "capex_biodigester",       description: "Biodigester / septic",            templateKey: "san.cap_biodigester" },
+          { nodeKey: "capex_tanks",             description: "Storage tanks (UG + OH)",         templateKey: "san.cap_tanks" },
+          { nodeKey: "capex_solar",             description: "Solar PV system",                 templateKey: "san.cap_solar" },
+          { nodeKey: "capex_electrical",        description: "Electrical works",                templateKey: "san.cap_electrical" },
+          { nodeKey: "capex_iot",               description: "Payment + IoT monitoring",        templateKey: "san.cap_iot" },
+          { nodeKey: "capex_approval",          description: "Approval fees",                   templateKey: "san.cap_approval" },
+          { nodeKey: "capex_design",            description: "Design + supervision",            templateKey: "san.cap_design" },
+          { nodeKey: "capex_signage",           description: "Signage, accessibility, furnishings", templateKey: "san.cap_signage" },
+          { nodeKey: "capex_contingency",       description: "Contingency",                     templateKey: "san.cap_contingency" },
+          { nodeKey: "capex_tax",               description: "GST + taxes",                     templateKey: "san.cap_tax" },
         ],
         opexLines: [
-          { nodeKey: "opex_caretakers", description: "Caretakers", costCategory: "Salary", months: 10 },
-          { nodeKey: "opex_plant_operators_total", description: "Plant operators", costCategory: "Salary", months: 10 },
-          { nodeKey: "opex_laundry_supervisors_total", description: "Laundry supervisors", costCategory: "Salary", months: 10 },
-          { nodeKey: "opex_security_total", description: "Security guards", costCategory: "Salary", months: 10 },
-          { nodeKey: "opex_admin_cashier_total", description: "Admin / cashier", costCategory: "Salary", months: 10 },
-          { nodeKey: "electricity_monthly", description: "Electricity (net of solar)", costCategory: "Other", months: 10 },
-          { nodeKey: "water_bwssb_monthly", description: "Water (BWSSB)", costCategory: "Other", months: 10 },
-          { nodeKey: "cleaning_consumables_monthly", description: "Cleaning consumables", costCategory: "Other", months: 10 },
-          { nodeKey: "laundry_detergent_monthly", description: "Laundry detergent", costCategory: "Other", months: 10 },
-          { nodeKey: "ro_consumables_monthly", description: "RO consumables", costCategory: "Other", months: 10 },
-          { nodeKey: "stp_consumables_monthly", description: "STP consumables", costCategory: "Other", months: 10 },
-          { nodeKey: "desludging_monthly_amortised", description: "Septic desludging (amortised)", costCategory: "Other", months: 10 },
-          { nodeKey: "amc_monthly", description: "Maintenance / AMC reserve", costCategory: "Other", months: 10 },
-          { nodeKey: "tech_monthly", description: "Technology / monitoring", costCategory: "Other", months: 10 },
-          { nodeKey: "opex_lab_monthly", description: "Water quality testing", costCategory: "Other", months: 10 },
+          { nodeKey: "opex_caretakers",                description: "Caretakers",                     costCategory: "Salary", months: 10, templateKey: "san.caretaker" },
+          { nodeKey: "opex_plant_operators_total",     description: "Plant operators",                costCategory: "Salary", months: 10, templateKey: "san.plant_operator" },
+          { nodeKey: "opex_laundry_supervisors_total", description: "Laundry supervisors",            costCategory: "Salary", months: 10, templateKey: "san.laundry_sup" },
+          { nodeKey: "opex_security_total",            description: "Security guards",                costCategory: "Salary", months: 10, templateKey: "san.security" },
+          { nodeKey: "opex_admin_cashier_total",       description: "Admin / cashier",                costCategory: "Salary", months: 10, templateKey: "san.admin" },
+          { nodeKey: "electricity_monthly",            description: "Electricity (net of solar)",     costCategory: "Other",  months: 10, templateKey: "san.electricity" },
+          { nodeKey: "water_bwssb_monthly",            description: "Water (BWSSB)",                  costCategory: "Other",  months: 10, templateKey: "san.water" },
+          { nodeKey: "cleaning_consumables_monthly",   description: "Cleaning consumables",           costCategory: "Other",  months: 10, templateKey: "san.cleaning" },
+          { nodeKey: "laundry_detergent_monthly",      description: "Laundry detergent",              costCategory: "Other",  months: 10, templateKey: "san.detergent" },
+          { nodeKey: "ro_consumables_monthly",         description: "RO consumables",                 costCategory: "Other",  months: 10, templateKey: "san.ro_consum" },
+          { nodeKey: "stp_consumables_monthly",        description: "STP consumables",                costCategory: "Other",  months: 10, templateKey: "san.stp_consum" },
+          { nodeKey: "desludging_monthly_amortised",   description: "Septic desludging (amortised)",  costCategory: "Other",  months: 10, templateKey: "san.desludging" },
+          { nodeKey: "amc_monthly",                    description: "Maintenance / AMC reserve",      costCategory: "Other",  months: 10, templateKey: "san.amc" },
+          { nodeKey: "tech_monthly",                   description: "Technology / monitoring",        costCategory: "Other",  months: 10, templateKey: "san.tech" },
+          { nodeKey: "opex_lab_monthly",               description: "Water quality testing",          costCategory: "Other",  months: 10, templateKey: "san.lab" },
         ],
+        // Model input key → budget inp.* key (drop "inp." prefix in the value).
+        // Written into Budget.inputs.extraInputs so regenerate-sanitation-budgets
+        // re-derives every line from the same capacity mix.
+        inputMapping: {
+          wc_seats: "wcSeats",
+          bath_cubicles: "bathCubicles",
+          washing_machines: "washingMachines",
+          ro_lph: "roLph",
+          stp_kld: "stpKld",
+          solar_kwp: "solarKwp",
+          tank_storage_litres: "tankStorageLitres",
+          area_sqm_override: "areaSqmOverride",
+          structure_is_single: "structureIsSingle",
+          structure_is_g1: "structureIsG1",
+          structure_is_g2: "structureIsG2",
+        },
       } },
 
     // Operations day-in-the-life sim (multi-service + DEWATS recycling).

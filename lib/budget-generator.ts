@@ -1,5 +1,6 @@
 import type { BudgetSection, BudgetLineCadence, InflationType, LineTemplate } from "@/app/generated/prisma/client";
-import { lookupCost } from "@/lib/budget-costs";
+import { lookupCost, ALL_COMPUTED_REGISTRY_KEYS } from "@/lib/budget-costs";
+import { evaluateString } from "@/lib/formula/engine";
 
 export type BudgetGeneratorInputs = Record<string, number>;
 
@@ -94,6 +95,17 @@ function computeUnitCount(t: LineTemplate, inp: BudgetGeneratorInputs, reg: Reco
 
 function computeUnitCost(t: LineTemplate, inp: BudgetGeneratorInputs, reg: Record<string, number>): number {
   if (t.isSalaryStub) return 0;
+
+  // Parametric branch: formula wins over legacy costKey / costPctOf paths.
+  // Registry (including inp.*) is already augmented + computed keys resolved.
+  if (t.formula) {
+    try {
+      const v = evaluateString(t.formula, name => (name in reg ? reg[name] : undefined));
+      return Math.round(typeof v === "number" ? v : Number(v));
+    } catch {
+      return 0;
+    }
+  }
 
   if (t.userInputCost) return resolveUserInput(t.userInputCost, inp);
 
@@ -212,16 +224,32 @@ function templateToLine(
   };
 }
 
-// Injects all programme inputs into registry under inp.* namespace
+// Injects all programme inputs into registry under inp.* namespace, then
+// evaluates every registered computed-key formula (in declared order) so
+// downstream LineTemplate.formula expressions can reference shared
+// subexpressions like san.area_sqm_derived or san.hardware_subtotal_derived.
+// Failed evaluations record 0 rather than throwing — an error would kill the
+// whole budget generation for one bad formula.
 export function buildAugmentedRegistry(
   registry: Record<string, number>,
   inp: BudgetGeneratorInputs,
 ): Record<string, number> {
-  return {
+  const augmented: Record<string, number> = {
     ...registry,
     ...Object.fromEntries(Object.entries(inp).map(([k, v]) => [`inp.${k}`, v])),
     "inp.cosTotal": (inp.nClusters ?? 0) * (inp.cosPerCluster ?? 0),
   };
+
+  for (const { key, formula } of ALL_COMPUTED_REGISTRY_KEYS) {
+    try {
+      const v = evaluateString(formula, name => (name in augmented ? augmented[name] : undefined));
+      augmented[key] = typeof v === "number" ? v : Number(v);
+    } catch {
+      augmented[key] = 0;
+    }
+  }
+
+  return augmented;
 }
 
 export function generateBudgetLines(

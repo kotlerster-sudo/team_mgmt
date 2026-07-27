@@ -3,6 +3,8 @@
 import { useState, useTransition, useMemo } from "react";
 import { createBudget, createGrantPartner } from "../actions";
 import type { DomainOption, DomainInputField, CostItem } from "./page";
+import type { EnumPicker } from "@/lib/budget/inputEnumOptions";
+import { expandEnum, inferEnumValue } from "@/lib/budget/inputEnumOptions";
 
 const FALLBACK_DOMAINS: DomainOption[] = [
   { key: "Children",     label: "Children",                    description: "CLCs, after-school, camps",            city: "Bangalore", inputs: [] },
@@ -19,10 +21,16 @@ const FALLBACK_CROSS_CUTTING: DomainInputField[] = [
   { key: "nClusters",    label: "No. of clusters",    unit: "count", defaultValue: 0, isRent: false, requiredByDomains: ["WelfareRights"] },
 ];
 
-function initInputs(crossCutting: DomainInputField[], allDomains: DomainOption[]): Record<string, number> {
+function initInputs(crossCutting: DomainInputField[], allDomains: DomainOption[], enumPickers: EnumPicker[] = []): Record<string, number> {
   const init: Record<string, number> = {};
   for (const f of crossCutting) init[f.key] = f.defaultValue;
   for (const d of allDomains) for (const f of d.inputs) { init[f.key] ??= f.defaultValue; }
+  // Seed enum-managed sentinel keys from each picker's defaultValue so
+  // formulas evaluate correctly even if the user never touches the picker.
+  for (const p of enumPickers) {
+    const patch = expandEnum(p.pickerKey, p.defaultValue);
+    for (const [k, v] of Object.entries(patch)) init[k] ??= v;
+  }
   return init;
 }
 
@@ -35,12 +43,14 @@ export default function NewBudgetForm({
   costItems = [],
   initialCity,
   partners = [],
+  enumPickers = [],
 }: {
   domains?: DomainOption[];
   crossCuttingInputs?: DomainInputField[];
   costItems?: CostItem[];
   initialCity?: string;
   partners?: { id: string; name: string; city: string }[];
+  enumPickers?: EnumPicker[];
 }) {
   const effectiveDomains     = allDomains.length > 0     ? allDomains     : FALLBACK_DOMAINS;
   const effectiveCrossCutting = allCrossCutting.length > 0 ? allCrossCutting : FALLBACK_CROSS_CUTTING;
@@ -64,7 +74,7 @@ export default function NewBudgetForm({
   const [selectedDomains, setSelectedDomains] = useState<Set<string>>(new Set());
   const [includeCrossCutting, setIncludeCrossCutting] = useState(true);
   const [programmeInputs, setProgrammeInputs] = useState<Record<string, number>>(() =>
-    initInputs(effectiveCrossCutting, effectiveDomains)
+    initInputs(effectiveCrossCutting, effectiveDomains, enumPickers)
   );
   // Multi-partner: split the budget across delivery partners, each with its own
   // inputs and an explicit % of shared costs. partnerList[activePartnerIdx] is
@@ -72,7 +82,7 @@ export default function NewBudgetForm({
   const [multiPartner, setMultiPartner] = useState(false);
   const [partnerList, setPartnerList] = useState<{ name: string; sharedPct: number; inputs: Record<string, number> }[]>([]);
   const [activePartnerIdx, setActivePartnerIdx] = useState(0);
-  const blankInputs = () => initInputs(effectiveCrossCutting, effectiveDomains);
+  const blankInputs = () => initInputs(effectiveCrossCutting, effectiveDomains, enumPickers);
   const enableMultiPartner = (on: boolean) => {
     setMultiPartner(on);
     if (on && partnerList.length === 0) {
@@ -129,6 +139,48 @@ export default function NewBudgetForm({
       setProgrammeInputs(prev => ({ ...prev, [key]: v }));
     }
   };
+
+  // Enum pickers: selecting an option folds its sentinel inp.* numerics into
+  // the current input record (partner-scoped in multi-partner mode). Managed
+  // sentinel keys are hidden from the numeric-field render pass.
+  const enumManagedKeys = useMemo(
+    () => new Set(enumPickers.flatMap(p => p.managedInputKeys)),
+    [enumPickers],
+  );
+  const setEnum = (pickerKey: string, value: string) => {
+    const patch = expandEnum(pickerKey, value);
+    if (multiPartner) {
+      setPartnerList(prev => prev.map((p, i) => i === activePartnerIdx ? { ...p, inputs: { ...p.inputs, ...patch } } : p));
+    } else {
+      setProgrammeInputs(prev => ({ ...prev, ...patch }));
+    }
+  };
+  // Only surface pickers whose sentinels are actually referenced by an
+  // input on a currently-selected domain (or by cross-cutting), so a Children
+  // budget doesn't show the sanitation structureType picker.
+  const referencedKeys = useMemo(() => {
+    const set = new Set<string>();
+    for (const f of visibleCrossCutting) set.add(f.key);
+    for (const d of cityDomains) {
+      if (!selectedDomains.has(d.key)) continue;
+      for (const f of d.inputs) set.add(f.key);
+    }
+    return set;
+  }, [visibleCrossCutting, cityDomains, selectedDomains]);
+  const visibleEnumPickers = useMemo(() => {
+    // A picker is relevant if a template on a selected domain references any of
+    // its managed sentinels. We infer domain relevance by checking whether any
+    // discovered inputVar on a selected domain matches — but sentinels aren't
+    // themselves in the discovered inputs (we filter them out). Fallback: show
+    // the picker whenever the sanitation domain (or any domain whose formulas
+    // could use it) is selected — currently only Sanitation_Complex.
+    return enumPickers.filter(p =>
+      // Heuristic: sanitation structure picker shows when Sanitation_Complex is selected.
+      p.pickerKey === "structureType"
+        ? selectedDomains.has("Sanitation_Complex")
+        : true
+    );
+  }, [enumPickers, selectedDomains, referencedKeys]);
 
   const canProceed = name.trim() && selectedDomains.size > 0;
 
@@ -438,7 +490,7 @@ export default function NewBudgetForm({
 
           {visibleCrossCutting.length > 0 && (
             <Section title="Programme scale">
-              {visibleCrossCutting.map(f => (
+              {visibleCrossCutting.filter(f => !enumManagedKeys.has(f.key)).map(f => (
                 <Field key={f.key} label={f.label} value={currentInputs[f.key] ?? 0} onChange={setNum(f.key)}
                   hint={f.unit !== "count" ? `Unit: ${f.unit}` : undefined} />
               ))}
@@ -447,9 +499,21 @@ export default function NewBudgetForm({
 
           {domainSections().map(({ label, inputs }) => (
             <Section key={label} title={label}>
-              {inputs.map(f => (
+              {inputs.filter(f => !enumManagedKeys.has(f.key)).map(f => (
                 <Field key={f.key} label={f.label} value={currentInputs[f.key] ?? 0} onChange={setNum(f.key)}
                   hint={f.unit !== "count" ? `Unit: ${f.unit}` : undefined} />
+              ))}
+              {label === "Sanitation Complex" && visibleEnumPickers.map(p => (
+                <label key={p.pickerKey} className="block">
+                  <span className="text-sm text-stone-700">{p.label}</span>
+                  <select
+                    value={inferEnumValue(p.pickerKey, currentInputs)}
+                    onChange={e => setEnum(p.pickerKey, e.target.value)}
+                    className="mt-1 w-full px-3 py-2 rounded-md border border-stone-200 text-sm focus:border-sky-400 focus:ring-1 focus:ring-sky-400 outline-none"
+                  >
+                    {p.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </label>
               ))}
             </Section>
           ))}
