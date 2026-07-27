@@ -8,24 +8,24 @@ datasource db {
 }
 
 model User {
-  id                  String    @id @default(cuid())
+  id                  String        @id @default(cuid())
   name                String?
-  email               String    @unique
+  email               String        @unique
   emailVerified       DateTime?
   image               String?
   password            String?
-  role                String    @default("member")
+  role                String        @default("member")
   // Set when this account is the login for a grantee org (role "partner").
   granteeLogin        GrantPartner? @relation("PartnerLogin")
   // Owner = "primordial" super-admin. Asymmetric protection: only the owner
   // can mint new super-admins, and no other super-admin can demote, delete,
   // or reset the password of the owner. Exactly one user should carry this.
   // To transfer or relinquish ownership, do it via direct SQL update.
-  isOwner             Boolean   @default(false)
-  designation         String    @default("Other") // RP | ZL | PM | Other
+  isOwner             Boolean       @default(false)
+  designation         String        @default("Other") // RP | ZL | PM | Other
   bio                 String?
-  notifyDigest        Boolean   @default(false)
-  weeklyCapacity      Float     @default(40)
+  notifyDigest        Boolean       @default(false)
+  weeklyCapacity      Float         @default(40)
   externalCalendarUrl String?
   lastSeenAt          DateTime?
   // Tenancy (wiki module). Org is required logically but kept nullable here
@@ -36,11 +36,11 @@ model User {
   // in favour of email. Columns kept for data preservation — safe to drop in a
   // future migration if confirmed unused.
   phone               String?
-  whatsappOptIn       Boolean   @default(true)
+  whatsappOptIn       Boolean       @default(true)
   // Wiki email rhythm — opt-out by default. Toggle from /settings/notifications.
-  emailOptIn          Boolean   @default(true)
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  emailOptIn          Boolean       @default(true)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
 
   accounts                  Account[]
   sessions                  Session[]
@@ -1902,58 +1902,58 @@ enum BudgetSection {
 }
 
 model Budget {
-  id                 String              @id @default(cuid())
+  id                 String                  @id @default(cuid())
   name               String
   partnerId          String
-  partner            User                @relation("BudgetPartner", fields: [partnerId], references: [id])
+  partner            User                    @relation("BudgetPartner", fields: [partnerId], references: [id])
   // Grantee org this budget belongs to (spans many budgets). Distinct from
   // partnerId (the User who created it). Null on legacy rows until assigned.
   grantPartnerId     String?
-  grantPartner       GrantPartner?       @relation(fields: [grantPartnerId], references: [id], onDelete: SetNull)
+  grantPartner       GrantPartner?           @relation(fields: [grantPartnerId], references: [id], onDelete: SetNull)
   domains            String[]
-  city               String              @default("Bangalore")
+  city               String                  @default("Bangalore")
   // years is kept for backward compat; horizonMonths is the source of truth.
   // years = ceil(horizonMonths / 12) is maintained at write time so list/select
   // queries that read `years` keep working without a sweep.
-  years              Int                 @default(1)
-  horizonMonths      Int                 @default(12)
+  years              Int                     @default(1)
+  horizonMonths      Int                     @default(12)
   // Where the pro-rated stub sits when horizonMonths isn't a whole number of
   // years: "end" (default — final band is partial) or "start" (Year 1 partial,
   // e.g. a project starting mid-year).
-  partialPosition    String              @default("end")
+  partialPosition    String                  @default("end")
   // When true, the budget is split across delivery partners (see
   // BudgetDeliveryPartner). Lines carry deliveryPartnerId; null = shared/master.
-  isMultiPartner     Boolean             @default(false)
-  applyInflation     Boolean             @default(true)
+  isMultiPartner     Boolean                 @default(false)
+  applyInflation     Boolean                 @default(true)
   // Per-budget inflation rates as percentages (e.g. 10 = 10%). Defaults track
   // the previously hard-coded values in lib/budget-generator.ts.
-  inflationSalaryPct Float               @default(10)
-  inflationOtherPct  Float               @default(5)
-  inflationNilPct    Float               @default(0)
+  inflationSalaryPct Float                   @default(10)
+  inflationOtherPct  Float                   @default(5)
+  inflationNilPct    Float                   @default(0)
   // Per-budget cost customisation. Sparse map of CostRegistry.itemKey → value
   // that the partner edited at create time; the snapshot is the full registry
   // view at create time and is what the generator merges overrides on top of.
   // Snapshot lets future "regenerate" or "scale up" actions reproduce the
   // partner's basis even if the registry has changed.
-  costOverrides      Json                @default("{}")
-  costSnapshot       Json                @default("{}")
+  costOverrides      Json                    @default("{}")
+  costSnapshot       Json                    @default("{}")
   // Set when the budget was created by importing a filled Excel template rather
   // than the parametric generator. Its lines carry hand edits, so a "regenerate
   // from inputs" action must confirm before overwriting them.
   importedAt         DateTime?
-  status             BudgetStatus        @default(draft)
+  status             BudgetStatus            @default(draft)
   inputs             BudgetInputs?
   lines              BudgetLine[]
   deliveryPartners   BudgetDeliveryPartner[]
   reportConfig       BudgetReportConfig?
   reportSlots        BudgetReportSlot[]
   reports            BudgetReport[]
-  borrowingsFrom     GrantBorrowing[]    @relation("BorrowingFrom")
-  borrowingsTo       GrantBorrowing[]    @relation("BorrowingTo")
+  borrowingsFrom     GrantBorrowing[]        @relation("BorrowingFrom")
+  borrowingsTo       GrantBorrowing[]        @relation("BorrowingTo")
   // After-school centre this budget belongs to (nullable — regular budgets don't).
-  schoolPlan         SchoolPlan?         @relation("SchoolBudget")
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
+  schoolPlan         SchoolPlan?             @relation("SchoolBudget")
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
 
   @@index([partnerId])
   @@index([grantPartnerId])
@@ -1963,17 +1963,17 @@ model Budget {
 // the dashboard can aggregate approved amounts + utilisation per partner. City-
 // scoped so the same name can exist independently under Bangalore/Chennai/Others.
 model GrantPartner {
-  id        String   @id @default(cuid())
-  name      String
-  city      String   @default("Bangalore") // Bangalore | Chennai | Others
-  notes     String?
-  isActive  Boolean  @default(true)
+  id                  String       @id @default(cuid())
+  name                String
+  city                String       @default("Bangalore") // Bangalore | Chennai | Others
+  notes               String?
+  isActive            Boolean      @default(true)
   // Optional login account for this grantee (a User with role "partner"). Lets
   // the grantee sign in and file their own reports. One account per grantee.
-  userId    String?  @unique
-  user      User?    @relation("PartnerLogin", fields: [userId], references: [id], onDelete: SetNull)
-  createdAt DateTime @default(now())
-  budgets   Budget[]
+  userId              String?      @unique
+  user                User?        @relation("PartnerLogin", fields: [userId], references: [id], onDelete: SetNull)
+  createdAt           DateTime     @default(now())
+  budgets             Budget[]
   schoolPlansAsAnchor SchoolPlan[] @relation("SchoolPlanAnchorPartner")
 
   @@unique([city, name])
@@ -2192,42 +2192,42 @@ model BudgetReportSlot {
 }
 
 model BudgetReport {
-  id                   String                      @id @default(cuid())
-  slotId               String                      @unique
-  slot                 BudgetReportSlot            @relation(fields: [slotId], references: [id], onDelete: Cascade)
-  budgetId             String
-  budget               Budget                      @relation(fields: [budgetId], references: [id], onDelete: Cascade)
-  openingBalance       Float                       @default(0)
-  tranchesReceived     Float                       @default(0)
-  interestEarned       Float                       @default(0)
-  bankBalance          Float                       @default(0)
-  fdBalance            Float                       @default(0)
-  cashInHand           Float                       @default(0)
-  advances             Float                       @default(0)
-  receivables          Float                       @default(0)
-  payables             Float                       @default(0)
-  bankStatementUrl     String?
-  bankStatementParsed  Json?
-  partnerNotes         String?
-  reviewerNotes        String?
-  submittedAt          DateTime?
-  approvedAt           DateTime?
+  id                       String                      @id @default(cuid())
+  slotId                   String                      @unique
+  slot                     BudgetReportSlot            @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  budgetId                 String
+  budget                   Budget                      @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  openingBalance           Float                       @default(0)
+  tranchesReceived         Float                       @default(0)
+  interestEarned           Float                       @default(0)
+  bankBalance              Float                       @default(0)
+  fdBalance                Float                       @default(0)
+  cashInHand               Float                       @default(0)
+  advances                 Float                       @default(0)
+  receivables              Float                       @default(0)
+  payables                 Float                       @default(0)
+  bankStatementUrl         String?
+  bankStatementParsed      Json?
+  partnerNotes             String?
+  reviewerNotes            String?
+  submittedAt              DateTime?
+  approvedAt               DateTime?
   // Finance Declaration (legal affirmation captured at submit). Snapshot + hash
   // freeze exactly what was affirmed; identity/ip/ua are the audit trail; the
   // signed+sealed scan is the letterhead artifact. declarationAcceptedById is a
   // plain id (no FK) so the record survives user renames/deletes.
-  declarationAcceptedAt     DateTime?
-  declarationAcceptedById   String?
-  declarationSnapshot       Json?
-  declarationHash           String?
-  declarationIp             String?
-  declarationUserAgent      String?
-  declarationSignedScanUrl  String?
-  lines                BudgetReportLine[]
-  reallocationRequests BudgetReallocationRequest[]
-  fdDetails            BudgetReportFd[]
-  createdAt            DateTime                    @default(now())
-  updatedAt            DateTime                    @updatedAt
+  declarationAcceptedAt    DateTime?
+  declarationAcceptedById  String?
+  declarationSnapshot      Json?
+  declarationHash          String?
+  declarationIp            String?
+  declarationUserAgent     String?
+  declarationSignedScanUrl String?
+  lines                    BudgetReportLine[]
+  reallocationRequests     BudgetReallocationRequest[]
+  fdDetails                BudgetReportFd[]
+  createdAt                DateTime                    @default(now())
+  updatedAt                DateTime                    @updatedAt
 
   @@index([budgetId])
 }
@@ -2352,13 +2352,13 @@ model CostRegistryHistory {
 // unitCost is the roll-up Σ(qty × unitCost) and the Working sheet expands these
 // rows so the derivation stays visible. Generic across all domains.
 model CostRegistryComponent {
-  id            String  @id @default(cuid())
+  id            String   @id @default(cuid())
   city          String
   parentItemKey String // FK-by-convention to CostRegistry.itemKey (same city)
-  position      Int     @default(0)
+  position      Int      @default(0)
   label         String
   spec          String? // free-text specification from the cost book
-  qty           Float   @default(1)
+  qty           Float    @default(1)
   unitCost      Float // amount = qty × unitCost
   notes         String?
   updatedAt     DateTime @updatedAt
@@ -3328,8 +3328,8 @@ model ActionPoint {
 // needs divergent content. See /Users/vishnuharikumar/.claude/plans/async-snacking-hippo.md.
 
 model WikiArticle {
-  id            String    @id @default(cuid())
-  slug          String    @unique
+  id            String @id @default(cuid())
+  slug          String @unique
   title         String
   // 'question' | 'guideline_appendix' | 'care_plan_derivation' | 'pathway'
   // | 'template' | 'chapter' | 'framework' | 'flag_protocol'
@@ -3339,7 +3339,7 @@ model WikiArticle {
   // TipTap JSON doc. Preserves mentions (wikilinks), tables, formatting.
   contentJson   Json
   // Sort within kind for category pages.
-  naturalOrder  Int       @default(0)
+  naturalOrder  Int    @default(0)
 
   // Soft-delete. Lists, spines, categories, search all filter archivedAt: null.
   archivedAt   DateTime?
@@ -3352,16 +3352,16 @@ model WikiArticle {
   // trace lineage; does NOT propagate edits.
   forkedFromId String?
 
-  createdBy   User                 @relation("WikiArticleCreator", fields: [createdById], references: [id])
-  updatedBy   User                 @relation("WikiArticleUpdater", fields: [updatedById], references: [id])
-  archivedBy  User?                @relation("WikiArticleArchiver", fields: [archivedById], references: [id])
-  forkedFrom  WikiArticle?         @relation("WikiArticleForks", fields: [forkedFromId], references: [id])
-  forks       WikiArticle[]        @relation("WikiArticleForks")
-  versions    WikiArticleVersion[]
+  createdBy     User                 @relation("WikiArticleCreator", fields: [createdById], references: [id])
+  updatedBy     User                 @relation("WikiArticleUpdater", fields: [updatedById], references: [id])
+  archivedBy    User?                @relation("WikiArticleArchiver", fields: [archivedById], references: [id])
+  forkedFrom    WikiArticle?         @relation("WikiArticleForks", fields: [forkedFromId], references: [id])
+  forks         WikiArticle[]        @relation("WikiArticleForks")
+  versions      WikiArticleVersion[]
   // Links FROM this article (where this is the question; targets show in fork panels).
-  outboundLinks WikiArticleLink[]  @relation("WikiArticleLinkFrom")
+  outboundLinks WikiArticleLink[]    @relation("WikiArticleLinkFrom")
   // Links TO this article (where this article appears in someone else's fork panel).
-  inboundLinks  WikiArticleLink[]  @relation("WikiArticleLinkTo")
+  inboundLinks  WikiArticleLink[]    @relation("WikiArticleLinkTo")
   spineEntries  WikiSpineEntry[]
 
   @@index([programDomain, kind, naturalOrder])
@@ -3399,7 +3399,7 @@ model WikiArticleLink {
   ordinal       Int    @default(0)
 
   from WikiArticle @relation("WikiArticleLinkFrom", fields: [fromArticleId], references: [id], onDelete: Cascade)
-  to   WikiArticle @relation("WikiArticleLinkTo",   fields: [toArticleId],   references: [id], onDelete: Cascade)
+  to   WikiArticle @relation("WikiArticleLinkTo", fields: [toArticleId], references: [id], onDelete: Cascade)
 
   @@unique([fromArticleId, toArticleId, panel])
   // Backlinks ("appears on N questions") + reverse fork-panel lookups.
@@ -3415,6 +3415,7 @@ model WikiSpine {
   programDomain String
 
   entries WikiSpineEntry[]
+
   @@index([programDomain])
 }
 
@@ -3471,11 +3472,11 @@ model SeedingWorkstream {
 
 /// Grouping level within a workstream (A0, C5, E1, Go-live readiness…).
 model SeedingPhase {
-  id           String                 @id @default(cuid())
+  id           String                  @id @default(cuid())
   workstreamId String
-  workstream   SeedingWorkstream      @relation(fields: [workstreamId], references: [id], onDelete: Cascade)
+  workstream   SeedingWorkstream       @relation(fields: [workstreamId], references: [id], onDelete: Cascade)
   label        String
-  sortOrder    Int                    @default(0)
+  sortOrder    Int                     @default(0)
   // Which curated Road-to-Launch milestone this phase rolls into (nullable).
   milestoneId  String?
   milestone    SeedingLaunchMilestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
@@ -3699,7 +3700,7 @@ enum SchoolComponentDelivery {
 /// One after-school-centre plan for a school. The row is the school + the plan
 /// state (a school always has exactly one plan in Phase 1; versioning deferred).
 model SchoolPlan {
-  id                   String   @id @default(cuid())
+  id                   String           @id @default(cuid())
   name                 String
   officialName         String?
   diseCode             String?
@@ -3728,12 +3729,12 @@ model SchoolPlan {
   sdmcStatus           String?
   deptContactName      String?
   ourLeadUserId        String?
-  ourLead              User?    @relation("SchoolPlanOurLead", fields: [ourLeadUserId], references: [id], onDelete: SetNull)
+  ourLead              User?            @relation("SchoolPlanOurLead", fields: [ourLeadUserId], references: [id], onDelete: SetNull)
   // Anchor partner as a GrantPartner (the same "partners" registry the Budget
   // module uses). `anchorPartnerName` is retained as a free-text fallback for
   // plans whose anchor isn't yet a GrantPartner row.
   anchorPartnerId      String?
-  anchorPartner        GrantPartner? @relation("SchoolPlanAnchorPartner", fields: [anchorPartnerId], references: [id], onDelete: SetNull)
+  anchorPartner        GrantPartner?    @relation("SchoolPlanAnchorPartner", fields: [anchorPartnerId], references: [id], onDelete: SetNull)
   anchorPartnerName    String?
   campusAfterHoursUse  String?
   siteAreaSqft         Int?
@@ -3761,6 +3762,7 @@ model SchoolPlan {
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
 
+  categories  SchoolPlanCategory[]
   steps       SchoolPlanStep[]
   settlements SchoolPlanCatchment[]
   spaces      SchoolPlanSpace[]
@@ -3778,14 +3780,42 @@ model SchoolPlan {
   @@index([anchorPartnerId])
 }
 
-/// Per-plan instance of a step from the 16-step template
-/// (lib/schoolPlan/stepTemplate.ts). Instantiated on SchoolPlan.create; idempotent.
+/// Per-plan grouping for steps. The 6 default categories (discovery, site_infra,
+/// programme_partners, approvals_timeline, financials, governance) are seeded
+/// on SchoolPlan.create from lib/schoolPlan/stepTemplate.ts; users can rename,
+/// reorder, add, or delete them per school. `key` is set for seeded rows and
+/// null for user-added categories.
+model SchoolPlanCategory {
+  id          String           @id @default(cuid())
+  planId      String
+  plan        SchoolPlan       @relation(fields: [planId], references: [id], onDelete: Cascade)
+  key         String?
+  title       String
+  description String?
+  sortOrder   Int              @default(0)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  steps       SchoolPlanStep[]
+
+  @@unique([planId, key])
+  @@index([planId, sortOrder])
+}
+
+/// Per-plan step under a category. The 16 seeded steps come from
+/// lib/schoolPlan/stepTemplate.ts on SchoolPlan.create; users can add, edit,
+/// reorder, delete, or move steps between categories. `key` is set for seeded
+/// rows and null for user-added steps. `stepNo` is a per-plan monotonic int
+/// (max+1 on add) kept for URL/index stability, not for ordering — display
+/// order is (categoryId, sortOrder).
 model SchoolPlanStep {
   id                   String               @id @default(cuid())
   planId               String
   plan                 SchoolPlan           @relation(fields: [planId], references: [id], onDelete: Cascade)
+  categoryId           String?
+  category             SchoolPlanCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   stepNo               Int
-  key                  String
+  sortOrder            Int                  @default(0)
+  key                  String?
   title                String
   description          String?
   planSection          String?
@@ -3811,6 +3841,7 @@ model SchoolPlanStep {
 
   @@unique([planId, stepNo])
   @@index([status, dueDate])
+  @@index([planId, categoryId, sortOrder])
 }
 
 /// Optional per-step breakdown. When a SchoolPlanStep has ≥1 substep, its status

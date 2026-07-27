@@ -615,6 +615,225 @@ export async function setPlanLaunchDate(planId: string, iso: string | null) {
   refreshPlan(planId);
 }
 
+// ---------- Categories (grouping layer above steps) ----------
+
+export async function addCategory(planId: string, input: { title: string; description?: string | null }) {
+  await requireEditPlan(planId);
+  const title = input.title.trim();
+  if (!title) throw new Error("Title is required.");
+  const last = await prisma.schoolPlanCategory.findFirst({
+    where: { planId },
+    orderBy: { sortOrder: "desc" },
+    select: { sortOrder: true },
+  });
+  const created = await prisma.schoolPlanCategory.create({
+    data: {
+      planId,
+      // key null → identifies a user-added category (vs seeded, which carries a slug)
+      title,
+      description: input.description?.trim() || null,
+      sortOrder: (last?.sortOrder ?? 0) + 1,
+    },
+  });
+  refreshPlan(planId);
+  return created;
+}
+
+export async function renameCategory(categoryId: string, patch: { title?: string; description?: string | null }) {
+  const cat = await prisma.schoolPlanCategory.findUnique({
+    where: { id: categoryId },
+    select: { planId: true },
+  });
+  if (!cat) throw new Error("Category not found.");
+  await requireEditPlan(cat.planId);
+  const data: Record<string, unknown> = {};
+  if (patch.title !== undefined) {
+    const t = patch.title.trim();
+    if (!t) throw new Error("Title is required.");
+    data.title = t;
+  }
+  if (patch.description !== undefined) data.description = patch.description?.trim() || null;
+  if (Object.keys(data).length === 0) return;
+  await prisma.schoolPlanCategory.update({ where: { id: categoryId }, data });
+  refreshPlan(cat.planId);
+}
+
+export async function deleteCategory(categoryId: string) {
+  const cat = await prisma.schoolPlanCategory.findUnique({
+    where: { id: categoryId },
+    select: { planId: true, _count: { select: { steps: true } } },
+  });
+  if (!cat) throw new Error("Category not found.");
+  await requireEditPlan(cat.planId);
+  if (cat._count.steps > 0) {
+    throw new Error("Move or delete this category's steps first.");
+  }
+  await prisma.schoolPlanCategory.delete({ where: { id: categoryId } });
+  refreshPlan(cat.planId);
+}
+
+/** Reorder categories on a plan. `orderedIds` is the full new order —
+ *  ids not on this plan are rejected. */
+export async function reorderCategories(planId: string, orderedIds: string[]) {
+  await requireEditPlan(planId);
+  const cats = await prisma.schoolPlanCategory.findMany({
+    where: { planId },
+    select: { id: true },
+  });
+  const known = new Set(cats.map((c) => c.id));
+  const clean = orderedIds.filter((id) => known.has(id));
+  await prisma.$transaction(
+    clean.map((id, idx) =>
+      prisma.schoolPlanCategory.update({
+        where: { id },
+        data: { sortOrder: idx + 1 },
+      }),
+    ),
+  );
+  refreshPlan(planId);
+}
+
+// ---------- Steps: create / edit / delete / move ----------
+
+export async function addStep(planId: string, input: {
+  categoryId: string;
+  title: string;
+  description?: string | null;
+  planSection?: string | null;
+  requiredArtifactType?: string | null;
+  ownerUserId?: string | null;
+  ownerRole?: string | null;
+  dueDate?: string | null;
+  dueWeek?: number | null;
+}) {
+  await requireEditPlan(planId);
+  const title = input.title.trim();
+  if (!title) throw new Error("Title is required.");
+  const cat = await prisma.schoolPlanCategory.findFirst({
+    where: { id: input.categoryId, planId },
+    select: { id: true },
+  });
+  if (!cat) throw new Error("Category not found on this plan.");
+  const w = validateDueWeek(input.dueWeek ?? null);
+  if (w !== null) {
+    const plan = await prisma.schoolPlan.findUnique({ where: { id: planId }, select: { launchDate: true } });
+    if (!plan?.launchDate) throw new Error("Set the plan's launch date before scheduling by week.");
+  }
+  const [maxStepNo, maxSort] = await Promise.all([
+    prisma.schoolPlanStep.findFirst({
+      where: { planId },
+      orderBy: { stepNo: "desc" },
+      select: { stepNo: true },
+    }),
+    prisma.schoolPlanStep.findFirst({
+      where: { planId, categoryId: input.categoryId },
+      orderBy: { sortOrder: "desc" },
+      select: { sortOrder: true },
+    }),
+  ]);
+  const plan = w !== null ? await prisma.schoolPlan.findUnique({ where: { id: planId }, select: { launchDate: true } }) : null;
+  const created = await prisma.schoolPlanStep.create({
+    data: {
+      planId,
+      categoryId: input.categoryId,
+      // key null → user-added, distinguishes from template-provenance rows
+      stepNo: (maxStepNo?.stepNo ?? 0) + 1,
+      sortOrder: (maxSort?.sortOrder ?? 0) + 1,
+      title,
+      description: input.description?.trim() || null,
+      planSection: input.planSection?.trim() || null,
+      requiredArtifactType: input.requiredArtifactType?.trim() || null,
+      ownerUserId: input.ownerUserId || null,
+      ownerRole: validateOwnerRoleKey(input.ownerRole ?? null),
+      dueDate: w !== null && plan?.launchDate
+        ? weekToDate(plan.launchDate, w)
+        : input.dueDate ? new Date(input.dueDate) : null,
+      dueWeek: w,
+    },
+  });
+  refreshPlan(planId);
+  return created;
+}
+
+export async function updateStep(stepId: string, patch: {
+  title?: string;
+  description?: string | null;
+  planSection?: string | null;
+  requiredArtifactType?: string | null;
+  categoryId?: string;
+}) {
+  const step = await prisma.schoolPlanStep.findUnique({
+    where: { id: stepId },
+    select: { planId: true, categoryId: true },
+  });
+  if (!step) throw new Error("Step not found.");
+  await requireEditPlan(step.planId);
+  const data: Record<string, unknown> = {};
+  if (patch.title !== undefined) {
+    const t = patch.title.trim();
+    if (!t) throw new Error("Title is required.");
+    data.title = t;
+  }
+  if (patch.description !== undefined) data.description = patch.description?.trim() || null;
+  if (patch.planSection !== undefined) data.planSection = patch.planSection?.trim() || null;
+  if (patch.requiredArtifactType !== undefined) data.requiredArtifactType = patch.requiredArtifactType?.trim() || null;
+  if (patch.categoryId !== undefined && patch.categoryId !== step.categoryId) {
+    const cat = await prisma.schoolPlanCategory.findFirst({
+      where: { id: patch.categoryId, planId: step.planId },
+      select: { id: true },
+    });
+    if (!cat) throw new Error("Target category not found on this plan.");
+    data.categoryId = patch.categoryId;
+    // Drop to the bottom of the target category so the move is visible + safe.
+    const last = await prisma.schoolPlanStep.findFirst({
+      where: { planId: step.planId, categoryId: patch.categoryId },
+      orderBy: { sortOrder: "desc" },
+      select: { sortOrder: true },
+    });
+    data.sortOrder = (last?.sortOrder ?? 0) + 1;
+  }
+  if (Object.keys(data).length === 0) return;
+  await prisma.schoolPlanStep.update({ where: { id: stepId }, data });
+  refreshPlan(step.planId);
+}
+
+export async function deleteStep(stepId: string) {
+  const step = await prisma.schoolPlanStep.findUnique({
+    where: { id: stepId },
+    select: { planId: true, _count: { select: { artifacts: true } } },
+  });
+  if (!step) throw new Error("Step not found.");
+  await requireEditPlan(step.planId);
+  if (step._count.artifacts > 0) {
+    throw new Error("Detach or delete this step's artifacts first.");
+  }
+  // Substeps cascade via the FK; artifacts don't (they carry evidence and
+  // deserve an explicit user decision).
+  await prisma.schoolPlanStep.delete({ where: { id: stepId } });
+  refreshPlan(step.planId);
+}
+
+/** Reorder steps within a category. `orderedIds` is the new order for exactly
+ *  one category — steps from other categories on the list are ignored. */
+export async function reorderStepsInCategory(planId: string, categoryId: string, orderedIds: string[]) {
+  await requireEditPlan(planId);
+  const steps = await prisma.schoolPlanStep.findMany({
+    where: { planId, categoryId },
+    select: { id: true },
+  });
+  const known = new Set(steps.map((s) => s.id));
+  const clean = orderedIds.filter((id) => known.has(id));
+  await prisma.$transaction(
+    clean.map((id, idx) =>
+      prisma.schoolPlanStep.update({
+        where: { id },
+        data: { sortOrder: idx + 1 },
+      }),
+    ),
+  );
+  refreshPlan(planId);
+}
+
 // ---------- Substeps ----------
 
 export async function addSubstep(stepId: string, input: {

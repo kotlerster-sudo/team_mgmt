@@ -1,11 +1,36 @@
-// The 16-step template every SchoolPlan starts with. Instantiated on
-// SchoolPlan.create by lib/schoolPlan/instantiate.ts. Data lives here (not in
-// the database) so the template can be edited by shipping code — matches how
-// SeedingRoleDefn / creche templates work elsewhere.
+// Seed template every SchoolPlan starts with: 6 categories, 16 steps. Data
+// lives here (not in the database) so the shape can be edited by shipping
+// code — matches how SeedingRoleDefn / creche templates work elsewhere. Once
+// seeded onto a plan, categories and steps are DB-owned and can be
+// renamed / added / deleted / reordered per school.
+
+export type SchoolPlanCategoryDefn = {
+  key: string;
+  title: string;
+  description?: string;
+  sortOrder: number;
+};
+
+export const SCHOOL_PLAN_CATEGORIES: readonly SchoolPlanCategoryDefn[] = [
+  { key: "discovery",          title: "Discovery",              sortOrder: 1,
+    description: "Snapshot the school + its catchment." },
+  { key: "site_infra",         title: "Site & infrastructure",  sortOrder: 2,
+    description: "Survey, design, services, refurbishment." },
+  { key: "programme_partners", title: "Programme & partners",   sortOrder: 3,
+    description: "Programme offer, anchor + specialist partners, staffing." },
+  { key: "approvals_timeline", title: "Approvals & timeline",   sortOrder: 4,
+    description: "Departmental permissions and milestone timeline." },
+  { key: "financials",         title: "Financials",             sortOrder: 5,
+    description: "Vendor quotes and full budget vs standard." },
+  { key: "governance",         title: "Governance",             sortOrder: 6,
+    description: "Risks, open issues, review + approval." },
+] as const;
 
 export type SchoolPlanStepDefn = {
   stepNo: number;
   key: string;
+  /** Category slug — must match a SCHOOL_PLAN_CATEGORIES.key. */
+  categoryKey: string;
   title: string;
   description: string;
   /** Which plan-page section this step's completion unlocks. "1".."10" or null. */
@@ -15,52 +40,52 @@ export type SchoolPlanStepDefn = {
 };
 
 export const SCHOOL_PLAN_STEPS: readonly SchoolPlanStepDefn[] = [
-  { stepNo: 1,  key: "snapshot_data",        title: "Snapshot data collected",
+  { stepNo: 1,  key: "snapshot_data",        categoryKey: "discovery",           title: "Snapshot data collected",
     description: "School + department records: DISE code, enrolment, timings, head teacher, SDMC.",
     planSection: "1",  requiredArtifactType: null },
-  { stepNo: 2,  key: "topographical_survey", title: "Topographical / as-built survey",
+  { stepNo: 2,  key: "topographical_survey", categoryKey: "site_infra",          title: "Topographical / as-built survey",
     description: "Commission an as-built survey; upload drawings.",
     planSection: "3",  requiredArtifactType: "survey_drawing" },
-  { stepNo: 3,  key: "survey_gaps",          title: "Survey gap items resolved",
+  { stepNo: 3,  key: "survey_gaps",          categoryKey: "site_infra",          title: "Survey gap items resolved",
     description: "Missing interior drawings, structural assessment, parapets, services survey, toilet fixture count.",
     planSection: "3",  requiredArtifactType: null },
-  { stepNo: 4,  key: "catchment_map",        title: "Catchment mapped",
+  { stepNo: 4,  key: "catchment_map",        categoryKey: "discovery",           title: "Catchment mapped",
     description: "Settlements + child numbers + map (image upload in Phase 1).",
     planSection: "2",  requiredArtifactType: "map" },
-  { stepNo: 5,  key: "architect_visit",      title: "Architect design + refurbishment estimate",
+  { stepNo: 5,  key: "architect_visit",      categoryKey: "site_infra",          title: "Architect design + refurbishment estimate",
     description: "Architect visit; upload design + estimate.",
     planSection: "3",  requiredArtifactType: "architect_design" },
-  { stepNo: 6,  key: "services_assessed",    title: "Services & infrastructure assessed",
+  { stepNo: 6,  key: "services_assessed",    categoryKey: "site_infra",          title: "Services & infrastructure assessed",
     description: "Water, electricity, toilets, lighting, drainage, RO plant, boundary, internet.",
     planSection: "4",  requiredArtifactType: null },
-  { stepNo: 7,  key: "programme_offer",      title: "Programme offer drafted",
+  { stepNo: 7,  key: "programme_offer",      categoryKey: "programme_partners",  title: "Programme offer drafted",
     description: "Per-component: offer, schedule, children/day, delivery ownership.",
     planSection: "5",  requiredArtifactType: null },
-  { stepNo: 8,  key: "anchor_confirmed",     title: "Anchor partner confirmed",
+  { stepNo: 8,  key: "anchor_confirmed",     categoryKey: "programme_partners",  title: "Anchor partner confirmed",
     description: "Anchor partner agreement status.",
     planSection: "6",  requiredArtifactType: "partner_agreement" },
-  { stepNo: 9,  key: "specialists_vetted",   title: "Specialist partners identified & vetted",
+  { stepNo: 9,  key: "specialists_vetted",   categoryKey: "programme_partners",  title: "Specialist partners identified & vetted",
     description: "Plans vetted by us until our own curriculum is developed.",
     planSection: "5",  requiredArtifactType: "partner_agreement" },
-  { stepNo: 10, key: "staffing_plan",        title: "Staffing plan + payroll mapping",
+  { stepNo: 10, key: "staffing_plan",        categoryKey: "programme_partners",  title: "Staffing plan + payroll mapping",
     description: "Roles, counts, payroll (us/anchor/specialist/agency), status.",
     planSection: "6",  requiredArtifactType: null },
-  { stepNo: 11, key: "vendor_quotes",        title: "Vendor quotes",
+  { stepNo: 11, key: "vendor_quotes",        categoryKey: "financials",          title: "Vendor quotes",
     description: "Security, housekeeping, food — upload quotes.",
     planSection: "8",  requiredArtifactType: "vendor_quote" },
-  { stepNo: 12, key: "budget_assembled",     title: "Budget assembled vs standard",
+  { stepNo: 12, key: "budget_assembled",     categoryKey: "financials",          title: "Budget assembled vs standard",
     description: "Fill this school's budget lines. Deviation vs standard is computed automatically.",
     planSection: "8",  requiredArtifactType: null },
-  { stepNo: 13, key: "dept_permissions",     title: "Departmental permissions",
+  { stepNo: 13, key: "dept_permissions",     categoryKey: "approvals_timeline",  title: "Departmental permissions",
     description: "Directorate of Minorities sign-off on the plan.",
     planSection: "7",  requiredArtifactType: "permission_letter" },
-  { stepNo: 14, key: "timeline_agreed",      title: "Timeline agreed",
+  { stepNo: 14, key: "timeline_agreed",      categoryKey: "approvals_timeline",  title: "Timeline agreed",
     description: "Milestones: survey → design → permissions → civil works → agreements → staff → soft launch → full operation.",
     planSection: "7",  requiredArtifactType: null },
-  { stepNo: 15, key: "risks_logged",         title: "Risks & open issues logged",
+  { stepNo: 15, key: "risks_logged",         categoryKey: "governance",          title: "Risks & open issues logged",
     description: "Risk register with mitigation + owner.",
     planSection: "9",  requiredArtifactType: null },
-  { stepNo: 16, key: "review_approved",      title: "Review by city lead → approval",
+  { stepNo: 16, key: "review_approved",      categoryKey: "governance",          title: "Review by city lead → approval",
     description: "Prepared → reviewed → approved with dates.",
     planSection: "10", requiredArtifactType: null },
 ] as const;

@@ -214,7 +214,7 @@ async function main() {
     await ensureBudget(row.id, p.name);
     const counts = await bootstrapSchoolPlan(row.id);
     console.log(
-      `  ${p.name}: ${counts.stepsAdded} steps, ${counts.servicesAdded} services, ${counts.componentsAdded} components`,
+      `  ${p.name}: ${counts.categoriesAdded} categories, ${counts.stepsAdded} steps, ${counts.servicesAdded} services, ${counts.componentsAdded} components`,
     );
     if (p.name === "Yelahanka") await seedYelahankaExtras(row.id);
     if (p.name === "DJ Halli") {
