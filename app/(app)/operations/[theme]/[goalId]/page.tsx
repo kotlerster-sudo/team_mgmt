@@ -18,18 +18,22 @@ export default async function CentreDetailPage({
   searchParams,
 }: {
   params: Promise<{ theme: string; goalId: string }>;
-  searchParams: Promise<{ asUser?: string }>;
+  searchParams: Promise<{ asUser?: string; lens?: string }>;
 }) {
   const { theme, goalId } = await params;
-  const { asUser } = await searchParams;
+  const { asUser, lens: lensParam } = await searchParams;
   const ctx = await resolveViewContext(asUser);
   if (!ctx) redirect("/login");
   const preview = ctx.viewingAs;
+  const lens: "today" | "overdue" | null =
+    lensParam === "today" ? "today" : lensParam === "overdue" ? "overdue" : null;
 
   const detail = await loadCentreDetail([ctx.userId], goalId);
   if (!detail) notFound();
 
-  const themeHref = `/operations/${encodeURIComponent(theme)}${preview ? `?asUser=${encodeURIComponent(ctx.userId)}` : ""}`;
+  // Back link returns to the same lens view of the programme.
+  const themeQs = [lens ? `lens=${lens}` : "", preview ? `asUser=${encodeURIComponent(ctx.userId)}` : ""].filter(Boolean).join("&");
+  const themeHref = `/operations/${encodeURIComponent(theme)}${themeQs ? `?${themeQs}` : ""}`;
   const ph = detail.phase;
   const phaseLabel =
     ph.lifecycle === "setting_up" ? `${ph.currentPhaseLabel ?? "In setup"} · ${ph.currentStep}/${ph.totalSteps}`
@@ -62,6 +66,7 @@ export default async function CentreDetailPage({
           followUps={detail.followUps}
           readOnly={!!preview}
           storageKey={`ops-centre-${detail.goalId}-done`}
+          initialOpen={lens ?? "today"}
         />
       </div>
     </SurfaceProvider>

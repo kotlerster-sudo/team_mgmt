@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Flag } from "lucide-react";
+import { CheckCircle2, ChevronDown, Flag } from "lucide-react";
 import type { Activity, ChecklistItem } from "@/app/(app)/home/_lib/types";
 import type { CentreFollowUp } from "@/lib/operations/today";
 import { isToday, fmtTime, fmtDate, daysAgo } from "@/app/(app)/home/_lib/helpers";
@@ -20,12 +20,15 @@ export function CentreDetail({
   followUps,
   readOnly = false,
   storageKey,
+  initialOpen = "today",
 }: {
   activities: Activity[];
   checklists: ChecklistItem[];
   followUps: CentreFollowUp[];
   readOnly?: boolean;
   storageKey: string;
+  /** Which bucket starts expanded (driven by the drill-down lens). */
+  initialOpen?: "today" | "overdue";
 }) {
   const router = useRouter();
   const { ids: doneIds, add: addDone } = useSessionDoneIds(storageKey);
@@ -70,19 +73,19 @@ export function CentreDetail({
   const nothing = buckets.overdue.length + buckets.today.length + buckets.upcoming.length === 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       {buckets.today.length > 0 && (
-        <Section title="Today">
+        <Section title="Today" count={buckets.today.length} defaultOpen={initialOpen === "today"}>
           {buckets.today.map((a) => renderRow(a, false))}
         </Section>
       )}
       {buckets.overdue.length > 0 && (
-        <Section title={`Overdue (${buckets.overdue.length})`} tone="amber">
+        <Section title="Overdue" count={buckets.overdue.length} tone="amber" defaultOpen={initialOpen === "overdue"}>
           {buckets.overdue.map((a) => renderRow(a, true))}
         </Section>
       )}
       {buckets.upcoming.length > 0 && (
-        <Section title="Upcoming">
+        <Section title="Upcoming" count={buckets.upcoming.length} defaultOpen={false}>
           {buckets.upcoming.map((a) => renderRow(a, false))}
         </Section>
       )}
@@ -95,7 +98,7 @@ export function CentreDetail({
       )}
 
       {followUps.length > 0 && (
-        <Section title={`Follow-ups (${followUps.length})`}>
+        <Section title="Follow-ups" count={followUps.length} defaultOpen={false}>
           {followUps.map((f) => (
             <div key={f.id} className="flex items-start gap-2.5 rounded-lg border border-stone-200 bg-white px-4 py-2.5">
               <Flag className={`w-3.5 h-3.5 mt-0.5 flex-shrink-0 ${f.priority === "urgent" ? "text-red-500" : "text-stone-400"}`} />
@@ -116,13 +119,38 @@ function startOfToday() {
   const d = new Date(); d.setHours(0, 0, 0, 0); return d;
 }
 
-function Section({ title, tone = "stone", children }: { title: string; tone?: "stone" | "amber"; children: React.ReactNode }) {
+/**
+ * Collapsible bucket. Keeps long Today/Overdue/Follow-up lists from becoming a
+ * laundry list — the count sits in the header so the user sees the size before
+ * expanding. Open state is local (defaultOpen seeds it from the drill-down lens).
+ */
+function Section({
+  title, count, tone = "stone", defaultOpen, children,
+}: {
+  title: string;
+  count: number;
+  tone?: "stone" | "amber";
+  defaultOpen: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
-    <section>
-      <h3 className={`text-[11px] font-semibold uppercase tracking-wider mb-2 ${tone === "amber" ? "text-amber-700" : "text-stone-500"}`}>
-        {title}
-      </h3>
-      <div className="space-y-1.5">{children}</div>
+    <section className="rounded-xl border border-stone-200 bg-white/40">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2 px-3 py-2.5 text-left"
+        aria-expanded={open}
+      >
+        <ChevronDown className={`w-4 h-4 text-stone-400 transition-transform ${open ? "" : "-rotate-90"}`} />
+        <span className={`text-[11px] font-semibold uppercase tracking-wider ${tone === "amber" ? "text-amber-700" : "text-stone-500"}`}>
+          {title}
+        </span>
+        <span className={`text-[10px] font-semibold rounded-full px-1.5 py-0.5 tabular-nums ${tone === "amber" ? "text-amber-700 bg-amber-50 border border-amber-200" : "text-stone-500 bg-stone-100"}`}>
+          {count}
+        </span>
+      </button>
+      {open && <div className="space-y-1.5 px-2.5 pb-2.5">{children}</div>}
     </section>
   );
 }
