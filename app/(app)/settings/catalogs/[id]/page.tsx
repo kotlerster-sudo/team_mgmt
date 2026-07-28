@@ -11,6 +11,7 @@ import {
 import { slugifyChecklistText } from "@/lib/templateDb";
 import type { CatalogCategory, CatalogItem } from "@/lib/catalogDb";
 import { SurfaceProvider } from "@/components/rbac/RbacProviders";
+import { TemplatePicker } from "./TemplatePicker";
 
 const COMPLETION_TYPES = [
   { value: "", label: "Checkbox" },
@@ -50,6 +51,36 @@ function blankCategory(): CatalogCategory {
   return { key: "", label: "New category", items: [] };
 }
 
+const ctShort = (v: string) => COMPLETION_TYPES.find((c) => c.value === v)?.label ?? "Activity";
+
+// A catalog item that references a goal-template checklist item. Text + completion type are
+// template-owned (read-only here); only "mandatory" is catalog-local. Remove untags (doesn't
+// touch the template).
+function LinkedItemRow({
+  item, onToggleMandatory, onRemove,
+}: {
+  item: CatalogItem;
+  onToggleMandatory: (v: boolean) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="border border-sky-200 rounded-lg bg-sky-50/40 p-2">
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] text-sky-700 bg-sky-100 border border-sky-200 rounded px-1.5 py-0.5 shrink-0">template</span>
+        <span className="text-sm text-stone-800 flex-1 min-w-0 truncate">{item.text}</span>
+        <span className="text-[10px] text-stone-500 bg-stone-100 rounded-full px-1.5 py-0.5 shrink-0">{ctShort(item.completionType)}</span>
+        <button onClick={onRemove} title="Untag" className="p-1 hover:bg-red-50 rounded text-stone-400 hover:text-red-500 transition-colors shrink-0">
+          <Trash2 className="w-3 h-3" />
+        </button>
+      </div>
+      <label className="flex items-center gap-1.5 text-[11px] text-stone-500 cursor-pointer select-none mt-1.5 pl-1">
+        <input type="checkbox" checked={item.blocksSignoff} onChange={(e) => onToggleMandatory(e.target.checked)} className="accent-stone-700" />
+        Mandatory to close the visit
+      </label>
+    </div>
+  );
+}
+
 type CatalogState = {
   id?: string;
   slug: string;
@@ -64,20 +95,28 @@ type CatalogState = {
 // ── Category editor ──────────────────────────────────────────────────────────
 
 function CategoryEditor({
-  category, index, total, onChange, onRemove, onMove,
+  category, index, total, needsDomain, onChange, onRemove, onMove,
 }: {
   category: CatalogCategory;
   index: number;
   total: number;
+  needsDomain: string | null;
   onChange: (c: CatalogCategory) => void;
   onRemove: () => void;
   onMove: (dir: -1 | 1) => void;
 }) {
   const [open, setOpen] = useState(true);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const update = (patch: Partial<CatalogCategory>) => onChange({ ...category, ...patch });
   const items = category.items ?? [];
 
   const addItem = () => update({ items: [...items, blankItem()] });
+  // De-dupe tagged items by ref so re-tagging is idempotent.
+  const taggedRefs = new Set(items.filter((i) => i.ref).map((i) => `${i.ref!.templateSlug}::${i.ref!.checklistKey}`));
+  const tagFromTemplate = (added: CatalogItem[]) => {
+    const fresh = added.filter((a) => !a.ref || !taggedRefs.has(`${a.ref.templateSlug}::${a.ref.checklistKey}`));
+    if (fresh.length) update({ items: [...items, ...fresh] });
+  };
   const removeItem = (i: number) => update({ items: items.filter((_, idx) => idx !== i) });
   const updateItem = (i: number, patch: Partial<CatalogItem>) =>
     update({ items: items.map((it, idx) => (idx === i ? { ...it, ...patch } : it)) });
@@ -135,12 +174,27 @@ function CategoryEditor({
           <div>
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-stone-500">Items</span>
-              <button onClick={addItem} className="flex items-center gap-1 text-xs text-stone-500 hover:text-stone-800 transition-colors">
-                <Plus className="w-3 h-3" /> Add item
-              </button>
+              <div className="flex items-center gap-3">
+                <button onClick={() => setPickerOpen(true)} className="flex items-center gap-1 text-xs text-sky-600 hover:text-sky-800 font-medium transition-colors">
+                  <Plus className="w-3 h-3" /> Tag from template
+                </button>
+                <button onClick={addItem} className="flex items-center gap-1 text-xs text-stone-500 hover:text-stone-800 transition-colors">
+                  <Plus className="w-3 h-3" /> Free-text item
+                </button>
+              </div>
             </div>
+            {pickerOpen && (
+              <TemplatePicker
+                domain={needsDomain}
+                taggedRefs={taggedRefs}
+                onAdd={tagFromTemplate}
+                onClose={() => setPickerOpen(false)}
+              />
+            )}
             <div className="space-y-2">
-              {items.map((item, i) => (
+              {items.map((item, i) => item.ref ? (
+                <LinkedItemRow key={i} item={item} onToggleMandatory={(v) => updateItem(i, { blocksSignoff: v })} onRemove={() => removeItem(i)} />
+              ) : (
                 <div key={i} className="border border-stone-200 rounded-lg bg-stone-50 p-2 space-y-1.5">
                   <div className="flex items-center gap-1.5">
                     <button onClick={() => moveItem(i, -1)} disabled={i === 0} className="p-0.5 hover:bg-stone-200 rounded disabled:opacity-30 shrink-0">
@@ -388,6 +442,7 @@ export default function CatalogEditorPage({ params }: { params: Promise<{ id: st
               category={c}
               index={i}
               total={categories.length}
+              needsDomain={cat.needsDomain}
               onChange={(updated) => updateCategory(i, updated)}
               onRemove={() => removeCategory(i)}
               onMove={(dir) => moveCategory(i, dir)}

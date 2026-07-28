@@ -4,11 +4,20 @@ import { useState, useEffect, useCallback, use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  ChevronLeft, ChevronRight, MapPin, CheckCircle2, Circle, Repeat, AlertTriangle, Loader2, Plus,
+  ChevronLeft, ChevronRight, MapPin, CheckCircle2, Repeat, AlertTriangle, Loader2, Plus,
 } from "lucide-react";
 import { SurfaceProvider } from "@/components/rbac/RbacProviders";
+import { ActivityCard } from "@/app/(app)/home/_shared/ActivityCard";
+import type { Activity, ChecklistItem } from "@/app/(app)/home/_lib/types";
 
-type Item = { key: string; text: string; completionType: string; mandatory: boolean; source: string; ticked: boolean; approval: string | null };
+type Item = {
+  key: string; text: string; completionType: string;
+  mandatory: boolean; source: string; approval: string | null;
+  done: boolean;
+  // Materialised (post-arrival) — completion runs through ActivityCard's standard flow.
+  activity: Activity | null;
+  checklistId: string | null;
+};
 type Category = { key: string; label: string; items: Item[] };
 type Screen = {
   goal: { id: string; title: string; clusterName: string | null; settlementName: string | null };
@@ -49,16 +58,6 @@ export default function VisitPage({ params }: { params: Promise<{ goalId: string
     setBusy("arrive");
     await fetch(`/api/operations/visit/${goalId}`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ arrive: true }),
-    });
-    await load();
-    setBusy(null);
-  };
-
-  const tick = async (item: Item) => {
-    if (!visitId || item.ticked) return;
-    setBusy(item.key);
-    await fetch(`/api/pitstop-events/${visitId}/tick-item`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itemKey: item.key }),
     });
     await load();
     setBusy(null);
@@ -107,8 +106,9 @@ export default function VisitPage({ params }: { params: Promise<{ goalId: string
     );
   }
 
-  const totalItems = screen.categories.reduce((n, c) => n + c.items.length, 0);
-  const tickedItems = screen.categories.reduce((n, c) => n + c.items.filter((i) => i.ticked).length, 0);
+  const allItems = screen.categories.flatMap((c) => c.items);
+  const totalItems = allItems.length;
+  const doneItems = allItems.filter((i) => i.done).length;
 
   return (
     <SurfaceProvider id="operations.visit">
@@ -144,16 +144,16 @@ export default function VisitPage({ params }: { params: Promise<{ goalId: string
         ) : (
           <>
             <div className="flex items-center justify-between mb-3">
-              <span className="text-xs text-stone-400">{tickedItems}/{totalItems} done this visit</span>
+              <span className="text-xs text-stone-400">{doneItems}/{totalItems} done this visit</span>
               <span className="text-[11px] text-emerald-600 flex items-center gap-1">
                 <MapPin className="w-3 h-3" /> Reached
               </span>
             </div>
 
-            {/* Category tiles */}
+            {/* Category tiles → each item completes via the standard ActivityCard flow */}
             <div className="space-y-2">
               {screen.categories.map((cat) => {
-                const done = cat.items.filter((i) => i.ticked).length;
+                const done = cat.items.filter((i) => i.done).length;
                 const isOpen = openCat === cat.key;
                 return (
                   <div key={cat.key} className="border border-stone-200 rounded-xl bg-white overflow-hidden">
@@ -166,36 +166,14 @@ export default function VisitPage({ params }: { params: Promise<{ goalId: string
                       <ChevronRight className={`w-4 h-4 text-stone-400 transition-transform ${isOpen ? "rotate-90" : ""}`} />
                     </button>
                     {isOpen && (
-                      <div className="border-t border-stone-100 divide-y divide-stone-50">
+                      <div className="border-t border-stone-100 p-2 space-y-1.5">
                         {cat.items.map((item) => (
-                          <button
-                            key={item.key}
-                            onClick={() => tick(item)}
-                            disabled={item.ticked || busy === item.key}
-                            className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-stone-50 transition-colors disabled:cursor-default"
-                          >
-                            {busy === item.key ? (
-                              <Loader2 className="w-4 h-4 text-stone-400 animate-spin shrink-0" />
-                            ) : item.ticked ? (
-                              <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                            ) : (
-                              <Circle className="w-4 h-4 text-stone-300 shrink-0" />
-                            )}
-                            <span className={`text-sm flex-1 ${item.ticked ? "text-stone-400 line-through" : "text-stone-700"}`}>
-                              {item.text}
-                            </span>
-                            {item.approval === "pending" && (
-                              <span className="text-[10px] px-1.5 py-0.5 bg-violet-50 text-violet-600 rounded-full shrink-0">pending approval</span>
-                            )}
-                            {item.mandatory && !item.ticked && (
-                              <span className="text-[10px] px-1.5 py-0.5 bg-amber-50 text-amber-600 rounded-full shrink-0">required</span>
-                            )}
-                          </button>
+                          <VisitItemRow key={item.key} item={item} onChanged={load} />
                         ))}
 
-                        {/* Add an off-catalog item — opens a pending approval for a supervisor. */}
+                        {/* Add an off-catalog item — opens a pending approval; materialises on reload. */}
                         {addingCat === cat.key ? (
-                          <div className="flex items-center gap-2 px-4 py-2.5">
+                          <div className="flex items-center gap-2 px-1 py-1">
                             <input
                               autoFocus
                               value={newText}
@@ -216,7 +194,7 @@ export default function VisitPage({ params }: { params: Promise<{ goalId: string
                         ) : (
                           <button
                             onClick={() => { setAddingCat(cat.key); setNewText(""); }}
-                            className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm text-stone-400 hover:text-stone-600 hover:bg-stone-50 transition-colors"
+                            className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-stone-400 hover:text-stone-600 hover:bg-stone-50 rounded-lg transition-colors"
                           >
                             <Plus className="w-4 h-4 shrink-0" /> Add item
                           </button>
@@ -278,5 +256,51 @@ export default function VisitPage({ params }: { params: Promise<{ goalId: string
         )}
       </div>
     </SurfaceProvider>
+  );
+}
+
+/**
+ * One catalog line inside a visit. Once materialised it IS a real activity, so it completes
+ * through the shared ActivityCard — honouring its completionType (mark-done / voice / upload) and
+ * opening CompleteActivityModal for indicators + the follow-up-action prompt.
+ */
+function VisitItemRow({ item, onChanged }: { item: Item; onChanged: () => void }) {
+  const needsBadge = (item.mandatory && !item.done) || item.approval === "pending";
+  // Voice / Upload mark only the ChecklistItem Done server-side. The visit's per-visit done-count
+  // + close check read the child EVENT status, so stamp it Done here too (Activity-type already is).
+  const handleCompleted = async () => {
+    if (item.activity && (item.completionType === "Voice" || item.completionType === "Upload")) {
+      await fetch(`/api/pitstop-events/${item.activity.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "Done" }),
+      }).catch(() => {});
+    }
+    onChanged();
+  };
+  return (
+    <div className="space-y-1">
+      {needsBadge && (
+        <div className="flex items-center gap-1.5 px-1">
+          {item.approval === "pending" && (
+            <span className="text-[10px] px-1.5 py-0.5 bg-violet-50 text-violet-600 rounded-full">pending approval</span>
+          )}
+          {item.mandatory && !item.done && (
+            <span className="text-[10px] px-1.5 py-0.5 bg-amber-50 text-amber-600 rounded-full">required</span>
+          )}
+        </div>
+      )}
+      {item.activity ? (
+        <ActivityCard
+          activity={item.activity}
+          linkedChecklist={item.checklistId ? ({ id: item.checklistId, completionType: item.completionType } as ChecklistItem) : null}
+          onCompleted={handleCompleted}
+          onRescheduled={onChanged}
+          isDone={item.done}
+        />
+      ) : (
+        <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-stone-200 bg-white">
+          <span className="text-sm text-stone-700 flex-1">{item.text}</span>
+        </div>
+      )}
+    </div>
   );
 }

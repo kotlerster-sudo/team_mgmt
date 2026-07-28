@@ -14,7 +14,7 @@ import type { Activity, ChecklistItem } from "@/app/(app)/home/_lib/types";
 import { deriveCentrePhase, type CentrePhase, type PhasePitstop } from "./phase";
 
 // Matches the home loader's event select so the shapes are identical.
-const EVENT_SELECT = {
+export const EVENT_SELECT = {
   id: true,
   title: true,
   type: true,

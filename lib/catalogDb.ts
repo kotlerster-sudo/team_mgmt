@@ -18,6 +18,10 @@ export interface CatalogItem {
   text: string;
   completionType: string; // "" | "Activity" | "Voice" | "Upload"
   blocksSignoff: boolean;
+  // When present, this item is a *tagged* goal-template checklist item rather than free text.
+  // On visit materialisation the real ChecklistItem is stamped with these so indicator/journey
+  // bindings (keyed on templateSlug+checklistKey) resolve. Absent = legacy free-text / ad-hoc.
+  ref?: { templateSlug: string; checklistKey: string };
 }
 
 export interface CatalogCategory {
@@ -75,6 +79,7 @@ function toItem(raw: Partial<CatalogItem> & { text: string }): CatalogItem {
     completionType: raw.completionType ?? "Activity",
     // default mandatory unless explicitly opted out (mirrors blocksSignoff default true)
     blocksSignoff: raw.blocksSignoff ?? true,
+    ...(raw.ref ? { ref: raw.ref } : {}),
   };
 }
 

@@ -3,10 +3,20 @@ import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { monthBounds } from "@/lib/operations/month";
 import { loadCentreCatalogView } from "@/lib/operations/catalogView";
+import { EVENT_SELECT } from "@/lib/operations/today";
+import { materialiseVisitItems } from "@/lib/visits/materialise";
 
-// Shared loader: resolves a live centre's catalog + cadence (via loadCentreCatalogView — one
-// source of truth) then layers the current-month in-progress visit for this user + which of
-// its items are ticked.
+// Child-event select: the standard Activity shape (for ActivityCard) + the fields we need to map
+// each event back to its catalog item and its checklist (for completionType-driven completion).
+const VISIT_CHILD_SELECT = {
+  ...EVENT_SELECT,
+  templateKey: true,
+  checklistItem: { select: { id: true, completionType: true } },
+} as const;
+
+// Shared loader: resolves a live centre's catalog + cadence (via loadCentreCatalogView) then, once
+// the user has arrived, materialises the catalog into real child activities and returns them per
+// category so the visit UI can complete each through the standard flow (completionType + follow-up).
 async function loadScreen(goalId: string, userId: string) {
   const view = await loadCentreCatalogView(goalId);
   if (!view || !view.live) return null;
@@ -14,7 +24,6 @@ async function loadScreen(goalId: string, userId: string) {
 
   const { start, end } = monthBounds();
 
-  // Current-month in-progress visit for this user.
   const currentVisit = await prisma.pitstopEvent.findFirst({
     where: {
       type: "Visit", visitEventId: null, deletedAt: null,
@@ -27,21 +36,38 @@ async function loadScreen(goalId: string, userId: string) {
     orderBy: { createdAt: "desc" },
   });
 
-  // Ticked item keys for the current visit.
-  let tickedKeys: string[] = [];
-  if (currentVisit) {
+  // Once arrived, ensure the catalog is materialised (idempotent), then load the child activities.
+  const byItemKey = new Map<string, { activity: unknown; checklistId: string | null; done: boolean }>();
+  if (currentVisit?.arrivedAt) {
+    await materialiseVisitItems(currentVisit.id, userId);
     const children = await prisma.pitstopEvent.findMany({
-      where: { visitEventId: currentVisit.id, deletedAt: null, status: "Done" },
-      select: { templateKey: true },
+      where: { visitEventId: currentVisit.id, deletedAt: null, status: { not: "Cancelled" } },
+      select: VISIT_CHILD_SELECT,
+      orderBy: { scheduledAt: "asc" },
     });
-    tickedKeys = children.map((c) => c.templateKey).filter((k): k is string => Boolean(k));
+    for (const c of children) {
+      if (!c.templateKey) continue;
+      byItemKey.set(c.templateKey, {
+        activity: c,
+        checklistId: c.checklistItem?.id ?? null,
+        done: c.status === "Done",
+      });
+    }
   }
 
-  const ticked = new Set(tickedKeys);
-  const withTicked = categories.map((cat) => ({
+  const outCategories = categories.map((cat) => ({
     key: cat.key,
     label: cat.label,
-    items: cat.items.map((it) => ({ ...it, ticked: ticked.has(it.key) })),
+    items: cat.items.map((it) => {
+      const m = byItemKey.get(it.key);
+      return {
+        key: it.key, text: it.text, completionType: it.completionType,
+        mandatory: it.mandatory, source: it.source, approval: it.approval,
+        done: m?.done ?? false,
+        activity: m?.activity ?? null,
+        checklistId: m?.checklistId ?? null,
+      };
+    }),
   }));
 
   return {
@@ -57,7 +83,7 @@ async function loadScreen(goalId: string, userId: string) {
     monthRequired,
     monthDone,
     currentVisit: currentVisit ? { id: currentVisit.id, arrivedAt: currentVisit.arrivedAt } : null,
-    categories: withTicked,
+    categories: outCategories,
   };
 }
 
@@ -106,6 +132,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ goa
       where: { id: visitId },
       data: { arrivedAt: new Date(), arrivedById: userId, lastUpdatedById: userId },
     });
+    // Materialise the catalog into completable activities on arrival.
+    await materialiseVisitItems(visitId, userId);
   }
 
   return Response.json({ ok: true, visitId });
