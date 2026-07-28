@@ -7,7 +7,10 @@ import { resolveViewContext } from "@/lib/operations/viewAs";
 import { getVisibleUserIds } from "@/lib/visibilityScope";
 import { goalOwnedByAnyOf } from "@/lib/ownership";
 import { loadCentreDetail } from "@/lib/operations/today";
+import { loadCentreCatalogView } from "@/lib/operations/catalogView";
 import { CentreDetail } from "../../_shared/CentreDetail";
+import { CatalogViewer } from "../../_shared/CatalogViewer";
+import { GoLiveButton } from "../../_shared/GoLiveButton";
 import { PreviewBanner } from "../../_shared/PreviewBanner";
 
 export const dynamic = "force-dynamic";
@@ -43,7 +46,10 @@ export default async function CentreDetailPage({
     ? await getVisibleUserIds({ userId: ctx.userId, role: me.role ?? "member", designation: me.designation ?? "Other" })
     : [ctx.userId];
 
-  const detail = await loadCentreDetail(visibleIds, goalId);
+  const [detail, catalog] = await Promise.all([
+    loadCentreDetail(visibleIds, goalId),
+    loadCentreCatalogView(goalId),
+  ]);
   if (!detail) notFound();
 
   const ownedBySelf =
@@ -81,6 +87,14 @@ export default async function CentreDetailPage({
             </span>
           </div>
         </div>
+
+        {/* Setup centre with an authored domain catalog → offer to take it live. */}
+        {catalog && catalog.mode !== "live" && catalog.hasDomainCatalog && !preview && (
+          <GoLiveButton goalId={goalId} />
+        )}
+
+        {/* Live centre → show its visit catalog (read-only + add-item + Log-visit). */}
+        {catalog?.live && !preview && <CatalogViewer goalId={goalId} live={catalog.live} />}
 
         <CentreDetail
           activities={detail.activities}

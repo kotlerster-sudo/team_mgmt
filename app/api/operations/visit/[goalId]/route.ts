@@ -1,30 +1,16 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-import { resolveEffectiveCatalog, resolveCadence, type CatalogCategory, type CentreCatalogOverrides } from "@/lib/catalogDb";
-import { monthBounds, requiredVisitsForMonth } from "@/lib/operations/month";
+import { monthBounds } from "@/lib/operations/month";
+import { loadCentreCatalogView } from "@/lib/operations/catalogView";
 
-// Shared loader: resolves a live centre's catalog + cadence + the current-month in-progress visit
-// for this user (if any) and which of its items are ticked.
+// Shared loader: resolves a live centre's catalog + cadence (via loadCentreCatalogView — one
+// source of truth) then layers the current-month in-progress visit for this user + which of
+// its items are ticked.
 async function loadScreen(goalId: string, userId: string) {
-  const goal = await prisma.goal.findUnique({
-    where: { id: goalId },
-    select: {
-      id: true, title: true, mode: true,
-      needsCluster: { select: { id: true, name: true } },
-      needsSettlement: { select: { id: true, name: true, cluster: { select: { id: true, name: true } } } },
-      centreCatalog: { select: { catalogSlug: true, snapshot: true, overrides: true, cadenceCount: true, cadencePeriod: true } },
-      pitstops: { where: { deletedAt: null, recurrence: { not: "None" } }, select: { id: true }, orderBy: { createdAt: "asc" }, take: 1 },
-    },
-  });
-  if (!goal || !goal.centreCatalog || goal.pitstops.length === 0) return null;
-
-  const livePitstopId = goal.pitstops[0].id;
-  const snapshot = (goal.centreCatalog.snapshot ?? []) as unknown as CatalogCategory[];
-  const overrides = (goal.centreCatalog.overrides ?? {}) as unknown as CentreCatalogOverrides;
-  const cadence = resolveCadence(goal.centreCatalog, {
-    defaultCadenceCount: null, defaultCadencePeriod: null,
-  });
+  const view = await loadCentreCatalogView(goalId);
+  if (!view || !view.live) return null;
+  const { livePitstopId, catalogSlug, cadence, monthRequired, monthDone, categories } = view.live;
 
   const { start, end } = monthBounds();
 
@@ -51,47 +37,27 @@ async function loadScreen(goalId: string, userId: string) {
     tickedKeys = children.map((c) => c.templateKey).filter((k): k is string => Boolean(k));
   }
 
-  // Cadence progress: parent visits done this month.
-  const doneThisMonth = await prisma.pitstopEvent.count({
-    where: {
-      type: "Visit", visitEventId: null, status: "Done", deletedAt: null,
-      completedAt: { gte: start, lte: end },
-      pitstops: { some: { pitstopId: livePitstopId } },
-    },
-  });
-
-  // Approval status for ad-hoc items (layered on top of the pure catalog resolve).
-  const approvals = await prisma.catalogItemApproval.findMany({
-    where: { goalId },
-    select: { itemKey: true, status: true },
-  });
-  const approvalByKey = new Map(approvals.map((a) => [a.itemKey, a.status]));
-
   const ticked = new Set(tickedKeys);
-  const categories = resolveEffectiveCatalog(snapshot, overrides).map((cat) => ({
+  const withTicked = categories.map((cat) => ({
     key: cat.key,
     label: cat.label,
-    items: cat.items.map((it) => ({
-      key: it.key, text: it.text, completionType: it.completionType,
-      mandatory: it.blocksSignoff, source: it.source, ticked: ticked.has(it.key),
-      approval: approvalByKey.get(it.key) ?? null,
-    })),
+    items: cat.items.map((it) => ({ ...it, ticked: ticked.has(it.key) })),
   }));
 
   return {
     goal: {
-      id: goal.id,
-      title: goal.title,
-      clusterName: goal.needsCluster?.name ?? goal.needsSettlement?.cluster?.name ?? null,
-      settlementName: goal.needsSettlement?.name ?? null,
+      id: view.goalId,
+      title: view.title,
+      clusterName: view.clusterName,
+      settlementName: view.settlementName,
     },
-    catalogSlug: goal.centreCatalog.catalogSlug,
+    catalogSlug,
     livePitstopId,
     cadence,
-    monthRequired: requiredVisitsForMonth(cadence),
-    monthDone: doneThisMonth,
+    monthRequired,
+    monthDone,
     currentVisit: currentVisit ? { id: currentVisit.id, arrivedAt: currentVisit.arrivedAt } : null,
-    categories,
+    categories: withTicked,
   };
 }
 

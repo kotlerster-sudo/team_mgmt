@@ -77,6 +77,8 @@ export default async function OperationsHomePage({
               ))}
             </div>
           )}
+
+          {!preview && <PlanMonthLink withParams={withParams} />}
         </div>
       </SurfaceProvider>
     );
@@ -155,21 +157,23 @@ export default async function OperationsHomePage({
             </TileGrid>
           )}
         </TileSection>
-
-        {!preview && (
-          <Link
-            href="/operations/plan"
-            className="flex items-center justify-between rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 hover:bg-sky-100 transition-colors"
-          >
-            <div className="flex items-center gap-2.5">
-              <CalendarRange className="w-4 h-4 text-sky-600" />
-              <span className="text-sm font-medium text-sky-800">Plan your month</span>
-            </div>
-            <ChevronRight className="w-4 h-4 text-sky-400" />
-          </Link>
-        )}
       </div>
     </SurfaceProvider>
+  );
+}
+
+function PlanMonthLink({ withParams }: { withParams: (base: string, extra?: string[]) => string }) {
+  return (
+    <Link
+      href={withParams("/operations/plan")}
+      className="flex items-center justify-between rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 hover:bg-sky-100 transition-colors"
+    >
+      <div className="flex items-center gap-2.5">
+        <CalendarRange className="w-4 h-4 text-sky-600" />
+        <span className="text-sm font-medium text-sky-800">Plan your month</span>
+      </div>
+      <ChevronRight className="w-4 h-4 text-sky-400" />
+    </Link>
   );
 }
 

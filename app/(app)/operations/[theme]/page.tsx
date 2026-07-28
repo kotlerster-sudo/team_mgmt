@@ -2,10 +2,12 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, MapPin } from "lucide-react";
 import { SurfaceProvider } from "@/components/rbac/RbacProviders";
+import prisma from "@/lib/prisma";
 import { loadThemeCatalog, indexThemes, type ThemeDef } from "@/lib/operations/themes";
 import { loadCentresForTheme, type CentreRow } from "@/lib/operations/centres";
 import { resolveViewContext } from "@/lib/operations/viewAs";
 import { PreviewBanner } from "../_shared/PreviewBanner";
+import { GoLiveButton } from "../_shared/GoLiveButton";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +42,10 @@ export default async function OperationsThemePage({
 
   const centres = await loadCentresForTheme([userId], resolved, { clusterId: clusterParam });
   if (centres.length === 0 && !theme) notFound();
+
+  // Does this domain have an authored catalog? If so, setup centres can be taken live in-flow.
+  const canGoLive =
+    !preview && (await prisma.catalogTemplateDef.count({ where: { needsDomain: key, isActive: true } })) > 0;
 
   const asUserQ = preview ? `asUser=${encodeURIComponent(userId)}` : "";
   const clusterQ = clusterParam ? `cluster=${encodeURIComponent(clusterParam)}` : "";
@@ -115,7 +121,7 @@ export default async function OperationsThemePage({
             {settingUp.length > 0 && (
               <CentreGroup title="Setting up" count={settingUp.length}>
                 {settingUp.map((c) => (
-                  <SettingUpRow key={c.goalId} centre={c} color={resolved.color} href={centreHref(c.goalId)} />
+                  <SettingUpRow key={c.goalId} centre={c} color={resolved.color} href={centreHref(c.goalId)} canGoLive={canGoLive} />
                 ))}
               </CentreGroup>
             )}
@@ -217,26 +223,30 @@ function OverdueBadge({ n }: { n: number }) {
   );
 }
 
-function SettingUpRow({ centre, color, href }: { centre: CentreRow; color: string; href: string }) {
+function SettingUpRow({ centre, color, href, canGoLive }: { centre: CentreRow; color: string; href: string; canGoLive: boolean }) {
   const { currentPhaseLabel, currentStep, totalSteps } = centre.phase;
+  // Link + Take-live button are siblings (not nested) to keep interactive elements valid.
   return (
-    <Link href={href} className="group flex items-center gap-3 rounded-lg border border-stone-200 bg-white px-4 py-3 hover:border-stone-300 hover:shadow-sm transition-all">
-      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-stone-800 truncate">{centre.name}</p>
-        <div className="flex items-center gap-2 mt-0.5">
-          <CentreLocation centre={centre} />
-          <OverdueBadge n={centre.overdue} />
+    <div className="group flex items-center gap-2 rounded-lg border border-stone-200 bg-white pr-3 hover:border-stone-300 hover:shadow-sm transition-all">
+      <Link href={href} className="flex items-center gap-3 px-4 py-3 flex-1 min-w-0">
+        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-stone-800 truncate">{centre.name}</p>
+          <div className="flex items-center gap-2 mt-0.5">
+            <CentreLocation centre={centre} />
+            <OverdueBadge n={centre.overdue} />
+          </div>
         </div>
-      </div>
-      <div className="text-right flex-shrink-0">
-        <p className="text-xs font-medium text-amber-700">{currentPhaseLabel ?? "In setup"}</p>
-        {currentStep != null && totalSteps != null && (
-          <p className="text-[11px] text-stone-400 tabular-nums">{currentStep}/{totalSteps}</p>
-        )}
-      </div>
-      <ChevronRight className="w-4 h-4 text-stone-300 group-hover:text-stone-400 flex-shrink-0" />
-    </Link>
+        <div className="text-right flex-shrink-0">
+          <p className="text-xs font-medium text-amber-700">{currentPhaseLabel ?? "In setup"}</p>
+          {currentStep != null && totalSteps != null && (
+            <p className="text-[11px] text-stone-400 tabular-nums">{currentStep}/{totalSteps}</p>
+          )}
+        </div>
+        <ChevronRight className="w-4 h-4 text-stone-300 group-hover:text-stone-400 flex-shrink-0" />
+      </Link>
+      {canGoLive && <GoLiveButton goalId={centre.goalId} variant="compact" />}
+    </div>
   );
 }
 

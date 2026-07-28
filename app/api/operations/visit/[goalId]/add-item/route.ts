@@ -3,7 +3,6 @@ import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import type { Prisma } from "@/app/generated/prisma/client";
 import { buildRbacContext, can } from "@/lib/rbac";
-import { goalOwnedByAnyOf } from "@/lib/ownership";
 import { slugifyChecklistText } from "@/lib/templateDb";
 import { auditLog } from "@/lib/auditLog";
 import type { CatalogCategory, CatalogItem, CentreCatalogOverrides } from "@/lib/catalogDb";
@@ -23,14 +22,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ goa
   const { goalId } = await params;
   const actorId = ctx.userId;
 
+  // "Anyone with rights" — gate purely on catalog_item.create, no ownership requirement.
   if (!(await can(ctx, "catalog_item", "create"))) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
-  const owns = await prisma.goal.findFirst({
-    where: { id: goalId, deletedAt: null, ...goalOwnedByAnyOf([actorId]) },
-    select: { id: true },
-  });
-  if (!owns) return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
   const text: string = (body?.text ?? "").trim();

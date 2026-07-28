@@ -38,13 +38,13 @@ export function ApprovalsPanel({
     router.refresh();
   };
 
-  if (approvals.length === 0 && actionPoints.length === 0) return null;
-
   return (
     <div className="space-y-3">
-      {approvals.length > 0 && (
-        <section className="rounded-xl border border-violet-200 bg-violet-50/40">
-          <Header icon={<ClipboardCheck className="w-4 h-4 text-violet-600" />} title="Items awaiting approval" count={approvals.length} />
+      <section className="rounded-xl border border-violet-200 bg-violet-50/40">
+        <Header icon={<ClipboardCheck className="w-4 h-4 text-violet-600" />} title="Items awaiting approval" count={approvals.length} />
+        {approvals.length === 0 ? (
+          <p className="px-3 pb-3 text-xs text-stone-400">Nothing awaiting approval.</p>
+        ) : (
           <div className="space-y-1.5 px-2.5 pb-2.5">
             {approvals.map((a) => (
               <div key={a.id} className="flex items-center gap-2.5 rounded-lg border border-stone-200 bg-white px-3 py-2">
@@ -73,12 +73,14 @@ export function ApprovalsPanel({
               </div>
             ))}
           </div>
-        </section>
-      )}
+        )}
+      </section>
 
-      {actionPoints.length > 0 && (
-        <section className="rounded-xl border border-amber-200 bg-amber-50/40">
-          <Header icon={<Flag className="w-4 h-4 text-amber-600" />} title="Open follow-ups" count={actionPoints.length} />
+      <section className="rounded-xl border border-amber-200 bg-amber-50/40">
+        <Header icon={<Flag className="w-4 h-4 text-amber-600" />} title="Open follow-ups" count={actionPoints.length} />
+        {actionPoints.length === 0 ? (
+          <p className="px-3 pb-3 text-xs text-stone-400">No open follow-ups.</p>
+        ) : (
           <div className="space-y-1.5 px-2.5 pb-2.5">
             {actionPoints.map((f) => (
               <div key={f.id} className="flex items-center gap-2.5 rounded-lg border border-stone-200 bg-white px-3 py-2">
@@ -101,8 +103,8 @@ export function ApprovalsPanel({
               </div>
             ))}
           </div>
-        </section>
-      )}
+        )}
+      </section>
     </div>
   );
 }

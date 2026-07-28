@@ -13,6 +13,7 @@ import prisma from "@/lib/prisma";
 import { goalOwnedByAnyOf } from "@/lib/ownership";
 import { slugifyChecklistText } from "@/lib/templateDb";
 import { deriveCentrePhase, type PhasePitstop } from "./phase";
+import { goalInClusterFilter } from "./clusters";
 import { loadThemeCatalog, loadLayerToDomain, resolveGoalThemeKey, indexThemes } from "./themes";
 import type { CatalogCategory, CentreCatalogOverrides } from "@/lib/catalogDb";
 
@@ -189,6 +190,125 @@ export async function loadOversightTree(
   zoneList.sort((a, b) => a.name.localeCompare(b.name));
 
   return { zones: zoneList, totals };
+}
+
+// ── Cluster activity board (Cluster → Happened / Today / Overdue / Upcoming) ──
+
+export type BoardActivity = {
+  id: string;
+  title: string;
+  centreGoalId: string;
+  centreName: string;
+  themeKey: string;
+  ownerName: string | null;
+  scheduledAt: string;
+  completedAt: string | null;
+  status: string;
+};
+
+export type ClusterBoard = {
+  clusterId: string;
+  clusterName: string;
+  today: BoardActivity[];
+  overdue: BoardActivity[];
+  upcoming: BoardActivity[];
+  happened: BoardActivity[];
+};
+
+/**
+ * All activity in one cluster across the supervised set, bucketed the way a supervisor thinks:
+ * what happened (recently Done), what's due today, what's overdue, what's upcoming. Same
+ * scheduledAt/month rules as the RP home; only top-level events (visitEventId null) so the
+ * board isn't flooded by individual ticked catalog sub-items.
+ */
+export async function loadClusterBoard(
+  userIds: string[],
+  clusterId: string,
+  now: Date = new Date(),
+): Promise<ClusterBoard | null> {
+  const cluster = await prisma.cluster.findUnique({ where: { id: clusterId }, select: { name: true } });
+  if (!cluster) return null;
+
+  const [layerToDomain, goals] = await Promise.all([
+    loadLayerToDomain(),
+    prisma.goal.findMany({
+      where: {
+        AND: [
+          goalOwnedByAnyOf(userIds),
+          goalInClusterFilter(clusterId),
+          { deletedAt: null, status: { not: "Complete" } },
+        ],
+      },
+      select: {
+        id: true, title: true, needsDomain: true,
+        owner: { select: { name: true } },
+        linkedFacility: { select: { name: true, layerKey: true } },
+        pitstops: { where: { deletedAt: null }, select: { id: true } },
+      },
+    }),
+  ]);
+
+  const pitstopToGoal = new Map<string, string>();
+  const goalMeta = new Map<string, { centreName: string; themeKey: string; ownerName: string | null }>();
+  for (const g of goals) {
+    for (const p of g.pitstops) pitstopToGoal.set(p.id, g.id);
+    goalMeta.set(g.id, {
+      centreName: g.linkedFacility?.name ?? g.title,
+      themeKey: resolveGoalThemeKey(g, layerToDomain) ?? "__other",
+      ownerName: g.owner?.name ?? null,
+    });
+  }
+  const pitstopIds = [...pitstopToGoal.keys()];
+  const board: ClusterBoard = { clusterId, clusterName: cluster.name, today: [], overdue: [], upcoming: [], happened: [] };
+  if (pitstopIds.length === 0) return board;
+
+  const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date(now); todayEnd.setHours(23, 59, 59, 999);
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+  const horizonEnd = new Date(now); horizonEnd.setDate(horizonEnd.getDate() + 60); horizonEnd.setHours(23, 59, 59, 999);
+  const thirtyAgo = new Date(now); thirtyAgo.setDate(thirtyAgo.getDate() - 30);
+
+  const events = await prisma.pitstopEvent.findMany({
+    where: {
+      deletedAt: null,
+      visitEventId: null, // top-level activities/visits only
+      pitstops: { some: { pitstopId: { in: pitstopIds } } },
+      OR: [
+        { scheduledAt: { lte: horizonEnd } },
+        { status: "Done", completedAt: { gte: thirtyAgo } },
+      ],
+    },
+    select: {
+      id: true, title: true, scheduledAt: true, status: true, completedAt: true,
+      pitstops: { select: { pitstopId: true } },
+    },
+    orderBy: { scheduledAt: "asc" },
+    take: 500,
+  });
+
+  for (const e of events) {
+    if (e.status === "Cancelled") continue;
+    // Attribute to the first of our goals this event touches.
+    let goalId: string | undefined;
+    for (const link of e.pitstops) { const gid = pitstopToGoal.get(link.pitstopId); if (gid) { goalId = gid; break; } }
+    if (!goalId) continue;
+    const meta = goalMeta.get(goalId)!;
+    const row: BoardActivity = {
+      id: e.id, title: e.title, centreGoalId: goalId, centreName: meta.centreName, themeKey: meta.themeKey,
+      ownerName: meta.ownerName, scheduledAt: e.scheduledAt.toISOString(),
+      completedAt: e.completedAt ? e.completedAt.toISOString() : null, status: e.status,
+    };
+
+    const isDoneRecently = e.status === "Done" && e.completedAt != null && e.completedAt >= thirtyAgo;
+    if (e.status !== "Done" && e.scheduledAt >= todayStart && e.scheduledAt <= todayEnd) board.today.push(row);
+    else if (e.status !== "Done" && e.scheduledAt < monthStart) board.overdue.push(row);
+    else if (e.status !== "Done" && e.scheduledAt > todayEnd) board.upcoming.push(row);
+    if (isDoneRecently) board.happened.push(row);
+  }
+
+  // happened = most-recently-completed first; the scheduled buckets keep asc order.
+  board.happened.sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? ""));
+  return board;
 }
 
 // ── Approval queues (supervisor review surfaces) ─────────────────────────────
