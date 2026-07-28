@@ -10,6 +10,7 @@
 import prisma from "@/lib/prisma";
 import { goalOwnedByAnyOf } from "@/lib/ownership";
 import { deriveCentrePhase, type PhasePitstop } from "./phase";
+import { goalInClusterFilter } from "./clusters";
 import { loadThemeCatalog, loadLayerToDomain, resolveGoalThemeKey, indexThemes, type ThemeDef } from "./themes";
 
 export type ThemeTile = {
@@ -24,16 +25,25 @@ export type ThemeTile = {
   overdue: number;
 };
 
-export async function loadOperationsHome(userIds: string[], now: Date = new Date()): Promise<ThemeTile[]> {
+export async function loadOperationsHome(
+  userIds: string[],
+  opts: { now?: Date; clusterId?: string } = {},
+): Promise<ThemeTile[]> {
+  const now = opts.now ?? new Date();
   const [catalog, layerToDomain, goals] = await Promise.all([
     loadThemeCatalog(),
     loadLayerToDomain(),
     prisma.goal.findMany({
       where: {
-        AND: [goalOwnedByAnyOf(userIds), { deletedAt: null, status: { not: "Complete" } }],
+        AND: [
+          goalOwnedByAnyOf(userIds),
+          { deletedAt: null, status: { not: "Complete" } },
+          ...(opts.clusterId ? [goalInClusterFilter(opts.clusterId)] : []),
+        ],
       },
       select: {
         id: true,
+        mode: true,
         needsDomain: true,
         linkedFacility: { select: { layerKey: true } },
         pitstops: {
@@ -81,7 +91,7 @@ export async function loadOperationsHome(userIds: string[], now: Date = new Date
   for (const g of goals) {
     const key = resolveGoalThemeKey(g, layerToDomain);
     if (!key) continue;
-    const phase = deriveCentrePhase(g.pitstops as PhasePitstop[]);
+    const phase = deriveCentrePhase(g.pitstops as PhasePitstop[], { mode: g.mode });
     const b = buckets.get(key) ?? { settingUp: 0, live: 0, done: 0, total: 0, today: 0, overdue: 0 };
     b.total += 1;
     if (phase.lifecycle === "setting_up") b.settingUp += 1;

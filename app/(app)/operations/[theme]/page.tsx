@@ -18,9 +18,9 @@ export default async function OperationsThemePage({
   searchParams,
 }: {
   params: Promise<{ theme: string }>;
-  searchParams: Promise<{ asUser?: string; lens?: string }>;
+  searchParams: Promise<{ asUser?: string; lens?: string; cluster?: string }>;
 }) {
-  const { asUser, lens: lensParam } = await searchParams;
+  const { asUser, lens: lensParam, cluster: clusterParam } = await searchParams;
   const ctx = await resolveViewContext(asUser);
   if (!ctx) redirect("/login");
   const userId = ctx.userId;
@@ -38,15 +38,27 @@ export default async function OperationsThemePage({
   const resolved: ThemeDef =
     theme ?? { key, label: key, color: "#6b7280", layerKey: null, isFacility: false, sortOrder: 999 };
 
-  const centres = await loadCentresForTheme([userId], resolved);
+  const centres = await loadCentresForTheme([userId], resolved, { clusterId: clusterParam });
   if (centres.length === 0 && !theme) notFound();
 
-  // Carry the lens (+ view-as) down to the centre so it opens the right bucket.
+  const asUserQ = preview ? `asUser=${encodeURIComponent(userId)}` : "";
+  const clusterQ = clusterParam ? `cluster=${encodeURIComponent(clusterParam)}` : "";
+
+  // Carry the lens (+ cluster + view-as) down to the classic centre detail.
   const centreHref = (goalId: string) => {
-    const qs = [lens ? `lens=${lens}` : "", preview ? `asUser=${encodeURIComponent(userId)}` : ""].filter(Boolean).join("&");
+    const qs = [lens ? `lens=${lens}` : "", clusterQ, asUserQ].filter(Boolean).join("&");
     return `/operations/${encodeURIComponent(key)}/${goalId}${qs ? `?${qs}` : ""}`;
   };
-  const backHref = preview ? `/operations?asUser=${encodeURIComponent(userId)}` : "/operations";
+  // Live centres open the visit view (category → tick → close) instead of the classic detail.
+  const visitHref = (goalId: string) => {
+    const qs = [asUserQ].filter(Boolean).join("&");
+    return `/operations/visit/${goalId}${qs ? `?${qs}` : ""}`;
+  };
+  // A live-lifecycle centre routes to the visit view only once it's actually gone live (mode="live").
+  const rowHref = (c: CentreRow) => (c.mode === "live" ? visitHref(c.goalId) : centreHref(c.goalId));
+  const backHref = clusterParam
+    ? `/operations?${[clusterQ, asUserQ].filter(Boolean).join("&")}`
+    : (preview ? `/operations?asUser=${encodeURIComponent(userId)}` : "/operations");
 
   // Lens views: a single flat list of the centres/geographies that carry work
   // in that bucket, each showing its count. No lens → the full lifecycle view.
@@ -91,7 +103,7 @@ export default async function OperationsThemePage({
                   key={c.goalId}
                   centre={c}
                   color={resolved.color}
-                  href={centreHref(c.goalId)}
+                  href={rowHref(c)}
                   count={lens === "today" ? c.today : c.overdue}
                   tone={lens === "today" ? "today" : "overdue"}
                 />
@@ -111,7 +123,7 @@ export default async function OperationsThemePage({
             {live.length > 0 && (
               <CentreGroup title="Live · monthly review" count={live.length}>
                 {live.map((c) => (
-                  <LiveRow key={c.goalId} centre={c} color={resolved.color} href={centreHref(c.goalId)} />
+                  <LiveRow key={c.goalId} centre={c} color={resolved.color} href={rowHref(c)} />
                 ))}
               </CentreGroup>
             )}

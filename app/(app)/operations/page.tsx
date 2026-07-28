@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { ChevronRight, CalendarRange, CheckCircle2 } from "lucide-react";
+import { ChevronRight, CalendarRange, CheckCircle2, MapPin, ArrowLeftRight } from "lucide-react";
 import { SurfaceProvider } from "@/components/rbac/RbacProviders";
 import { loadOperationsHome, type ThemeTile } from "@/lib/operations/home";
+import { getUserClusters } from "@/lib/operations/clusters";
 import { resolveViewContext, loadViewAsCandidates } from "@/lib/operations/viewAs";
 import { PreviewBanner } from "./_shared/PreviewBanner";
 import { ViewAsPicker } from "./_shared/ViewAsPicker";
@@ -10,39 +11,81 @@ import { ViewAsPicker } from "./_shared/ViewAsPicker";
 export const dynamic = "force-dynamic";
 
 /**
- * Operations world home. One set of programme (domain) tiles, shown three ways:
- * Today (programmes with work due today), Overdue (programmes carrying overdue
- * work), and Overall (everything the person runs). Tapping a tile opens that
- * programme filtered to the same lens → a centre/geography → its activities and
- * follow-ups. So the drill-down always answers "my tasks today → which centre →
- * what exactly." The month planner is one tap away.
+ * Operations world home — cluster-first. Step 0: choose the cluster you're visiting today. Step 1:
+ * that cluster's programme (domain) tiles, shown three ways — Today, Overdue, and Overall — filtered
+ * to the cluster. Tapping a tile opens that programme → a centre → its visit (live) or classic flow.
  */
 export default async function OperationsHomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ asUser?: string }>;
+  searchParams: Promise<{ asUser?: string; cluster?: string }>;
 }) {
-  const { asUser } = await searchParams;
+  const { asUser, cluster: clusterParam } = await searchParams;
   const ctx = await resolveViewContext(asUser);
   if (!ctx) redirect("/login");
   const userId = ctx.userId;
   const preview = ctx.viewingAs;
 
+  const clusters = await getUserClusters([userId]);
+  const selected = clusterParam ? clusters.find((c) => c.id === clusterParam) ?? null : null;
+
+  const asUserParam = preview ? `asUser=${encodeURIComponent(userId)}` : "";
+  const withParams = (base: string, extra: string[] = []) => {
+    const qs = [...extra, asUserParam].filter(Boolean).join("&");
+    return `${base}${qs ? `?${qs}` : ""}`;
+  };
+
+  // ── Step 0: cluster chooser ────────────────────────────────────────────────
+  if (!selected) {
+    return (
+      <SurfaceProvider id="operations.today">
+        <div className="max-w-3xl mx-auto px-5 sm:px-8 py-6 space-y-6">
+          {preview && <PreviewBanner name={preview.name} exitHref="/operations" />}
+          <header className="flex items-start justify-between gap-3">
+            <div>
+              <h1 className="text-lg font-semibold text-stone-900">Operations</h1>
+              <p className="text-sm text-stone-500 mt-0.5">Which cluster are you visiting today?</p>
+            </div>
+          </header>
+
+          {clusters.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-stone-200 p-8 text-center text-sm text-stone-400">
+              No clusters assigned yet.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {clusters.map((c) => (
+                <Link
+                  key={c.id}
+                  href={withParams("/operations", [`cluster=${encodeURIComponent(c.id)}`])}
+                  className="group flex items-center gap-3 rounded-xl border border-stone-200 bg-white p-4 hover:border-stone-300 hover:shadow-sm transition-all"
+                >
+                  <span className="w-10 h-10 rounded-lg bg-sky-100 text-sky-600 flex items-center justify-center flex-shrink-0">
+                    <MapPin className="w-5 h-5" />
+                  </span>
+                  <span className="text-sm font-semibold text-stone-800 flex-1 truncate">{c.name}</span>
+                  <ChevronRight className="w-4 h-4 text-stone-300 group-hover:text-stone-400" />
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      </SurfaceProvider>
+    );
+  }
+
+  // ── Step 1: cluster-scoped landing ─────────────────────────────────────────
   const [tiles, candidates] = await Promise.all([
-    loadOperationsHome([userId]),
+    loadOperationsHome([userId], { clusterId: selected.id }),
     ctx.isAdmin && !preview ? loadViewAsCandidates() : Promise.resolve([]),
   ]);
 
-  // Preserve the "view as" identity through every tile link.
-  const asUserParam = preview ? `asUser=${encodeURIComponent(userId)}` : "";
-  const href = (key: string, lens?: "today" | "overdue") => {
-    const qs = [lens ? `lens=${lens}` : "", asUserParam].filter(Boolean).join("&");
-    return `/operations/${encodeURIComponent(key)}${qs ? `?${qs}` : ""}`;
-  };
+  const clusterQ = `cluster=${encodeURIComponent(selected.id)}`;
+  const href = (key: string, lens?: "today" | "overdue") =>
+    withParams(`/operations/${encodeURIComponent(key)}`, [lens ? `lens=${lens}` : "", clusterQ].filter(Boolean));
 
   const todayTiles = tiles.filter((t) => t.today > 0).sort((a, b) => b.today - a.today);
   const overdueTiles = tiles.filter((t) => t.overdue > 0).sort((a, b) => b.overdue - a.overdue);
-
   const whose = preview ? `${preview.name ?? "User"}'s` : "Your";
 
   return (
@@ -51,11 +94,21 @@ export default async function OperationsHomePage({
         {preview && <PreviewBanner name={preview.name} exitHref="/operations" />}
 
         <header className="flex items-start justify-between gap-3">
-          <h1 className="text-lg font-semibold text-stone-900">Operations</h1>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-sky-600 shrink-0" />
+              <h1 className="text-lg font-semibold text-stone-900 truncate">{selected.name}</h1>
+            </div>
+            <Link
+              href={withParams("/operations")}
+              className="inline-flex items-center gap-1 text-xs text-stone-400 hover:text-stone-600 mt-1"
+            >
+              <ArrowLeftRight className="w-3 h-3" /> Change cluster
+            </Link>
+          </div>
           {ctx.isAdmin && !preview && candidates.length > 0 && <ViewAsPicker candidates={candidates} />}
         </header>
 
-        {/* Today — programmes with work due today. */}
         <TileSection title="Today">
           {todayTiles.length === 0 ? (
             <CaughtUp label="Nothing due today." />
@@ -68,7 +121,6 @@ export default async function OperationsHomePage({
           )}
         </TileSection>
 
-        {/* Overdue — programmes carrying work scheduled before today. */}
         {overdueTiles.length > 0 && (
           <TileSection title="Overdue">
             <TileGrid>
@@ -79,11 +131,10 @@ export default async function OperationsHomePage({
           </TileSection>
         )}
 
-        {/* Overall — everything the person runs, by lifecycle. */}
-        <TileSection title={`${whose} programmes`}>
+        <TileSection title={`${whose} programmes in this cluster`}>
           {tiles.length === 0 ? (
             <div className="rounded-xl border border-dashed border-stone-200 p-8 text-center text-sm text-stone-400">
-              No programmes assigned yet.
+              No programmes in this cluster yet.
             </div>
           ) : (
             <TileGrid>
@@ -94,7 +145,6 @@ export default async function OperationsHomePage({
           )}
         </TileSection>
 
-        {/* Month planner — always available. */}
         {!preview && (
           <Link
             href="/operations/plan"

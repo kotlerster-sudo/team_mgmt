@@ -56,6 +56,8 @@ model User {
   createdEvents             PitstopEvent[]                 @relation("PitstopEventCreator")
   lastUpdatedEvents         PitstopEvent[]                 @relation("PitstopEventLastUpdater")
   completedEvents           PitstopEvent[]                 @relation("PitstopEventCompleter")
+  arrivedEvents             PitstopEvent[]                 @relation("PitstopEventArriver")
+  addedCatalogItems         CatalogItemApproval[]          @relation("CatalogItemAdder")
   eventAttendances          PitstopEventAttendee[]
   leadZones                 Zone[]                         @relation("ZoneLead")
   rpClusters                Cluster[]                      @relation("RPClusters")
@@ -194,6 +196,10 @@ model Goal {
   status      GoalStatus @default(Active)
   isTemplate  Boolean    @default(false)
   recurrence  Recurrence @default(None)
+  // Operations lifecycle mode: "setup" = plan-driven (classic pitstop/checklist/activity flow);
+  // "live" = visit-driven (category catalog + cadence). Auto-flips setup→live when setup pitstops
+  // complete (see lib/operations/phase.ts derivation). Explicit override wins over implicit phase.
+  mode        String     @default("setup")
   startDate   DateTime?
   targetDate  DateTime?
   closedAt    DateTime?
@@ -248,6 +254,9 @@ model Goal {
   journeyPhases   ProgrammeJourneyPhase[]
   // Action points (denormalized — always nested under a PitstopEvent under this Goal)
   actionPoints    ActionPoint[]
+  // Live-centre visit catalog (present once Goal.mode = "live")
+  centreCatalog    CentreCatalog?
+  catalogApprovals CatalogItemApproval[]
 }
 
 // One row per settlement that received actuals from a completed domain goal.
@@ -1307,6 +1316,12 @@ model PitstopEvent {
   lastUpdatedById      String?
   completedById        String?
   checklistItemId      String?
+  // "I have reached" arrival stamp — set on a Visit event when the RP marks arrival at the centre.
+  arrivedAt            DateTime?
+  arrivedById          String?
+  // Groups ticked catalog items (child events) under their parent Visit event. Null on the visit
+  // itself and on classic (non-visit) activities.
+  visitEventId         String?
   rescheduledFrom      DateTime?
   rescheduleReason     String?
   rescheduleReasonCode String?
@@ -1325,7 +1340,11 @@ model PitstopEvent {
   createdBy     User                   @relation("PitstopEventCreator", fields: [createdById], references: [id])
   lastUpdatedBy User?                  @relation("PitstopEventLastUpdater", fields: [lastUpdatedById], references: [id])
   completedBy   User?                  @relation("PitstopEventCompleter", fields: [completedById], references: [id])
+  arrivedBy     User?                  @relation("PitstopEventArriver", fields: [arrivedById], references: [id])
   checklistItem ChecklistItem?         @relation("ChecklistActivity", fields: [checklistItemId], references: [id], onDelete: SetNull)
+  // Visit grouping: a Visit event owns the child events created when its catalog items are ticked.
+  visitEvent    PitstopEvent?          @relation("VisitChildren", fields: [visitEventId], references: [id], onDelete: SetNull)
+  childEvents   PitstopEvent[]         @relation("VisitChildren")
   attendees     PitstopEventAttendee[]
   pitstops      PitstopEventPitstop[]
   followups     PitstopEventFollowup[]
@@ -1802,6 +1821,58 @@ model GoalTemplateDef {
   isActive               Boolean  @default(true)
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
+}
+
+// Domain-default visit catalog for LIVE centres. One (or a few) per programme domain.
+// `categories` holds the menu hierarchy authored in the admin UI (parallel to GoalTemplateDef):
+//   [{ key, label, items: [{ key, text, completionType, blocksSignoff }] }]
+// Frozen into CentreCatalog.snapshot when a centre goes live (Budget cost snapshot/override pattern).
+model CatalogTemplateDef {
+  id                  String   @id @default(cuid())
+  slug                String   @unique
+  name                String
+  needsDomain         String? // matches Goal.needsDomain — the domain this catalog is the default for
+  categories          Json     @default("[]")
+  // Default visit cadence seeded onto a centre at go-live. period ∈ {"week","month"}.
+  defaultCadenceCount  Int?
+  defaultCadencePeriod String?
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+// Per-centre live catalog: a frozen snapshot of the domain default + sparse per-centre overrides,
+// plus this centre's visit cadence. One per live Goal.
+model CentreCatalog {
+  id            String   @id @default(cuid())
+  goalId        String   @unique
+  catalogSlug   String // the CatalogTemplateDef.slug this was seeded from
+  snapshot      Json     @default("{}") // frozen domain-default categories at go-live
+  overrides     Json     @default("{}") // sparse per-centre add/remove/edit; effective menu = snapshot ⊕ overrides
+  // Visit cadence (count per period). period ∈ {"week","month"}. Seeded from CatalogTemplateDef, overridable.
+  cadenceCount  Int?
+  cadencePeriod String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  goal Goal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+}
+
+// Approval record for catalog items added ad-hoc by an RP (visible to all, pending supervisor
+// approval). Managers add items directly with status "approved". Mirrors ReportSlotStatus lifecycle.
+model CatalogItemApproval {
+  id        String   @id @default(cuid())
+  goalId    String
+  itemKey   String // the catalog item key (within CentreCatalog.overrides) this approval governs
+  addedById String
+  status    String   @default("pending") // pending | approved | rejected
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  goal    Goal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  addedBy User @relation("CatalogItemAdder", fields: [addedById], references: [id])
+
+  @@unique([goalId, itemKey])
 }
 
 model UserLoginEvent {

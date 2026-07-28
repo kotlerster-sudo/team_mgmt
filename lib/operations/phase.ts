@@ -48,8 +48,24 @@ const notDeleted = (p: PhasePitstop) => !p.deletedAt;
 /**
  * Derive the centre's lifecycle + current setup phase from its goal's pitstops.
  * `pitstops` may be in any order; deleted ones are ignored.
+ *
+ * `opts.mode` is the explicit Goal.mode. When it is "live", it wins over the implicit
+ * pitstop-derived phase (a centre can be flipped live before every setup pitstop is Done).
  */
-export function deriveCentrePhase(pitstops: PhasePitstop[]): CentrePhase {
+export function deriveCentrePhase(
+  pitstops: PhasePitstop[],
+  opts: { mode?: string } = {},
+): CentrePhase {
+  if (opts.mode === "live") {
+    const setup = pitstops.filter(notDeleted).filter(isSetup);
+    return {
+      lifecycle: "live",
+      currentPhaseLabel: null,
+      currentStep: null,
+      totalSteps: setup.length || null,
+      hasReviewRhythm: true,
+    };
+  }
   const live = pitstops.filter(notDeleted);
   const setup = live.filter(isSetup).sort((a, b) => a.order - b.order);
   const hasReviewRhythm = live.some((p) => !isSetup(p));

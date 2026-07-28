@@ -17,12 +17,15 @@ import type { Prisma } from "@/app/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { goalOwnedByAnyOf } from "@/lib/ownership";
 import { deriveCentrePhase, type CentrePhase, type PhasePitstop } from "./phase";
+import { goalInClusterFilter } from "./clusters";
 import type { ThemeDef } from "./themes";
 
 export type CentreRow = {
   goalId: string;
   /** Display name: linked facility name, else goal title. */
   name: string;
+  /** Explicit operations mode ("setup" | "live") — authoritative for visit-vs-classic routing. */
+  mode: string;
   cluster: { id: string; name: string } | null;
   settlement: { id: string; name: string } | null;
   phase: CentrePhase;
@@ -57,8 +60,9 @@ const PITSTOP_SELECT = {
 export async function loadCentresForTheme(
   userIds: string[],
   theme: ThemeDef,
-  now: Date = new Date(),
+  opts: { now?: Date; clusterId?: string } = {},
 ): Promise<CentreRow[]> {
+  const now = opts.now ?? new Date();
   // A goal belongs to this theme by explicit needsDomain, or (for facility
   // themes) by its linked facility's layer when needsDomain is unset.
   const themeMatch: Prisma.GoalWhereInput = theme.isFacility
@@ -76,11 +80,13 @@ export async function loadCentresForTheme(
         goalOwnedByAnyOf(userIds),
         { deletedAt: null, status: { not: "Complete" } },
         themeMatch,
+        ...(opts.clusterId ? [goalInClusterFilter(opts.clusterId)] : []),
       ],
     },
     select: {
       id: true,
       title: true,
+      mode: true,
       needsCluster: { select: { id: true, name: true } },
       needsSettlement: { select: { id: true, name: true } },
       linkedFacility: {
@@ -138,9 +144,10 @@ export async function loadCentresForTheme(
     return {
       goalId: g.id,
       name: g.linkedFacility?.name ?? g.title,
+      mode: g.mode,
       cluster: g.linkedFacility?.cluster ?? g.needsCluster ?? null,
       settlement: g.linkedFacility?.settlement ?? g.needsSettlement ?? null,
-      phase: deriveCentrePhase(g.pitstops as PhasePitstop[]),
+      phase: deriveCentrePhase(g.pitstops as PhasePitstop[], { mode: g.mode }),
       month: { done: t.done, total: t.total },
       overdue: t.overdue,
       today: t.today,
