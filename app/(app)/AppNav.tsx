@@ -39,8 +39,9 @@ export default function AppNav({
    */
   allowedNavHrefs?: string[];
 }) {
-  void isAdmin; void designation; // reserved for future per-tier UI hints
   const pathname = usePathname();
+  // Supervisors (ZL/PM/Leader or admin) get the Oversight drill-down entry.
+  const isSupervisor = !!isAdmin || ["ZL", "PM", "Leader"].includes(designation ?? "");
   const allowedSet = new Set(allowedNavHrefs ?? []);
   const [showMore, setShowMore] = useState(false);
   const [unreadCount, setUnreadCount] = useState(initialUnreadCount);
@@ -100,6 +101,7 @@ export default function AppNav({
   // ── Operations nav items ───────────────────────────────────────────────────
   const operationsNav = [
     { href: "/operations",    icon: <LayoutGrid className="w-3.5 h-3.5" />,    label: "Operations"    },
+    ...(isSupervisor ? [{ href: "/operations/oversight", icon: <Layers className="w-3.5 h-3.5" />, label: "Oversight" }] : []),
     { href: "/home",          icon: <CalendarClock className="w-3.5 h-3.5" />, label: "Home"          },
     { href: "/activities",    icon: <CalendarClock className="w-3.5 h-3.5" />, label: "Activities"    },
     { href: "/visits",        icon: <CalendarRange className="w-3.5 h-3.5" />, label: "Visit calendar"},

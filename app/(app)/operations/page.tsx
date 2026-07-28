@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { ChevronRight, CalendarRange, CheckCircle2, MapPin, ArrowLeftRight } from "lucide-react";
+import { ChevronRight, CalendarRange, CheckCircle2, MapPin, ArrowLeftRight, Layers } from "lucide-react";
 import { SurfaceProvider } from "@/components/rbac/RbacProviders";
+import prisma from "@/lib/prisma";
 import { loadOperationsHome, type ThemeTile } from "@/lib/operations/home";
 import { getUserClusters } from "@/lib/operations/clusters";
 import { resolveViewContext, loadViewAsCandidates } from "@/lib/operations/viewAs";
@@ -29,6 +30,12 @@ export default async function OperationsHomePage({
   const clusters = await getUserClusters([userId]);
   const selected = clusterParam ? clusters.find((c) => c.id === clusterParam) ?? null : null;
 
+  // Supervisors get a shortcut to the oversight drill-down (also the only entry on mobile,
+  // where the sidebar "Oversight" item isn't shown). Hidden in admin "view as" preview.
+  const me = await prisma.user.findUnique({ where: { id: userId }, select: { designation: true } });
+  const isSupervisor =
+    !preview && (ctx.isAdmin || ["ZL", "PM", "Leader"].includes(me?.designation ?? ""));
+
   const asUserParam = preview ? `asUser=${encodeURIComponent(userId)}` : "";
   const withParams = (base: string, extra: string[] = []) => {
     const qs = [...extra, asUserParam].filter(Boolean).join("&");
@@ -46,6 +53,7 @@ export default async function OperationsHomePage({
               <h1 className="text-lg font-semibold text-stone-900">Operations</h1>
               <p className="text-sm text-stone-500 mt-0.5">Which cluster are you visiting today?</p>
             </div>
+            {isSupervisor && <OversightLink />}
           </header>
 
           {clusters.length === 0 ? (
@@ -106,7 +114,10 @@ export default async function OperationsHomePage({
               <ArrowLeftRight className="w-3 h-3" /> Change cluster
             </Link>
           </div>
-          {ctx.isAdmin && !preview && candidates.length > 0 && <ViewAsPicker candidates={candidates} />}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {isSupervisor && <OversightLink />}
+            {ctx.isAdmin && !preview && candidates.length > 0 && <ViewAsPicker candidates={candidates} />}
+          </div>
         </header>
 
         <TileSection title="Today">
@@ -159,6 +170,17 @@ export default async function OperationsHomePage({
         )}
       </div>
     </SurfaceProvider>
+  );
+}
+
+function OversightLink() {
+  return (
+    <Link
+      href="/operations/oversight"
+      className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-600 hover:border-stone-300 hover:text-stone-800 transition-colors"
+    >
+      <Layers className="w-3.5 h-3.5 text-sky-600" /> Oversight
+    </Link>
   );
 }
 

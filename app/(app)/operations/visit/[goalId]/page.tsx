@@ -4,11 +4,11 @@ import { useState, useEffect, useCallback, use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  ChevronLeft, ChevronRight, MapPin, CheckCircle2, Circle, Repeat, AlertTriangle, Loader2,
+  ChevronLeft, ChevronRight, MapPin, CheckCircle2, Circle, Repeat, AlertTriangle, Loader2, Plus,
 } from "lucide-react";
 import { SurfaceProvider } from "@/components/rbac/RbacProviders";
 
-type Item = { key: string; text: string; completionType: string; mandatory: boolean; source: string; ticked: boolean };
+type Item = { key: string; text: string; completionType: string; mandatory: boolean; source: string; ticked: boolean; approval: string | null };
 type Category = { key: string; label: string; items: Item[] };
 type Screen = {
   goal: { id: string; title: string; clusterName: string | null; settlementName: string | null };
@@ -30,6 +30,8 @@ export default function VisitPage({ params }: { params: Promise<{ goalId: string
   const [closeMissing, setCloseMissing] = useState<{ text: string; categoryLabel: string }[] | null>(null);
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
+  const [addingCat, setAddingCat] = useState<string | null>(null);
+  const [newText, setNewText] = useState("");
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/operations/visit/${goalId}`);
@@ -60,6 +62,21 @@ export default function VisitPage({ params }: { params: Promise<{ goalId: string
     });
     await load();
     setBusy(null);
+  };
+
+  const addItem = async (categoryKey: string) => {
+    const text = newText.trim();
+    if (!text) return;
+    setBusy(`add-${categoryKey}`);
+    const res = await fetch(`/api/operations/visit/${goalId}/add-item`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ categoryKey, text }),
+    });
+    if (!res.ok) setError((await res.json().catch(() => ({})))?.error ?? "Couldn't add item");
+    setBusy(null);
+    setNewText("");
+    setAddingCat(null);
+    await load();
   };
 
   const close = async (withReason?: string) => {
@@ -167,11 +184,43 @@ export default function VisitPage({ params }: { params: Promise<{ goalId: string
                             <span className={`text-sm flex-1 ${item.ticked ? "text-stone-400 line-through" : "text-stone-700"}`}>
                               {item.text}
                             </span>
+                            {item.approval === "pending" && (
+                              <span className="text-[10px] px-1.5 py-0.5 bg-violet-50 text-violet-600 rounded-full shrink-0">pending approval</span>
+                            )}
                             {item.mandatory && !item.ticked && (
                               <span className="text-[10px] px-1.5 py-0.5 bg-amber-50 text-amber-600 rounded-full shrink-0">required</span>
                             )}
                           </button>
                         ))}
+
+                        {/* Add an off-catalog item — opens a pending approval for a supervisor. */}
+                        {addingCat === cat.key ? (
+                          <div className="flex items-center gap-2 px-4 py-2.5">
+                            <input
+                              autoFocus
+                              value={newText}
+                              onChange={(e) => setNewText(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === "Enter") addItem(cat.key); if (e.key === "Escape") { setAddingCat(null); setNewText(""); } }}
+                              placeholder="New item…"
+                              className="flex-1 min-w-0 px-2.5 py-1.5 text-sm border border-stone-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-stone-300"
+                            />
+                            <button
+                              onClick={() => addItem(cat.key)}
+                              disabled={busy === `add-${cat.key}` || !newText.trim()}
+                              className="px-3 py-1.5 text-sm bg-stone-900 text-white rounded-lg hover:bg-stone-700 disabled:opacity-50 shrink-0"
+                            >
+                              {busy === `add-${cat.key}` ? <Loader2 className="w-4 h-4 animate-spin" /> : "Add"}
+                            </button>
+                            <button onClick={() => { setAddingCat(null); setNewText(""); }} className="text-xs text-stone-400 hover:text-stone-600 shrink-0">Cancel</button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => { setAddingCat(cat.key); setNewText(""); }}
+                            className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm text-stone-400 hover:text-stone-600 hover:bg-stone-50 transition-colors"
+                          >
+                            <Plus className="w-4 h-4 shrink-0" /> Add item
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>

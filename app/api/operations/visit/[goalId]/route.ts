@@ -60,6 +60,13 @@ async function loadScreen(goalId: string, userId: string) {
     },
   });
 
+  // Approval status for ad-hoc items (layered on top of the pure catalog resolve).
+  const approvals = await prisma.catalogItemApproval.findMany({
+    where: { goalId },
+    select: { itemKey: true, status: true },
+  });
+  const approvalByKey = new Map(approvals.map((a) => [a.itemKey, a.status]));
+
   const ticked = new Set(tickedKeys);
   const categories = resolveEffectiveCatalog(snapshot, overrides).map((cat) => ({
     key: cat.key,
@@ -67,6 +74,7 @@ async function loadScreen(goalId: string, userId: string) {
     items: cat.items.map((it) => ({
       key: it.key, text: it.text, completionType: it.completionType,
       mandatory: it.blocksSignoff, source: it.source, ticked: ticked.has(it.key),
+      approval: approvalByKey.get(it.key) ?? null,
     })),
   }));
 

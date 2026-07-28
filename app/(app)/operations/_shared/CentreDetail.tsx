@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, ChevronDown, Flag } from "lucide-react";
+import { CheckCircle2, ChevronDown, Flag, ListChecks } from "lucide-react";
 import type { Activity, ChecklistItem } from "@/app/(app)/home/_lib/types";
 import type { CentreFollowUp } from "@/lib/operations/today";
 import { isToday, fmtTime, fmtDate, daysAgo } from "@/app/(app)/home/_lib/helpers";
@@ -46,7 +46,7 @@ export function CentreDetail({
     const upcoming: Activity[] = [];
     for (const a of activities) {
       const done = a.status === "Done" || doneIds.has(a.id);
-      if (isToday(a.scheduledAt)) todayList.push(a);
+      if (isToday(a.scheduledAt) && !done) todayList.push(a);
       else if (!done && new Date(a.scheduledAt) < startOfToday()) overdue.push(a);
       else if (pending(a)) upcoming.push(a);
     }
@@ -70,23 +70,37 @@ export function CentreDetail({
       />
     );
 
+  // Within a time bucket, park each activity under the checklist it belongs to. One
+  // checklist can carry several activities in a day, so this keeps the drill-down readable
+  // instead of a flat list. When nothing is grouped (no checklist context), stay flat.
+  const renderBucket = (list: Activity[], overdue: boolean) => {
+    const groups = groupByChecklist(list, checklistMap);
+    const onlyUngrouped = groups.length === 1 && groups[0].checklist === null;
+    if (onlyUngrouped) return groups[0].items.map((a) => renderRow(a, overdue));
+    return groups.map((g) => (
+      <ChecklistGroup key={g.checklist?.id ?? "__none"} checklist={g.checklist} count={g.items.length}>
+        {g.items.map((a) => renderRow(a, overdue))}
+      </ChecklistGroup>
+    ));
+  };
+
   const nothing = buckets.overdue.length + buckets.today.length + buckets.upcoming.length === 0;
 
   return (
     <div className="space-y-3">
       {buckets.today.length > 0 && (
         <Section title="Today" count={buckets.today.length} defaultOpen={initialOpen === "today"}>
-          {buckets.today.map((a) => renderRow(a, false))}
+          {renderBucket(buckets.today, false)}
         </Section>
       )}
       {buckets.overdue.length > 0 && (
         <Section title="Overdue" count={buckets.overdue.length} tone="amber" defaultOpen={initialOpen === "overdue"}>
-          {buckets.overdue.map((a) => renderRow(a, true))}
+          {renderBucket(buckets.overdue, true)}
         </Section>
       )}
       {buckets.upcoming.length > 0 && (
         <Section title="Upcoming" count={buckets.upcoming.length} defaultOpen={false}>
-          {buckets.upcoming.map((a) => renderRow(a, false))}
+          {renderBucket(buckets.upcoming, false)}
         </Section>
       )}
 
@@ -117,6 +131,58 @@ export function CentreDetail({
 
 function startOfToday() {
   const d = new Date(); d.setHours(0, 0, 0, 0); return d;
+}
+
+/**
+ * Groups a time bucket's activities by the checklist they hang off, preserving the
+ * incoming (time-sorted) order both across and within groups. Activities with no linked
+ * checklist collapse into a single trailing "null" group ("Other activities").
+ */
+function groupByChecklist(list: Activity[], map: Map<string, ChecklistItem>) {
+  const order: string[] = [];
+  const byKey = new Map<string, { checklist: ChecklistItem | null; items: Activity[] }>();
+  for (const a of list) {
+    const ci = map.get(a.id) ?? null;
+    const key = ci?.id ?? "__none";
+    if (!byKey.has(key)) { byKey.set(key, { checklist: ci, items: [] }); order.push(key); }
+    byKey.get(key)!.items.push(a);
+  }
+  return order.map((k) => byKey.get(k)!);
+}
+
+/**
+ * Nested collapsible for one checklist inside a time bucket. Lighter than the top-level
+ * Section so it reads as a sub-group. Defaults open — the parent Section already gates
+ * visibility, and hiding the tasks a second time would bury them.
+ */
+function ChecklistGroup({
+  checklist, count, children,
+}: {
+  checklist: ChecklistItem | null;
+  count: number;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="rounded-lg border border-stone-200/70 bg-white/60">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left"
+        aria-expanded={open}
+      >
+        <ChevronDown className={`w-3.5 h-3.5 text-stone-400 flex-shrink-0 transition-transform ${open ? "" : "-rotate-90"}`} />
+        <ListChecks className="w-3.5 h-3.5 text-stone-400 flex-shrink-0" />
+        <span className="flex-1 min-w-0 truncate text-xs font-medium text-stone-600">
+          {checklist?.text ?? "Other activities"}
+        </span>
+        <span className="text-[10px] font-semibold rounded-full px-1.5 py-0.5 tabular-nums text-stone-500 bg-stone-100">
+          {count}
+        </span>
+      </button>
+      {open && <div className="space-y-1.5 px-2 pb-2">{children}</div>}
+    </div>
+  );
 }
 
 /**

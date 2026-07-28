@@ -2,7 +2,10 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft, MapPin } from "lucide-react";
 import { SurfaceProvider } from "@/components/rbac/RbacProviders";
+import prisma from "@/lib/prisma";
 import { resolveViewContext } from "@/lib/operations/viewAs";
+import { getVisibleUserIds } from "@/lib/visibilityScope";
+import { goalOwnedByAnyOf } from "@/lib/ownership";
 import { loadCentreDetail } from "@/lib/operations/today";
 import { CentreDetail } from "../../_shared/CentreDetail";
 import { PreviewBanner } from "../../_shared/PreviewBanner";
@@ -18,22 +21,41 @@ export default async function CentreDetailPage({
   searchParams,
 }: {
   params: Promise<{ theme: string; goalId: string }>;
-  searchParams: Promise<{ asUser?: string; lens?: string }>;
+  searchParams: Promise<{ asUser?: string; lens?: string; from?: string }>;
 }) {
   const { theme, goalId } = await params;
-  const { asUser, lens: lensParam } = await searchParams;
+  const { asUser, lens: lensParam, from } = await searchParams;
   const ctx = await resolveViewContext(asUser);
   if (!ctx) redirect("/login");
   const preview = ctx.viewingAs;
+  const fromOversight = from === "oversight";
   const lens: "today" | "overdue" | null =
     lensParam === "today" ? "today" : lensParam === "overdue" ? "overdue" : null;
 
-  const detail = await loadCentreDetail([ctx.userId], goalId);
+  // Widen the load to the viewer's supervised set so a ZL/PM/Leader can open a reportee's
+  // centre. A centre the viewer doesn't personally own is shown read-only (they supervise,
+  // not execute); their own centres stay interactive. RPs resolve to [self] — unchanged.
+  const me = await prisma.user.findUnique({
+    where: { id: ctx.userId },
+    select: { role: true, designation: true },
+  });
+  const visibleIds = me
+    ? await getVisibleUserIds({ userId: ctx.userId, role: me.role ?? "member", designation: me.designation ?? "Other" })
+    : [ctx.userId];
+
+  const detail = await loadCentreDetail(visibleIds, goalId);
   if (!detail) notFound();
 
-  // Back link returns to the same lens view of the programme.
-  const themeQs = [lens ? `lens=${lens}` : "", preview ? `asUser=${encodeURIComponent(ctx.userId)}` : ""].filter(Boolean).join("&");
-  const themeHref = `/operations/${encodeURIComponent(theme)}${themeQs ? `?${themeQs}` : ""}`;
+  const ownedBySelf =
+    (await prisma.goal.count({ where: { id: goalId, ...goalOwnedByAnyOf([ctx.userId]) } })) > 0;
+  const readOnly = !!preview || !ownedBySelf;
+
+  // Back link returns to where the drill came from — the oversight tree or the theme portal.
+  const asUserQs = preview ? `asUser=${encodeURIComponent(ctx.userId)}` : "";
+  const themeQs = [lens ? `lens=${lens}` : "", asUserQs].filter(Boolean).join("&");
+  const themeHref = fromOversight
+    ? "/operations/oversight"
+    : `/operations/${encodeURIComponent(theme)}${themeQs ? `?${themeQs}` : ""}`;
   const ph = detail.phase;
   const phaseLabel =
     ph.lifecycle === "setting_up" ? `${ph.currentPhaseLabel ?? "In setup"} · ${ph.currentStep}/${ph.totalSteps}`
@@ -64,7 +86,7 @@ export default async function CentreDetailPage({
           activities={detail.activities}
           checklists={detail.checklists}
           followUps={detail.followUps}
-          readOnly={!!preview}
+          readOnly={readOnly}
           storageKey={`ops-centre-${detail.goalId}-done`}
           initialOpen={lens ?? "today"}
         />
