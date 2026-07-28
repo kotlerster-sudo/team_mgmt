@@ -10,15 +10,15 @@ import { SurfaceProvider } from "@/components/rbac/RbacProviders";
 import { ActivityCard } from "@/app/(app)/home/_shared/ActivityCard";
 import type { Activity, ChecklistItem } from "@/app/(app)/home/_lib/types";
 
-type Item = {
+// A tagged checklist and its activities (the completion units). Materialised post-arrival.
+type Checklist = {
   key: string; text: string; completionType: string;
-  mandatory: boolean; source: string; approval: string | null;
-  done: boolean;
-  // Materialised (post-arrival) — completion runs through ActivityCard's standard flow.
-  activity: Activity | null;
   checklistId: string | null;
+  mandatory: boolean; source: string; approval: string | null;
+  activities: Activity[];
+  doneCount: number; totalCount: number;
 };
-type Category = { key: string; label: string; items: Item[] };
+type Category = { key: string; label: string; checklists: Checklist[] };
 type Screen = {
   goal: { id: string; title: string; clusterName: string | null; settlementName: string | null };
   cadence: { count: number; period: string } | null;
@@ -106,9 +106,9 @@ export default function VisitPage({ params }: { params: Promise<{ goalId: string
     );
   }
 
-  const allItems = screen.categories.flatMap((c) => c.items);
-  const totalItems = allItems.length;
-  const doneItems = allItems.filter((i) => i.done).length;
+  const allChecklists = screen.categories.flatMap((c) => c.checklists);
+  const totalItems = allChecklists.reduce((n, c) => n + c.totalCount, 0);
+  const doneItems = allChecklists.reduce((n, c) => n + c.doneCount, 0);
 
   return (
     <SurfaceProvider id="operations.visit">
@@ -150,10 +150,11 @@ export default function VisitPage({ params }: { params: Promise<{ goalId: string
               </span>
             </div>
 
-            {/* Category tiles → each item completes via the standard ActivityCard flow */}
+            {/* Category tiles → checklist headers → their activities (standard ActivityCard flow) */}
             <div className="space-y-2">
               {screen.categories.map((cat) => {
-                const done = cat.items.filter((i) => i.done).length;
+                const catDone = cat.checklists.reduce((n, c) => n + c.doneCount, 0);
+                const catTotal = cat.checklists.reduce((n, c) => n + c.totalCount, 0);
                 const isOpen = openCat === cat.key;
                 return (
                   <div key={cat.key} className="border border-stone-200 rounded-xl bg-white overflow-hidden">
@@ -162,13 +163,13 @@ export default function VisitPage({ params }: { params: Promise<{ goalId: string
                       className="w-full flex items-center gap-2 px-4 py-3 text-left"
                     >
                       <span className="text-sm font-medium text-stone-800 flex-1 truncate">{cat.label}</span>
-                      <span className="text-xs text-stone-400">{done}/{cat.items.length}</span>
+                      <span className="text-xs text-stone-400">{catDone}/{catTotal}</span>
                       <ChevronRight className={`w-4 h-4 text-stone-400 transition-transform ${isOpen ? "rotate-90" : ""}`} />
                     </button>
                     {isOpen && (
-                      <div className="border-t border-stone-100 p-2 space-y-1.5">
-                        {cat.items.map((item) => (
-                          <VisitItemRow key={item.key} item={item} onChanged={load} />
+                      <div className="border-t border-stone-100 p-2 space-y-2.5">
+                        {cat.checklists.map((cl) => (
+                          <ChecklistBlock key={cl.key} checklist={cl} onChanged={load} />
                         ))}
 
                         {/* Add an off-catalog item — opens a pending approval; materialises on reload. */}
@@ -260,47 +261,56 @@ export default function VisitPage({ params }: { params: Promise<{ goalId: string
 }
 
 /**
- * One catalog line inside a visit. Once materialised it IS a real activity, so it completes
+ * A tagged checklist inside a visit: a header line, then its activities. Each activity completes
  * through the shared ActivityCard — honouring its completionType (mark-done / voice / upload) and
- * opening CompleteActivityModal for indicators + the follow-up-action prompt.
+ * opening CompleteActivityModal for indicators (bound to this checklist) + the follow-up prompt.
  */
-function VisitItemRow({ item, onChanged }: { item: Item; onChanged: () => void }) {
-  const needsBadge = (item.mandatory && !item.done) || item.approval === "pending";
-  // Voice / Upload mark only the ChecklistItem Done server-side. The visit's per-visit done-count
-  // + close check read the child EVENT status, so stamp it Done here too (Activity-type already is).
-  const handleCompleted = async () => {
-    if (item.activity && (item.completionType === "Voice" || item.completionType === "Upload")) {
-      await fetch(`/api/pitstop-events/${item.activity.id}`, {
+function ChecklistBlock({ checklist, onChanged }: { checklist: Checklist; onChanged: () => void }) {
+  const allDone = checklist.totalCount > 0 && checklist.doneCount === checklist.totalCount;
+  // Voice / Upload mark only the ChecklistItem Done server-side. The per-visit done-count + close
+  // check read the child EVENT status, so stamp the completed activity Done here too.
+  const handleCompleted = async (eventId: string) => {
+    if (checklist.completionType === "Voice" || checklist.completionType === "Upload") {
+      await fetch(`/api/pitstop-events/${eventId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "Done" }),
       }).catch(() => {});
     }
     onChanged();
   };
+
   return (
-    <div className="space-y-1">
-      {needsBadge && (
-        <div className="flex items-center gap-1.5 px-1">
-          {item.approval === "pending" && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-violet-50 text-violet-600 rounded-full">pending approval</span>
-          )}
-          {item.mandatory && !item.done && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-amber-50 text-amber-600 rounded-full">required</span>
-          )}
-        </div>
-      )}
-      {item.activity ? (
-        <ActivityCard
-          activity={item.activity}
-          linkedChecklist={item.checklistId ? ({ id: item.checklistId, completionType: item.completionType } as ChecklistItem) : null}
-          onCompleted={handleCompleted}
-          onRescheduled={onChanged}
-          isDone={item.done}
-        />
-      ) : (
-        <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-stone-200 bg-white">
-          <span className="text-sm text-stone-700 flex-1">{item.text}</span>
-        </div>
-      )}
+    <div className="rounded-xl border border-stone-200 bg-stone-50/50 p-2">
+      <div className="flex items-center gap-2 px-1 pb-1.5">
+        {allDone
+          ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+          : <span className="w-1.5 h-1.5 rounded-full bg-stone-300 shrink-0" />}
+        <span className={`text-[13px] font-medium flex-1 min-w-0 truncate ${allDone ? "text-stone-400" : "text-stone-800"}`}>{checklist.text}</span>
+        {checklist.approval === "pending" && (
+          <span className="text-[10px] px-1.5 py-0.5 bg-violet-50 text-violet-600 rounded-full shrink-0">pending</span>
+        )}
+        {checklist.mandatory && !allDone && (
+          <span className="text-[10px] px-1.5 py-0.5 bg-amber-50 text-amber-600 rounded-full shrink-0">required</span>
+        )}
+        {checklist.totalCount > 1 && (
+          <span className="text-[10px] text-stone-400 tabular-nums shrink-0">{checklist.doneCount}/{checklist.totalCount}</span>
+        )}
+      </div>
+      <div className="space-y-1.5">
+        {checklist.activities.length === 0 ? (
+          <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-stone-200 bg-white">
+            <span className="text-sm text-stone-500 flex-1">{checklist.text}</span>
+          </div>
+        ) : checklist.activities.map((a) => (
+          <ActivityCard
+            key={a.id}
+            activity={a}
+            linkedChecklist={checklist.checklistId ? ({ id: checklist.checklistId, completionType: checklist.completionType } as ChecklistItem) : null}
+            onCompleted={handleCompleted}
+            onRescheduled={onChanged}
+            isDone={a.status === "Done"}
+          />
+        ))}
+      </div>
     </div>
   );
 }

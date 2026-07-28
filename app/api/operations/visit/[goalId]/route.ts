@@ -11,7 +11,7 @@ import { materialiseVisitItems } from "@/lib/visits/materialise";
 const VISIT_CHILD_SELECT = {
   ...EVENT_SELECT,
   templateKey: true,
-  checklistItem: { select: { id: true, completionType: true } },
+  checklistItem: { select: { id: true, key: true, completionType: true } },
 } as const;
 
 // Shared loader: resolves a live centre's catalog + cadence (via loadCentreCatalogView) then, once
@@ -36,8 +36,9 @@ async function loadScreen(goalId: string, userId: string) {
     orderBy: { createdAt: "desc" },
   });
 
-  // Once arrived, ensure the catalog is materialised (idempotent), then load the child activities.
-  const byItemKey = new Map<string, { activity: unknown; checklistId: string | null; done: boolean }>();
+  // Once arrived, materialise (idempotent), then load child activities grouped by their checklist.
+  // byChecklistKey: checklist key → { checklistId, completionType, activities[] }.
+  const byChecklistKey = new Map<string, { checklistId: string | null; completionType: string; activities: unknown[] }>();
   if (currentVisit?.arrivedAt) {
     await materialiseVisitItems(currentVisit.id, userId);
     const children = await prisma.pitstopEvent.findMany({
@@ -46,26 +47,33 @@ async function loadScreen(goalId: string, userId: string) {
       orderBy: { scheduledAt: "asc" },
     });
     for (const c of children) {
-      if (!c.templateKey) continue;
-      byItemKey.set(c.templateKey, {
-        activity: c,
+      const ck = c.checklistItem?.key;
+      if (!ck) continue;
+      const g = byChecklistKey.get(ck) ?? {
         checklistId: c.checklistItem?.id ?? null,
-        done: c.status === "Done",
-      });
+        completionType: c.checklistItem?.completionType ?? "Activity",
+        activities: [] as unknown[],
+      };
+      g.activities.push(c);
+      byChecklistKey.set(ck, g);
     }
   }
 
+  // Category → checklist (the tagged catalog item) → its activities.
   const outCategories = categories.map((cat) => ({
     key: cat.key,
     label: cat.label,
-    items: cat.items.map((it) => {
-      const m = byItemKey.get(it.key);
+    checklists: cat.items.map((it) => {
+      const g = byChecklistKey.get(it.key);
+      const activities = g?.activities ?? [];
+      const doneCount = activities.filter((a) => (a as { status?: string }).status === "Done").length;
       return {
-        key: it.key, text: it.text, completionType: it.completionType,
+        key: it.key, text: it.text,
+        completionType: g?.completionType ?? it.completionType,
+        checklistId: g?.checklistId ?? null,
         mandatory: it.mandatory, source: it.source, approval: it.approval,
-        done: m?.done ?? false,
-        activity: m?.activity ?? null,
-        checklistId: m?.checklistId ?? null,
+        activities,
+        doneCount, totalCount: activities.length,
       };
     }),
   }));

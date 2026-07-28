@@ -20,12 +20,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ eve
   const ctx = await loadVisitContext(eventId);
   if (!ctx) return Response.json({ error: "Not a live-centre visit" }, { status: 400 });
 
-  // Keys ticked during THIS visit (child events grouped under it).
+  // A checklist counts as done THIS visit only when every activity under it (child events grouped by
+  // their checklist) is Done. Those done-checklist keys == catalog item keys drive the mandatory check.
   const children = await prisma.pitstopEvent.findMany({
-    where: { visitEventId: eventId, deletedAt: null, status: "Done" },
-    select: { templateKey: true },
+    where: { visitEventId: eventId, deletedAt: null, status: { not: "Cancelled" } },
+    select: { status: true, checklistItem: { select: { key: true } } },
   });
-  const ticked = children.map((c) => c.templateKey).filter((k): k is string => Boolean(k));
+  const total = new Map<string, number>();
+  const done = new Map<string, number>();
+  for (const c of children) {
+    const k = c.checklistItem?.key;
+    if (!k) continue;
+    total.set(k, (total.get(k) ?? 0) + 1);
+    if (c.status === "Done") done.set(k, (done.get(k) ?? 0) + 1);
+  }
+  const ticked = [...total.keys()].filter((k) => (done.get(k) ?? 0) === total.get(k));
 
   const missing = missingMandatory(ctx.snapshot, ctx.overrides, ticked);
 
