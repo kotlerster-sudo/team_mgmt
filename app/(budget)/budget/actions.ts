@@ -29,8 +29,12 @@ export type CreateBudgetPayload = {
    * budget's inputs become the summed totals, and cross-cutting lines are
    * generated once into the Master (deliveryPartnerId null). sharedPct is each
    * partner's explicit share of those shared costs (consumed at display/export).
+   * grantPartnerId links each delivery-partner tab to the same GrantPartner
+   * registry as Budget.grantPartnerId; name is the display label (usually the
+   * partner's name at save-time — kept denormalised so the tab still labels
+   * correctly if the registry row is later renamed or unlinked).
    */
-  deliveryPartners?: { name: string; sharedPct: number; programmeInputs: Record<string, number> }[];
+  deliveryPartners?: { name: string; sharedPct: number; grantPartnerId?: string | null; programmeInputs: Record<string, number> }[];
 };
 
 /** Element-wise sum of several flat input maps (for the master totals). */
@@ -339,6 +343,19 @@ export async function createBudget(payload: CreateBudgetPayload) {
     const directTemplates = templates.filter(t => t.domain !== null);
     const sharedTemplates = templates.filter(t => t.domain === null);
 
+    // Enforce the same-city invariant as Budget.grantPartnerId. Any invalid
+    // link is silently dropped (name still carries the label) — we don't want
+    // a stray registry pick to block a whole budget create.
+    const linkedIds = Array.from(new Set(partners.map(p => p.grantPartnerId).filter((x): x is string => !!x)));
+    const validLinkedIds = new Set<string>();
+    if (linkedIds.length) {
+      const validRows = await prisma.grantPartner.findMany({
+        where: { id: { in: linkedIds }, city: payload.city },
+        select: { id: true },
+      });
+      for (const r of validRows) validLinkedIds.add(r.id);
+    }
+
     // Each partner's domain lines come from its own inputs; shared/cross-cutting
     // lines are generated once from the summed totals into the Master.
     const perPartnerLines = partners.map(p =>
@@ -359,6 +376,7 @@ export async function createBudget(payload: CreateBudgetPayload) {
           create: partners.map((p, i) => ({
             name: p.name.trim(), sortOrder: i,
             sharedPct: Number.isFinite(p.sharedPct) ? p.sharedPct : 0,
+            grantPartnerId: p.grantPartnerId && validLinkedIds.has(p.grantPartnerId) ? p.grantPartnerId : null,
             inputs: p.programmeInputs,
           })),
         },
@@ -816,25 +834,37 @@ export async function deleteLine(lineId: string) {
   revalidatePath(`/budget/${line.budgetId}`);
 }
 
-/** Edit a delivery partner's name or shared-cost % (multi-partner budgets). */
+/** Edit a delivery partner's name, shared-cost %, or GrantPartner registry
+ *  link (multi-partner budgets). When grantPartnerId is passed, the target
+ *  registry row must live in the same city as the budget — mirrors the
+ *  invariant on Budget.grantPartnerId. Pass `null` to unlink. */
 export async function updateDeliveryPartner(
   partnerId: string,
-  updates: { name?: string; sharedPct?: number },
+  updates: { name?: string; sharedPct?: number; grantPartnerId?: string | null },
 ) {
   const session = await auth();
   if (!session?.user?.id) throw new Error("Not authenticated");
 
   const dp = await prisma.budgetDeliveryPartner.findUnique({
     where: { id: partnerId },
-    select: { budgetId: true, budget: { select: { partnerId: true } } },
+    select: { budgetId: true, budget: { select: { partnerId: true, city: true } } },
   });
   if (!dp || dp.budget.partnerId !== session.user.id) throw new Error("Not found");
+
+  if (updates.grantPartnerId) {
+    const gp = await prisma.grantPartner.findUnique({
+      where: { id: updates.grantPartnerId },
+      select: { city: true },
+    });
+    if (!gp || gp.city !== dp.budget.city) throw new Error("Partner is not in this budget's city");
+  }
 
   await prisma.budgetDeliveryPartner.update({
     where: { id: partnerId },
     data: {
       ...(updates.name !== undefined ? { name: updates.name.trim() || "Partner" } : {}),
       ...(updates.sharedPct !== undefined && Number.isFinite(updates.sharedPct) ? { sharedPct: updates.sharedPct } : {}),
+      ...(updates.grantPartnerId !== undefined ? { grantPartnerId: updates.grantPartnerId } : {}),
     },
   });
   revalidatePath(`/budget/${dp.budgetId}`);

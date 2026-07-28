@@ -79,22 +79,28 @@ export default function NewBudgetForm({
   // Multi-partner: split the budget across delivery partners, each with its own
   // inputs and an explicit % of shared costs. partnerList[activePartnerIdx] is
   // the input set the step-2 fields write to when multiPartner is on.
+  // grantPartnerId links each delivery-partner tab to the GrantPartner registry
+  // (city-scoped, same registry as the top-level grantee). name is a
+  // denormalised copy of the picked partner's name at save-time.
   const [multiPartner, setMultiPartner] = useState(false);
-  const [partnerList, setPartnerList] = useState<{ name: string; sharedPct: number; inputs: Record<string, number> }[]>([]);
+  const [partnerList, setPartnerList] = useState<{ name: string; sharedPct: number; grantPartnerId: string | null; inputs: Record<string, number> }[]>([]);
   const [activePartnerIdx, setActivePartnerIdx] = useState(0);
+  // Inline "+ New partner" state, per active row.
+  const [inlineNewPartnerName, setInlineNewPartnerName] = useState("");
+  const [inlineNewPartnerFor, setInlineNewPartnerFor] = useState<number | null>(null);
   const blankInputs = () => initInputs(effectiveCrossCutting, effectiveDomains, enumPickers);
   const enableMultiPartner = (on: boolean) => {
     setMultiPartner(on);
     if (on && partnerList.length === 0) {
       setPartnerList([
-        { name: "Partner 1", sharedPct: 50, inputs: blankInputs() },
-        { name: "Partner 2", sharedPct: 50, inputs: blankInputs() },
+        { name: "", sharedPct: 50, grantPartnerId: null, inputs: blankInputs() },
+        { name: "", sharedPct: 50, grantPartnerId: null, inputs: blankInputs() },
       ]);
       setActivePartnerIdx(0);
     }
   };
   const addPartner = () => setPartnerList(prev => {
-    const next = [...prev, { name: `Partner ${prev.length + 1}`, sharedPct: 0, inputs: blankInputs() }];
+    const next = [...prev, { name: "", sharedPct: 0, grantPartnerId: null, inputs: blankInputs() }];
     setActivePartnerIdx(next.length - 1);
     return next;
   });
@@ -103,8 +109,23 @@ export default function NewBudgetForm({
     setActivePartnerIdx(i => Math.max(0, Math.min(i, next.length - 1)));
     return next;
   });
-  const patchPartner = (idx: number, patch: Partial<{ name: string; sharedPct: number }>) =>
+  const patchPartner = (idx: number, patch: Partial<{ name: string; sharedPct: number; grantPartnerId: string | null }>) =>
     setPartnerList(prev => prev.map((p, i) => i === idx ? { ...p, ...patch } : p));
+  // When the user picks a registry partner, sync name to match; when unpicked,
+  // clear the name so the tab reverts to the "Partner N" placeholder.
+  const pickPartner = (idx: number, grantPartnerId: string) => {
+    if (!grantPartnerId) { patchPartner(idx, { grantPartnerId: null, name: "" }); return; }
+    const gp = allPartners.find(p => p.id === grantPartnerId);
+    patchPartner(idx, { grantPartnerId, name: gp?.name ?? "" });
+  };
+  const createInlinePartner = async (idx: number) => {
+    const trimmed = inlineNewPartnerName.trim();
+    if (!trimmed) return;
+    const gp = await createGrantPartner(city, trimmed);
+    setAllPartners(prev => prev.some(p => p.id === gp.id) ? prev : [...prev, { ...gp, city }]);
+    patchPartner(idx, { grantPartnerId: gp.id, name: gp.name });
+    setInlineNewPartnerName(""); setInlineNewPartnerFor(null);
+  };
   const currentInputs = multiPartner ? (partnerList[activePartnerIdx]?.inputs ?? {}) : programmeInputs;
   const sharedPctSum = partnerList.reduce((s, p) => s + (p.sharedPct || 0), 0);
   // "standard" → costOverrides stays empty, generator reads the live registry.
@@ -184,7 +205,9 @@ export default function NewBudgetForm({
 
   const canProceed = name.trim() && selectedDomains.size > 0;
 
-  const validPartners = partnerList.filter(p => p.name.trim());
+  // A row is valid only when a registry partner is picked (name is derived).
+  const validPartners = partnerList.filter(p => p.grantPartnerId && p.name.trim());
+  const multiPartnerReady = !multiPartner || validPartners.length >= 2;
   const submit = () => {
     const useMulti = multiPartner && validPartners.length >= 2;
     // Master totals = element-wise sum of partner inputs (server recomputes too).
@@ -201,7 +224,7 @@ export default function NewBudgetForm({
         // way and merges this delta on top.
         costOverrides: costMode === "customize" ? costOverrides : {},
         deliveryPartners: useMulti
-          ? validPartners.map(p => ({ name: p.name.trim(), sharedPct: p.sharedPct, programmeInputs: p.inputs }))
+          ? validPartners.map(p => ({ name: p.name.trim(), sharedPct: p.sharedPct, grantPartnerId: p.grantPartnerId, programmeInputs: p.inputs }))
           : undefined,
       });
     });
@@ -279,7 +302,12 @@ export default function NewBudgetForm({
             <div className="flex gap-3">
               {CITY_NAMES.map(c => (
                 <button key={c} type="button"
-                  onClick={() => { setCity(c); setSelectedDomains(new Set()); setGrantPartnerId(""); }}
+                  onClick={() => {
+                    setCity(c); setSelectedDomains(new Set()); setGrantPartnerId("");
+                    // Wrong-city registry links must be dropped when city flips.
+                    setPartnerList(prev => prev.map(p => ({ ...p, grantPartnerId: null, name: "" })));
+                    setInlineNewPartnerFor(null); setInlineNewPartnerName("");
+                  }}
                   className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-all ${city === c ? "border-sky-500 bg-sky-50 text-sky-700" : "border-stone-200 text-stone-700 hover:border-stone-300"}`}>
                   {c}
                 </button>
@@ -465,24 +493,57 @@ export default function NewBudgetForm({
                   ))}
                   <button type="button" onClick={addPartner} className="text-xs px-3 py-1 rounded-full border border-dashed border-stone-300 text-stone-500 hover:border-stone-400">+ Add partner</button>
                 </div>
-                {partnerList[activePartnerIdx] && (
-                  <div className="flex flex-wrap items-end gap-3 bg-stone-50 rounded-lg p-3">
-                    <label className="text-xs text-stone-500">Partner name
-                      <input type="text" value={partnerList[activePartnerIdx].name}
-                        onChange={e => patchPartner(activePartnerIdx, { name: e.target.value })}
-                        className="block mt-0.5 w-48 border border-stone-300 rounded px-2 py-1 text-sm" />
-                    </label>
-                    <label className="text-xs text-stone-500">Shared-cost %
-                      <input type="number" min={0} max={100} value={partnerList[activePartnerIdx].sharedPct || ""}
-                        onChange={e => patchPartner(activePartnerIdx, { sharedPct: parseFloat(e.target.value) || 0 })}
-                        className="block mt-0.5 w-24 border border-stone-300 rounded px-2 py-1 text-sm text-right" />
-                    </label>
-                    {partnerList.length > 2 && (
-                      <button type="button" onClick={() => removePartner(activePartnerIdx)} className="text-xs text-red-500 hover:text-red-700 pb-1">Remove</button>
-                    )}
-                    <span className={`text-xs pb-1 ml-auto ${sharedPctSum === 100 ? "text-stone-400" : "text-amber-600"}`}>Shared % total: {sharedPctSum}%{sharedPctSum !== 100 ? " (normalised)" : ""}</span>
-                  </div>
-                )}
+                {partnerList[activePartnerIdx] && (() => {
+                  // Exclude partners already picked by other rows so the same
+                  // GrantPartner isn't assigned to two delivery-partner slots.
+                  const takenElsewhere = new Set(
+                    partnerList.map((p, i) => i === activePartnerIdx ? null : p.grantPartnerId).filter((x): x is string => !!x)
+                  );
+                  const options = cityPartners.filter(p => !takenElsewhere.has(p.id));
+                  const isAdding = inlineNewPartnerFor === activePartnerIdx;
+                  return (
+                    <div className="flex flex-wrap items-end gap-3 bg-stone-50 rounded-lg p-3">
+                      <div className="flex flex-col gap-1">
+                        <span className="text-xs text-stone-500">Partner</span>
+                        {isAdding ? (
+                          <div className="flex gap-1">
+                            <input type="text" autoFocus value={inlineNewPartnerName}
+                              onChange={e => setInlineNewPartnerName(e.target.value)}
+                              placeholder={`New partner (${city})`}
+                              className="w-48 border border-stone-300 rounded px-2 py-1 text-sm" />
+                            <button type="button" disabled={!inlineNewPartnerName.trim()}
+                              onClick={() => createInlinePartner(activePartnerIdx)}
+                              className="px-2 py-1 rounded bg-sky-600 text-white text-xs disabled:opacity-40">Add</button>
+                            <button type="button"
+                              onClick={() => { setInlineNewPartnerFor(null); setInlineNewPartnerName(""); }}
+                              className="px-2 py-1 text-xs text-stone-400">Cancel</button>
+                          </div>
+                        ) : (
+                          <div className="flex gap-1">
+                            <select value={partnerList[activePartnerIdx].grantPartnerId ?? ""}
+                              onChange={e => pickPartner(activePartnerIdx, e.target.value)}
+                              className="w-48 border border-stone-300 rounded px-2 py-1 text-sm">
+                              <option value="">Select partner…</option>
+                              {options.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                            <button type="button"
+                              onClick={() => { setInlineNewPartnerFor(activePartnerIdx); setInlineNewPartnerName(""); }}
+                              className="px-2 py-1 rounded border border-stone-300 text-xs text-stone-700 hover:bg-stone-50">+ New</button>
+                          </div>
+                        )}
+                      </div>
+                      <label className="text-xs text-stone-500">Shared-cost %
+                        <input type="number" min={0} max={100} value={partnerList[activePartnerIdx].sharedPct || ""}
+                          onChange={e => patchPartner(activePartnerIdx, { sharedPct: parseFloat(e.target.value) || 0 })}
+                          className="block mt-0.5 w-24 border border-stone-300 rounded px-2 py-1 text-sm text-right" />
+                      </label>
+                      {partnerList.length > 2 && (
+                        <button type="button" onClick={() => removePartner(activePartnerIdx)} className="text-xs text-red-500 hover:text-red-700 pb-1">Remove</button>
+                      )}
+                      <span className={`text-xs pb-1 ml-auto ${sharedPctSum === 100 ? "text-stone-400" : "text-amber-600"}`}>Shared % total: {sharedPctSum}%{sharedPctSum !== 100 ? " (normalised)" : ""}</span>
+                    </div>
+                  );
+                })()}
                 <p className="text-xs text-emerald-700">Editing inputs for <strong>{partnerList[activePartnerIdx]?.name || "—"}</strong>. The fields below apply to this partner only.</p>
               </div>
             )}
@@ -576,7 +637,10 @@ export default function NewBudgetForm({
             </div>
           )}
 
-          <button type="button" onClick={submit} disabled={pending}
+          {!multiPartnerReady && (
+            <p className="text-xs text-amber-600">Pick a registry partner for at least two rows before generating (city: {city}).</p>
+          )}
+          <button type="button" onClick={submit} disabled={pending || !multiPartnerReady}
             className="w-full bg-sky-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-sky-700 disabled:opacity-60">
             {pending ? "Generating budget…" : "Generate budget →"}
           </button>

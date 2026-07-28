@@ -56,6 +56,8 @@ model User {
   createdEvents             PitstopEvent[]                 @relation("PitstopEventCreator")
   lastUpdatedEvents         PitstopEvent[]                 @relation("PitstopEventLastUpdater")
   completedEvents           PitstopEvent[]                 @relation("PitstopEventCompleter")
+  arrivedEvents             PitstopEvent[]                 @relation("PitstopEventArriver")
+  addedCatalogItems         CatalogItemApproval[]          @relation("CatalogItemAdder")
   eventAttendances          PitstopEventAttendee[]
   leadZones                 Zone[]                         @relation("ZoneLead")
   rpClusters                Cluster[]                      @relation("RPClusters")
@@ -194,6 +196,10 @@ model Goal {
   status      GoalStatus @default(Active)
   isTemplate  Boolean    @default(false)
   recurrence  Recurrence @default(None)
+  // Operations lifecycle mode: "setup" = plan-driven (classic pitstop/checklist/activity flow);
+  // "live" = visit-driven (category catalog + cadence). Auto-flips setup→live when setup pitstops
+  // complete (see lib/operations/phase.ts derivation). Explicit override wins over implicit phase.
+  mode        String     @default("setup")
   startDate   DateTime?
   targetDate  DateTime?
   closedAt    DateTime?
@@ -248,6 +254,9 @@ model Goal {
   journeyPhases   ProgrammeJourneyPhase[]
   // Action points (denormalized — always nested under a PitstopEvent under this Goal)
   actionPoints    ActionPoint[]
+  // Live-centre visit catalog (present once Goal.mode = "live")
+  centreCatalog    CentreCatalog?
+  catalogApprovals CatalogItemApproval[]
 }
 
 // One row per settlement that received actuals from a completed domain goal.
@@ -1307,6 +1316,12 @@ model PitstopEvent {
   lastUpdatedById      String?
   completedById        String?
   checklistItemId      String?
+  // "I have reached" arrival stamp — set on a Visit event when the RP marks arrival at the centre.
+  arrivedAt            DateTime?
+  arrivedById          String?
+  // Groups ticked catalog items (child events) under their parent Visit event. Null on the visit
+  // itself and on classic (non-visit) activities.
+  visitEventId         String?
   rescheduledFrom      DateTime?
   rescheduleReason     String?
   rescheduleReasonCode String?
@@ -1963,18 +1978,19 @@ model Budget {
 // the dashboard can aggregate approved amounts + utilisation per partner. City-
 // scoped so the same name can exist independently under Bangalore/Chennai/Others.
 model GrantPartner {
-  id                  String       @id @default(cuid())
-  name                String
-  city                String       @default("Bangalore") // Bangalore | Chennai | Others
-  notes               String?
-  isActive            Boolean      @default(true)
+  id                   String                  @id @default(cuid())
+  name                 String
+  city                 String                  @default("Bangalore") // Bangalore | Chennai | Others
+  notes                String?
+  isActive             Boolean                 @default(true)
   // Optional login account for this grantee (a User with role "partner"). Lets
   // the grantee sign in and file their own reports. One account per grantee.
-  userId              String?      @unique
-  user                User?        @relation("PartnerLogin", fields: [userId], references: [id], onDelete: SetNull)
-  createdAt           DateTime     @default(now())
-  budgets             Budget[]
-  schoolPlansAsAnchor SchoolPlan[] @relation("SchoolPlanAnchorPartner")
+  userId               String?                 @unique
+  user                 User?                   @relation("PartnerLogin", fields: [userId], references: [id], onDelete: SetNull)
+  createdAt            DateTime                @default(now())
+  budgets              Budget[]
+  schoolPlansAsAnchor  SchoolPlan[]            @relation("SchoolPlanAnchorPartner")
+  deliveryPartnerRoles BudgetDeliveryPartner[]
 
   @@unique([city, name])
   @@index([city])
@@ -2144,16 +2160,23 @@ model BudgetLineCostHistory {
 // slice of the totals) and an explicit % of shared/cross-cutting costs
 // (sharedPct across all partners should sum to 100).
 model BudgetDeliveryPartner {
-  id        String       @id @default(cuid())
-  budgetId  String
-  budget    Budget       @relation(fields: [budgetId], references: [id], onDelete: Cascade)
-  name      String
-  sortOrder Int          @default(0)
-  sharedPct Float        @default(0)
-  inputs    Json         @default("{}")
-  lines     BudgetLine[]
+  id             String        @id @default(cuid())
+  budgetId       String
+  budget         Budget        @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  // Registry link — same GrantPartner registry backing Budget.grantPartnerId.
+  // Nullable so pre-link rows (free-text names) survive the migration until
+  // backfilled. City is enforced to match Budget.city in the server actions.
+  grantPartnerId String?
+  grantPartner   GrantPartner? @relation(fields: [grantPartnerId], references: [id], onDelete: SetNull)
+  // Denormalised label — kept for display and for rows without a registry link.
+  name           String
+  sortOrder      Int           @default(0)
+  sharedPct      Float         @default(0)
+  inputs         Json          @default("{}")
+  lines          BudgetLine[]
 
   @@index([budgetId])
+  @@index([grantPartnerId])
 }
 
 enum BudgetLineCadence {
