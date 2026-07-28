@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, ChevronDown, Flag, ListChecks } from "lucide-react";
+import { CheckCircle2, ChevronDown, Flag, ListChecks, Check, Loader2 } from "lucide-react";
 import type { Activity, ChecklistItem } from "@/app/(app)/home/_lib/types";
 import type { CentreFollowUp } from "@/lib/operations/today";
 import { isToday, fmtTime, fmtDate, daysAgo } from "@/app/(app)/home/_lib/helpers";
@@ -40,21 +40,39 @@ export function CentreDetail({
   }, [checklists]);
 
   const buckets = useMemo(() => {
-    const pending = (a: Activity) => a.status !== "Done" && !doneIds.has(a.id);
     const overdue: Activity[] = [];
     const todayList: Activity[] = [];
     const upcoming: Activity[] = [];
+    const past: Activity[] = [];
     for (const a of activities) {
       const done = a.status === "Done" || doneIds.has(a.id);
-      if (isToday(a.scheduledAt) && !done) todayList.push(a);
-      else if (!done && new Date(a.scheduledAt) < startOfToday()) overdue.push(a);
-      else if (pending(a)) upcoming.push(a);
+      if (done) past.push(a);
+      else if (isToday(a.scheduledAt)) todayList.push(a);
+      else if (new Date(a.scheduledAt) < startOfToday()) overdue.push(a);
+      else upcoming.push(a);
     }
-    const byTime = (x: Activity, y: Activity) => new Date(x.scheduledAt).getTime() - new Date(y.scheduledAt).getTime();
-    return { overdue: overdue.sort(byTime), today: todayList.sort(byTime), upcoming: upcoming.sort(byTime) };
+    const asc = (x: Activity, y: Activity) => new Date(x.scheduledAt).getTime() - new Date(y.scheduledAt).getTime();
+    const desc = (x: Activity, y: Activity) => new Date(y.scheduledAt).getTime() - new Date(x.scheduledAt).getTime();
+    return {
+      overdue: overdue.sort(asc), today: todayList.sort(asc), upcoming: upcoming.sort(asc),
+      past: past.sort(desc),
+      overall: [...activities].sort(desc),
+    };
   }, [activities, doneIds]);
 
   const handleCompleted = (eventId: string) => { addDone(eventId); router.refresh(); };
+
+  // Close a follow-up (action point) in place. Gated server-side on action_point.update (TEAM),
+  // so a supervisor can close on the RP's behalf; the owner can close their own.
+  const [closingId, setClosingId] = useState<string | null>(null);
+  const closeFollowUp = async (id: string) => {
+    setClosingId(id);
+    const res = await fetch(`/api/action-points/${id}/complete`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
+    });
+    setClosingId(null);
+    if (res.ok) router.refresh();
+  };
 
   const renderRow = (a: Activity, overdue = false) =>
     readOnly ? (
@@ -84,17 +102,45 @@ export function CentreDetail({
     ));
   };
 
-  const nothing = buckets.overdue.length + buckets.today.length + buckets.upcoming.length === 0;
+  // Supervisors (read-only drill-down) get everything collapsed by default; the interactive RP
+  // view keeps the lens bucket (Today/Overdue) open so they land on today's work.
+  const openToday = !readOnly && initialOpen === "today";
+  const openOverdue = !readOnly && initialOpen === "overdue";
+  const nothing = activities.length === 0 && followUps.length === 0;
+
+  const renderReadOnlyList = (list: Activity[]) => list.map((a) => <ReadOnlyRow key={a.id} activity={a} overdue={false} />);
 
   return (
     <div className="space-y-3">
+      {followUps.length > 0 && (
+        <Section title="Open follow-ups" count={followUps.length} tone="amber" defaultOpen={false}>
+          {followUps.map((f) => (
+            <div key={f.id} className="flex items-center gap-2.5 rounded-lg border border-stone-200 bg-white px-4 py-2.5">
+              <Flag className={`w-3.5 h-3.5 flex-shrink-0 ${f.priority === "urgent" ? "text-red-500" : "text-stone-400"}`} />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-stone-800 truncate">{f.title}</p>
+                {f.detail && <p className="text-[11px] text-stone-500 mt-0.5 truncate">{f.detail}</p>}
+              </div>
+              {f.dueDate && <span className="text-[11px] text-stone-400 flex-shrink-0">{fmtDate(f.dueDate)}</span>}
+              <button
+                onClick={() => closeFollowUp(f.id)}
+                disabled={closingId === f.id}
+                className="inline-flex items-center gap-1 rounded-lg bg-stone-900 text-white px-2.5 py-1.5 text-xs font-medium hover:bg-stone-700 disabled:opacity-50 flex-shrink-0"
+              >
+                {closingId === f.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Close
+              </button>
+            </div>
+          ))}
+        </Section>
+      )}
+
       {buckets.today.length > 0 && (
-        <Section title="Today" count={buckets.today.length} defaultOpen={initialOpen === "today"}>
+        <Section title="Today" count={buckets.today.length} defaultOpen={openToday}>
           {renderBucket(buckets.today, false)}
         </Section>
       )}
       {buckets.overdue.length > 0 && (
-        <Section title="Overdue" count={buckets.overdue.length} tone="amber" defaultOpen={initialOpen === "overdue"}>
+        <Section title="Overdue" count={buckets.overdue.length} tone="amber" defaultOpen={openOverdue}>
           {renderBucket(buckets.overdue, true)}
         </Section>
       )}
@@ -103,27 +149,22 @@ export function CentreDetail({
           {renderBucket(buckets.upcoming, false)}
         </Section>
       )}
+      {buckets.overall.length > 0 && (
+        <Section title="Overall" count={buckets.overall.length} defaultOpen={false}>
+          {renderReadOnlyList(buckets.overall)}
+        </Section>
+      )}
+      {buckets.past.length > 0 && (
+        <Section title="Past actions" count={buckets.past.length} defaultOpen={false}>
+          {renderReadOnlyList(buckets.past)}
+        </Section>
+      )}
 
       {nothing && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-6 text-center">
           <CheckCircle2 className="w-5 h-5 text-emerald-500 mx-auto" />
-          <p className="text-sm font-medium text-emerald-800 mt-1.5">No activities due here.</p>
+          <p className="text-sm font-medium text-emerald-800 mt-1.5">No activities here yet.</p>
         </div>
-      )}
-
-      {followUps.length > 0 && (
-        <Section title="Follow-ups" count={followUps.length} defaultOpen={false}>
-          {followUps.map((f) => (
-            <div key={f.id} className="flex items-start gap-2.5 rounded-lg border border-stone-200 bg-white px-4 py-2.5">
-              <Flag className={`w-3.5 h-3.5 mt-0.5 flex-shrink-0 ${f.priority === "urgent" ? "text-red-500" : "text-stone-400"}`} />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-stone-800">{f.title}</p>
-                {f.detail && <p className="text-[11px] text-stone-500 mt-0.5">{f.detail}</p>}
-              </div>
-              {f.dueDate && <span className="text-[11px] text-stone-400 flex-shrink-0">{fmtDate(f.dueDate)}</span>}
-            </div>
-          ))}
-        </Section>
       )}
     </div>
   );

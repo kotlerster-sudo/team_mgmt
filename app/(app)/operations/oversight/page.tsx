@@ -6,7 +6,7 @@ import { buildRbacContext } from "@/lib/rbac";
 import { getVisibleUserIds } from "@/lib/visibilityScope";
 import { SurfaceProvider } from "@/components/rbac/RbacProviders";
 import {
-  loadOversightTree, loadClusterBoard, loadPendingApprovals, loadOpenActionPoints,
+  loadOversightTree, loadClusterBoard, loadPendingApprovals,
 } from "@/lib/operations/oversight";
 import { ClusterList } from "../_shared/ClusterList";
 import { ClusterBoard } from "../_shared/ClusterBoard";
@@ -60,10 +60,9 @@ export default async function OversightPage({
 
   // ── Cluster list + queues ──────────────────────────────────────────────────
   const reportIds = visibleIds.filter((id) => id !== ctx.userId);
-  const [tree, approvals, actionPoints] = await Promise.all([
+  const [tree, approvals] = await Promise.all([
     loadOversightTree(visibleIds),
     loadPendingApprovals(reportIds),
-    loadOpenActionPoints(visibleIds),
   ]);
   const t = tree.totals;
 
@@ -84,7 +83,7 @@ export default async function OversightPage({
           </p>
         </header>
 
-        <ApprovalsPanel approvals={approvals} actionPoints={actionPoints} />
+        <ApprovalsPanel approvals={approvals} />
 
         {tree.zones.length === 0 ? (
           <div className="rounded-xl border border-dashed border-stone-200 p-8 text-center text-sm text-stone-400">

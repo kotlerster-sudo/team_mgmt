@@ -2,22 +2,18 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, X, ClipboardCheck, Flag, Loader2, MapPin } from "lucide-react";
-import type { PendingApproval, OpenActionPoint } from "@/lib/operations/oversight";
+import { Check, X, ClipboardCheck, ChevronDown, Loader2 } from "lucide-react";
+import type { PendingApproval } from "@/lib/operations/oversight";
 
 /**
- * Supervisor review queues shown atop the oversight tree: pending ad-hoc catalog items
- * (approve / reject) and open action points (close-out). Both mutate then router.refresh()
- * so the queue and the tree rollups re-read. Reuses the existing action-point complete route.
+ * Pending ad-hoc catalog items awaiting the supervisor's approval. Collapsible and collapsed by
+ * default (the count sits in the header) so it never becomes a laundry list. Open follow-ups now
+ * live per-centre in the drill-down, not here.
  */
-export function ApprovalsPanel({
-  approvals, actionPoints,
-}: {
-  approvals: PendingApproval[];
-  actionPoints: OpenActionPoint[];
-}) {
+export function ApprovalsPanel({ approvals }: { approvals: PendingApproval[] }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
 
   const decide = async (id: string, action: "approve" | "reject") => {
     setBusy(id);
@@ -29,20 +25,18 @@ export function ApprovalsPanel({
     router.refresh();
   };
 
-  const closeAp = async (id: string) => {
-    setBusy(id);
-    await fetch(`/api/action-points/${id}/complete`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
-    });
-    setBusy(null);
-    router.refresh();
-  };
-
   return (
-    <div className="space-y-3">
-      <section className="rounded-xl border border-violet-200 bg-violet-50/40">
-        <Header icon={<ClipboardCheck className="w-4 h-4 text-violet-600" />} title="Items awaiting approval" count={approvals.length} />
-        {approvals.length === 0 ? (
+    <section className="rounded-xl border border-violet-200 bg-violet-50/40">
+      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-2 px-3 py-2.5 text-left" aria-expanded={open}>
+        <ChevronDown className={`w-4 h-4 text-stone-400 transition-transform ${open ? "" : "-rotate-90"}`} />
+        <ClipboardCheck className="w-4 h-4 text-violet-600" />
+        <span className="text-sm font-medium text-stone-800 flex-1">Items awaiting approval</span>
+        <span className="text-[10px] font-semibold rounded-full px-1.5 py-0.5 tabular-nums text-stone-600 bg-white border border-stone-200">
+          {approvals.length}
+        </span>
+      </button>
+      {open && (
+        approvals.length === 0 ? (
           <p className="px-3 pb-3 text-xs text-stone-400">Nothing awaiting approval.</p>
         ) : (
           <div className="space-y-1.5 px-2.5 pb-2.5">
@@ -73,50 +67,8 @@ export function ApprovalsPanel({
               </div>
             ))}
           </div>
-        )}
-      </section>
-
-      <section className="rounded-xl border border-amber-200 bg-amber-50/40">
-        <Header icon={<Flag className="w-4 h-4 text-amber-600" />} title="Open follow-ups" count={actionPoints.length} />
-        {actionPoints.length === 0 ? (
-          <p className="px-3 pb-3 text-xs text-stone-400">No open follow-ups.</p>
-        ) : (
-          <div className="space-y-1.5 px-2.5 pb-2.5">
-            {actionPoints.map((f) => (
-              <div key={f.id} className="flex items-center gap-2.5 rounded-lg border border-stone-200 bg-white px-3 py-2">
-                <Flag className={`w-3.5 h-3.5 mt-0.5 flex-shrink-0 ${f.priority === "urgent" ? "text-red-500" : "text-stone-400"}`} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-stone-800 truncate">{f.title}</p>
-                  <p className="text-[11px] text-stone-400 truncate">
-                    {f.goalTitle}
-                    {f.clusterName && <span className="inline-flex items-center gap-0.5"> · <MapPin className="w-2.5 h-2.5" />{f.clusterName}</span>}
-                    {f.ownerName && <> · {f.ownerName}</>}
-                  </p>
-                </div>
-                <button
-                  onClick={() => closeAp(f.id)}
-                  disabled={busy === f.id}
-                  className="inline-flex items-center gap-1 rounded-lg bg-stone-900 text-white px-2.5 py-1.5 text-xs font-medium hover:bg-stone-700 disabled:opacity-50 shrink-0"
-                >
-                  {busy === f.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Close
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-    </div>
-  );
-}
-
-function Header({ icon, title, count }: { icon: React.ReactNode; title: string; count: number }) {
-  return (
-    <div className="flex items-center gap-2 px-3 py-2.5">
-      {icon}
-      <span className="text-sm font-medium text-stone-800 flex-1">{title}</span>
-      <span className="text-[10px] font-semibold rounded-full px-1.5 py-0.5 tabular-nums text-stone-600 bg-white border border-stone-200">
-        {count}
-      </span>
-    </div>
+        )
+      )}
+    </section>
   );
 }

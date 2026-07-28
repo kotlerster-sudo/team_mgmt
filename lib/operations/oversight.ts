@@ -192,19 +192,7 @@ export async function loadOversightTree(
   return { zones: zoneList, totals };
 }
 
-// ── Cluster activity board (Cluster → Happened / Today / Overdue / Upcoming) ──
-
-export type BoardActivity = {
-  id: string;
-  title: string;
-  centreGoalId: string;
-  centreName: string;
-  themeKey: string;
-  ownerName: string | null;
-  scheduledAt: string;
-  completedAt: string | null;
-  status: string;
-};
+// ── Cluster → centres list (each centre carries its own activity counts) ──────
 
 export type BoardCentre = {
   goalId: string;
@@ -214,23 +202,23 @@ export type BoardCentre = {
   mode: string;
   /** Setup centre whose domain has an authored catalog → can be taken live. */
   canGoLive: boolean;
+  today: number;
+  overdue: number;
+  upcoming: number;
+  followUps: number;
 };
 
 export type ClusterBoard = {
   clusterId: string;
   clusterName: string;
   centres: BoardCentre[];
-  today: BoardActivity[];
-  overdue: BoardActivity[];
-  upcoming: BoardActivity[];
-  happened: BoardActivity[];
 };
 
 /**
- * All activity in one cluster across the supervised set, bucketed the way a supervisor thinks:
- * what happened (recently Done), what's due today, what's overdue, what's upcoming. Same
- * scheduledAt/month rules as the RP home; only top-level events (visitEventId null) so the
- * board isn't flooded by individual ticked catalog sub-items.
+ * The centres/programmes in one cluster across the supervised set, each with its own activity
+ * counts (today / overdue / upcoming / open follow-ups) so a supervisor drills Cluster → Centre
+ * → (per-centre) sections rather than a flat cluster-wide activity dump. Same scheduledAt/month
+ * rules as the RP home; only top-level events (visitEventId null).
  */
 export async function loadClusterBoard(
   userIds: string[],
@@ -262,77 +250,64 @@ export async function loadClusterBoard(
   const domainsWithCatalog = new Set(catalogDomainRows.map((r) => r.needsDomain).filter(Boolean) as string[]);
 
   const pitstopToGoal = new Map<string, string>();
-  const goalMeta = new Map<string, { centreName: string; themeKey: string; ownerName: string | null }>();
-  const centres: BoardCentre[] = [];
+  const centreByGoal = new Map<string, BoardCentre>();
   for (const g of goals) {
     for (const p of g.pitstops) pitstopToGoal.set(p.id, g.id);
-    const themeKey = resolveGoalThemeKey(g, layerToDomain) ?? "__other";
-    goalMeta.set(g.id, {
-      centreName: g.linkedFacility?.name ?? g.title,
-      themeKey,
-      ownerName: g.owner?.name ?? null,
-    });
-    centres.push({
+    centreByGoal.set(g.id, {
       goalId: g.id,
       name: g.linkedFacility?.name ?? g.title,
-      themeKey,
+      themeKey: resolveGoalThemeKey(g, layerToDomain) ?? "__other",
       ownerName: g.owner?.name ?? null,
       mode: g.mode,
       canGoLive: g.mode !== "live" && !!g.needsDomain && domainsWithCatalog.has(g.needsDomain),
+      today: 0, overdue: 0, upcoming: 0, followUps: 0,
     });
   }
-  centres.sort((a, b) => Number(a.mode === "live") - Number(b.mode === "live") || a.name.localeCompare(b.name));
+  const goalIds = [...centreByGoal.keys()];
   const pitstopIds = [...pitstopToGoal.keys()];
-  const board: ClusterBoard = { clusterId, clusterName: cluster.name, centres, today: [], overdue: [], upcoming: [], happened: [] };
-  if (pitstopIds.length === 0) return board;
 
   const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
   const todayEnd = new Date(now); todayEnd.setHours(23, 59, 59, 999);
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
   const horizonEnd = new Date(now); horizonEnd.setDate(horizonEnd.getDate() + 60); horizonEnd.setHours(23, 59, 59, 999);
-  const thirtyAgo = new Date(now); thirtyAgo.setDate(thirtyAgo.getDate() - 30);
 
-  const events = await prisma.pitstopEvent.findMany({
-    where: {
-      deletedAt: null,
-      visitEventId: null, // top-level activities/visits only
-      pitstops: { some: { pitstopId: { in: pitstopIds } } },
-      OR: [
-        { scheduledAt: { lte: horizonEnd } },
-        { status: "Done", completedAt: { gte: thirtyAgo } },
-      ],
-    },
-    select: {
-      id: true, title: true, scheduledAt: true, status: true, completedAt: true,
-      pitstops: { select: { pitstopId: true } },
-    },
-    orderBy: { scheduledAt: "asc" },
-    take: 500,
-  });
-
-  for (const e of events) {
-    if (e.status === "Cancelled") continue;
-    // Attribute to the first of our goals this event touches.
-    let goalId: string | undefined;
-    for (const link of e.pitstops) { const gid = pitstopToGoal.get(link.pitstopId); if (gid) { goalId = gid; break; } }
-    if (!goalId) continue;
-    const meta = goalMeta.get(goalId)!;
-    const row: BoardActivity = {
-      id: e.id, title: e.title, centreGoalId: goalId, centreName: meta.centreName, themeKey: meta.themeKey,
-      ownerName: meta.ownerName, scheduledAt: e.scheduledAt.toISOString(),
-      completedAt: e.completedAt ? e.completedAt.toISOString() : null, status: e.status,
-    };
-
-    const isDoneRecently = e.status === "Done" && e.completedAt != null && e.completedAt >= thirtyAgo;
-    if (e.status !== "Done" && e.scheduledAt >= todayStart && e.scheduledAt <= todayEnd) board.today.push(row);
-    else if (e.status !== "Done" && e.scheduledAt < monthStart) board.overdue.push(row);
-    else if (e.status !== "Done" && e.scheduledAt > todayEnd) board.upcoming.push(row);
-    if (isDoneRecently) board.happened.push(row);
+  if (pitstopIds.length > 0) {
+    const events = await prisma.pitstopEvent.findMany({
+      where: {
+        deletedAt: null,
+        visitEventId: null, // top-level activities/visits only
+        status: { notIn: ["Done", "Cancelled"] },
+        scheduledAt: { lte: horizonEnd },
+        pitstops: { some: { pitstopId: { in: pitstopIds } } },
+      },
+      select: { scheduledAt: true, pitstops: { select: { pitstopId: true } } },
+      take: 2000,
+    });
+    for (const e of events) {
+      let goalId: string | undefined;
+      for (const link of e.pitstops) { const gid = pitstopToGoal.get(link.pitstopId); if (gid) { goalId = gid; break; } }
+      if (!goalId) continue;
+      const c = centreByGoal.get(goalId)!;
+      if (e.scheduledAt >= todayStart && e.scheduledAt <= todayEnd) c.today += 1;
+      else if (e.scheduledAt < monthStart) c.overdue += 1;
+      else if (e.scheduledAt > todayEnd) c.upcoming += 1;
+    }
   }
 
-  // happened = most-recently-completed first; the scheduled buckets keep asc order.
-  board.happened.sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? ""));
-  return board;
+  if (goalIds.length > 0) {
+    const aps = await prisma.actionPoint.groupBy({
+      by: ["goalId"], where: { status: "open", goalId: { in: goalIds } }, _count: true,
+    });
+    for (const a of aps) { const c = centreByGoal.get(a.goalId); if (c) c.followUps = a._count; }
+  }
+
+  // Setting-up before live; then by attention (overdue+today), then name.
+  const centres = [...centreByGoal.values()].sort((a, b) =>
+    Number(a.mode === "live") - Number(b.mode === "live") ||
+    (b.overdue + b.today) - (a.overdue + a.today) ||
+    a.name.localeCompare(b.name),
+  );
+  return { clusterId, clusterName: cluster.name, centres };
 }
 
 // ── Approval queues (supervisor review surfaces) ─────────────────────────────
