@@ -38,7 +38,10 @@ export function TemplatePicker({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  const [nTpl, setNTpl] = useState("");
+  // Which goal template this catalog tags from. Multiple templates can share a domain (e.g. a
+  // setup template + an "existing"/monitoring one) — visit catalogs want the monitoring one.
+  const [tplSlug, setTplSlug] = useState("");
+
   const [nPs, setNPs] = useState("");
   const [nText, setNText] = useState("");
   const [nCt, setNCt] = useState("Activity");
@@ -51,6 +54,22 @@ export function TemplatePicker({
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [domain]);
+
+  const indicatorCount = (t: Tpl) => t.pitstops.flatMap((p) => p.checklist).filter((c) => c.hasIndicator).length;
+  const itemCount = (t: Tpl) => t.pitstops.reduce((n, p) => n + p.checklist.length, 0);
+
+  // Default to the template richest in indicators (the monitoring template a live-centre catalog
+  // usually wants), else the one already tagged here, else the first. Indicator-first on purpose:
+  // when items were mis-tagged to a setup template, we still steer toward the right one.
+  useEffect(() => {
+    if (!templates.length || tplSlug) return;
+    const withInd = [...templates].sort((a, b) => indicatorCount(b) - indicatorCount(a))[0];
+    const tagged = [...taggedRefs][0]?.split("::")[0];
+    const fromTags = tagged ? templates.find((t) => t.slug === tagged) : null;
+    setTplSlug((indicatorCount(withInd) > 0 ? withInd : fromTags ?? templates[0]).slug);
+  }, [templates, tplSlug, taggedRefs]);
+
+  const selTpl = templates.find((t) => t.slug === tplSlug) ?? null;
 
   const metaByRef = useMemo(() => {
     const m = new Map<string, { text: string; completionType: string; slug: string; key: string }>();
@@ -78,11 +97,11 @@ export function TemplatePicker({
   };
 
   const addNew = async () => {
-    if (!nTpl || !nPs || !nText.trim()) return;
+    if (!tplSlug || !nPs || !nText.trim()) return;
     setBusy(true); setErr("");
     const res = await fetch("/api/admin/catalogs/template-items", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ templateSlug: nTpl, pitstopKey: nPs, text: nText.trim(), completionType: nCt }),
+      body: JSON.stringify({ templateSlug: tplSlug, pitstopKey: nPs, text: nText.trim(), completionType: nCt }),
     });
     const data = await res.json().catch(() => ({}));
     setBusy(false);
@@ -94,7 +113,7 @@ export function TemplatePicker({
     onClose();
   };
 
-  const newPitstops = templates.find((t) => t.slug === nTpl)?.pitstops ?? [];
+  const newPitstops = selTpl?.pitstops ?? [];
 
   return (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50" onClick={onClose}>
@@ -120,48 +139,61 @@ export function TemplatePicker({
               ))}
             </div>
 
+            {/* Goal-template selector — shared by both tabs */}
+            {templates.length > 0 && (
+              <div className="px-4 pt-3">
+                <label className="block text-xs font-medium text-stone-500 mb-1">Goal template to tag from</label>
+                <select
+                  className="w-full px-2.5 py-1.5 text-sm border border-stone-200 rounded-lg bg-white"
+                  value={tplSlug}
+                  onChange={(e) => { setTplSlug(e.target.value); setNPs(""); setSelected(new Set()); }}
+                >
+                  {templates.map((t) => (
+                    <option key={t.slug} value={t.slug}>
+                      {t.name} · {itemCount(t)} items{indicatorCount(t) > 0 ? ` · ${indicatorCount(t)} indicators` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div className="flex-1 overflow-y-auto px-4 py-3">
               {loading ? (
                 <p className="text-sm text-stone-400 text-center py-8"><Loader2 className="w-4 h-4 animate-spin inline" /> Loading…</p>
               ) : tab === "existing" ? (
-                templates.length === 0 ? (
+                !selTpl ? (
                   <p className="text-sm text-stone-400 text-center py-8">No goal template for this domain.</p>
                 ) : (
-                  <div className="space-y-4">
-                    {templates.map((t) => (
-                      <div key={t.slug}>
-                        <p className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider mb-1">{t.name}</p>
-                        {t.pitstops.map((p) => (
-                          <div key={p.key} className="mb-2">
-                            <p className="text-[11px] text-stone-400 mb-1">{p.title}</p>
-                            <div className="space-y-1">
-                              {p.checklist.map((c) => {
-                                const ref = `${t.slug}::${c.key}`;
-                                const already = taggedRefs.has(ref);
-                                return (
-                                  <label key={ref} className={`flex items-center gap-2.5 rounded-lg border px-3 py-2 ${already ? "border-stone-100 bg-stone-50 opacity-60" : "border-stone-200 bg-white cursor-pointer hover:border-stone-300"}`}>
-                                    <input
-                                      type="checkbox"
-                                      disabled={already}
-                                      checked={already || selected.has(ref)}
-                                      onChange={() => toggle(ref)}
-                                      className="accent-stone-700"
-                                    />
-                                    <span className="text-sm text-stone-800 flex-1 min-w-0 truncate">{c.text}</span>
-                                    {c.hasIndicator && (
-                                      <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-1.5 py-0.5 flex items-center gap-0.5">
-                                        <Gauge className="w-2.5 h-2.5" /> indicator
-                                      </span>
-                                    )}
-                                    <span className="text-[10px] text-stone-500 bg-stone-100 rounded-full px-1.5 py-0.5 shrink-0">{ctLabel(c.completionType)}</span>
-                                    {already && <Check className="w-3.5 h-3.5 text-stone-400 shrink-0" />}
-                                  </label>
-                                );
-                              })}
-                              {p.checklist.length === 0 && <p className="text-[11px] text-stone-300 italic">No checklist items.</p>}
-                            </div>
-                          </div>
-                        ))}
+                  <div className="space-y-2">
+                    {selTpl.pitstops.map((p) => (
+                      <div key={p.key} className="mb-1">
+                        <p className="text-[11px] text-stone-400 mb-1">{p.title}</p>
+                        <div className="space-y-1">
+                          {p.checklist.map((c) => {
+                            const ref = `${selTpl.slug}::${c.key}`;
+                            const already = taggedRefs.has(ref);
+                            return (
+                              <label key={ref} className={`flex items-center gap-2.5 rounded-lg border px-3 py-2 ${already ? "border-stone-100 bg-stone-50 opacity-60" : "border-stone-200 bg-white cursor-pointer hover:border-stone-300"}`}>
+                                <input
+                                  type="checkbox"
+                                  disabled={already}
+                                  checked={already || selected.has(ref)}
+                                  onChange={() => toggle(ref)}
+                                  className="accent-stone-700"
+                                />
+                                <span className="text-sm text-stone-800 flex-1 min-w-0 truncate">{c.text}</span>
+                                {c.hasIndicator && (
+                                  <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-1.5 py-0.5 flex items-center gap-0.5">
+                                    <Gauge className="w-2.5 h-2.5" /> indicator
+                                  </span>
+                                )}
+                                <span className="text-[10px] text-stone-500 bg-stone-100 rounded-full px-1.5 py-0.5 shrink-0">{ctLabel(c.completionType)}</span>
+                                {already && <Check className="w-3.5 h-3.5 text-stone-400 shrink-0" />}
+                              </label>
+                            );
+                          })}
+                          {p.checklist.length === 0 && <p className="text-[11px] text-stone-300 italic">No checklist items.</p>}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -169,15 +201,8 @@ export function TemplatePicker({
               ) : (
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-xs font-medium text-stone-500 mb-1">Template</label>
-                    <select className="w-full px-2.5 py-1.5 text-sm border border-stone-200 rounded-lg bg-white" value={nTpl} onChange={(e) => { setNTpl(e.target.value); setNPs(""); }}>
-                      <option value="">— pick —</option>
-                      {templates.map((t) => <option key={t.slug} value={t.slug}>{t.name}</option>)}
-                    </select>
-                  </div>
-                  <div>
                     <label className="block text-xs font-medium text-stone-500 mb-1">Pitstop</label>
-                    <select className="w-full px-2.5 py-1.5 text-sm border border-stone-200 rounded-lg bg-white" value={nPs} onChange={(e) => setNPs(e.target.value)} disabled={!nTpl}>
+                    <select className="w-full px-2.5 py-1.5 text-sm border border-stone-200 rounded-lg bg-white" value={nPs} onChange={(e) => setNPs(e.target.value)} disabled={!tplSlug}>
                       <option value="">— pick —</option>
                       {newPitstops.map((p) => <option key={p.key} value={p.key}>{p.title}</option>)}
                     </select>
@@ -205,7 +230,7 @@ export function TemplatePicker({
                   Add {selected.size > 0 ? selected.size : ""} selected
                 </button>
               ) : (
-                <button onClick={addNew} disabled={busy || !nTpl || !nPs || !nText.trim()} className="px-3 py-1.5 text-sm bg-stone-900 text-white rounded-lg hover:bg-stone-700 disabled:opacity-50 inline-flex items-center gap-1">
+                <button onClick={addNew} disabled={busy || !tplSlug || !nPs || !nText.trim()} className="px-3 py-1.5 text-sm bg-stone-900 text-white rounded-lg hover:bg-stone-700 disabled:opacity-50 inline-flex items-center gap-1">
                   {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Add to template + tag
                 </button>
               )}

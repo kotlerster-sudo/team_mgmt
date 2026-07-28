@@ -66,7 +66,9 @@ function LinkedItemRow({
   return (
     <div className="border border-sky-200 rounded-lg bg-sky-50/40 p-2">
       <div className="flex items-center gap-2">
-        <span className="text-[10px] text-sky-700 bg-sky-100 border border-sky-200 rounded px-1.5 py-0.5 shrink-0">template</span>
+        <span className="text-[10px] font-mono text-sky-700 bg-sky-100 border border-sky-200 rounded px-1.5 py-0.5 shrink-0 max-w-[9rem] truncate" title={item.ref?.templateSlug}>
+          {item.ref?.templateSlug}
+        </span>
         <span className="text-sm text-stone-800 flex-1 min-w-0 truncate">{item.text}</span>
         <span className="text-[10px] text-stone-500 bg-stone-100 rounded-full px-1.5 py-0.5 shrink-0">{ctShort(item.completionType)}</span>
         <button onClick={onRemove} title="Untag" className="p-1 hover:bg-red-50 rounded text-stone-400 hover:text-red-500 transition-colors shrink-0">
