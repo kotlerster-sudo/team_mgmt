@@ -22,6 +22,7 @@ export async function getUserClusters(userIds: string[]): Promise<ClusterOption[
       select: {
         needsCluster: { select: { id: true, name: true } },
         needsSettlement: { select: { cluster: { select: { id: true, name: true } } } },
+        linkedFacility: { select: { cluster: { select: { id: true, name: true } } } },
       },
     }),
   ]);
@@ -32,6 +33,8 @@ export async function getUserClusters(userIds: string[]): Promise<ClusterOption[
     if (g.needsCluster) byId.set(g.needsCluster.id, g.needsCluster.name);
     const sc = g.needsSettlement?.cluster;
     if (sc) byId.set(sc.id, sc.name);
+    const fc = g.linkedFacility?.cluster;
+    if (fc) byId.set(fc.id, fc.name);
   }
 
   return [...byId.entries()]
@@ -39,12 +42,14 @@ export async function getUserClusters(userIds: string[]): Promise<ClusterOption[
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** Prisma Goal filter: goal is in this cluster directly OR via its settlement. */
+/** Prisma Goal filter: goal is in this cluster directly, via its settlement, OR via its linked facility. */
 export function goalInClusterFilter(clusterId: string): Prisma.GoalWhereInput {
   return {
     OR: [
       { needsClusterId: clusterId },
       { needsSettlement: { clusterId } },
+      // Facility-linked centres (e.g. most creches) carry their cluster on the LayerFeature only.
+      { linkedFacility: { clusterId } },
     ],
   };
 }

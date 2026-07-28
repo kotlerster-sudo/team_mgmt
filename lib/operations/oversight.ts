@@ -91,7 +91,7 @@ export async function loadOversightTree(
         needsDomain: true,
         ownerId: true,
         owner: { select: { id: true, name: true } },
-        linkedFacility: { select: { layerKey: true } },
+        linkedFacility: { select: { layerKey: true, cluster: { select: { id: true, name: true, zone: { select: { id: true, name: true } } } } } },
         needsCluster: { select: { id: true, name: true, zone: { select: { id: true, name: true } } } },
         needsSettlement: {
           select: { cluster: { select: { id: true, name: true, zone: { select: { id: true, name: true } } } } },
@@ -124,7 +124,7 @@ export async function loadOversightTree(
     if (!rp) rp = g.coOwners.map((c) => c.user).find((u) => visible.has(u.id)) ?? g.owner ?? null;
     const rpId = rp?.id ?? UNASSIGNED;
 
-    const cl = g.needsCluster ?? g.needsSettlement?.cluster ?? null;
+    const cl = g.needsCluster ?? g.needsSettlement?.cluster ?? g.linkedFacility?.cluster ?? null;
     const zoneId = cl?.zone?.id ?? UNASSIGNED;
     const zoneName = cl?.zone?.name ?? "Unassigned";
     const clusterId = cl?.id ?? UNASSIGNED;
@@ -206,9 +206,20 @@ export type BoardActivity = {
   status: string;
 };
 
+export type BoardCentre = {
+  goalId: string;
+  name: string;
+  themeKey: string;
+  ownerName: string | null;
+  mode: string;
+  /** Setup centre whose domain has an authored catalog → can be taken live. */
+  canGoLive: boolean;
+};
+
 export type ClusterBoard = {
   clusterId: string;
   clusterName: string;
+  centres: BoardCentre[];
   today: BoardActivity[];
   overdue: BoardActivity[];
   upcoming: BoardActivity[];
@@ -229,8 +240,9 @@ export async function loadClusterBoard(
   const cluster = await prisma.cluster.findUnique({ where: { id: clusterId }, select: { name: true } });
   if (!cluster) return null;
 
-  const [layerToDomain, goals] = await Promise.all([
+  const [layerToDomain, catalogDomainRows, goals] = await Promise.all([
     loadLayerToDomain(),
+    prisma.catalogTemplateDef.findMany({ where: { isActive: true, needsDomain: { not: null } }, select: { needsDomain: true } }),
     prisma.goal.findMany({
       where: {
         AND: [
@@ -240,26 +252,38 @@ export async function loadClusterBoard(
         ],
       },
       select: {
-        id: true, title: true, needsDomain: true,
+        id: true, title: true, needsDomain: true, mode: true,
         owner: { select: { name: true } },
         linkedFacility: { select: { name: true, layerKey: true } },
         pitstops: { where: { deletedAt: null }, select: { id: true } },
       },
     }),
   ]);
+  const domainsWithCatalog = new Set(catalogDomainRows.map((r) => r.needsDomain).filter(Boolean) as string[]);
 
   const pitstopToGoal = new Map<string, string>();
   const goalMeta = new Map<string, { centreName: string; themeKey: string; ownerName: string | null }>();
+  const centres: BoardCentre[] = [];
   for (const g of goals) {
     for (const p of g.pitstops) pitstopToGoal.set(p.id, g.id);
+    const themeKey = resolveGoalThemeKey(g, layerToDomain) ?? "__other";
     goalMeta.set(g.id, {
       centreName: g.linkedFacility?.name ?? g.title,
-      themeKey: resolveGoalThemeKey(g, layerToDomain) ?? "__other",
+      themeKey,
       ownerName: g.owner?.name ?? null,
     });
+    centres.push({
+      goalId: g.id,
+      name: g.linkedFacility?.name ?? g.title,
+      themeKey,
+      ownerName: g.owner?.name ?? null,
+      mode: g.mode,
+      canGoLive: g.mode !== "live" && !!g.needsDomain && domainsWithCatalog.has(g.needsDomain),
+    });
   }
+  centres.sort((a, b) => Number(a.mode === "live") - Number(b.mode === "live") || a.name.localeCompare(b.name));
   const pitstopIds = [...pitstopToGoal.keys()];
-  const board: ClusterBoard = { clusterId, clusterName: cluster.name, today: [], overdue: [], upcoming: [], happened: [] };
+  const board: ClusterBoard = { clusterId, clusterName: cluster.name, centres, today: [], overdue: [], upcoming: [], happened: [] };
   if (pitstopIds.length === 0) return board;
 
   const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
