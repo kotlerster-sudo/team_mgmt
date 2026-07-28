@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { cloneRecurringPitstopOnDone } from "@/lib/recurringPitstop";
+import { maybeAutoGoLive } from "@/lib/operations/goLive";
 
 /**
  * After a checklist item changes, recompute pitstop status (forward-only):
@@ -44,6 +45,11 @@ export async function autoAdvancePitstopById(pitstopId: string): Promise<void> {
       data: { status: "Done", completedAt: new Date() },
     });
     await cloneRecurringPitstopOnDone(pitstopId, pitstop.status);
+    // Completing the last setup pitstop may auto-flip the centre to live (visit-driven).
+    const [{ goalId }] = await prisma.$queryRaw<{ goalId: string }[]>`
+      SELECT "goalId" FROM "Pitstop" WHERE id = ${pitstopId} LIMIT 1
+    `;
+    if (goalId) await maybeAutoGoLive(goalId);
     return;
   }
 

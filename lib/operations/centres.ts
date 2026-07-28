@@ -18,6 +18,8 @@ import prisma from "@/lib/prisma";
 import { goalOwnedByAnyOf } from "@/lib/ownership";
 import { deriveCentrePhase, type CentrePhase, type PhasePitstop } from "./phase";
 import { goalInClusterFilter } from "./clusters";
+import { doneVisitsByGoal, requiredVisitsForMonth } from "./month";
+import { resolveCadence } from "@/lib/catalogDb";
 import type { ThemeDef } from "./themes";
 
 export type CentreRow = {
@@ -31,7 +33,9 @@ export type CentreRow = {
   phase: CentrePhase;
   /** This calendar month's activity progress on this centre. */
   month: { done: number; total: number };
-  /** Non-Done activities scheduled before today. */
+  /** Live centres only: visit cadence progress this month (parent visits done / required). */
+  cadence: { done: number; required: number } | null;
+  /** Non-Done activities scheduled before the current month (month-based overdue). */
   overdue: number;
   /** Activities scheduled today (any status). */
   today: number;
@@ -92,11 +96,17 @@ export async function loadCentresForTheme(
       linkedFacility: {
         select: { name: true, cluster: { select: { id: true, name: true } }, settlement: { select: { id: true, name: true } } },
       },
+      centreCatalog: { select: { cadenceCount: true, cadencePeriod: true } },
       pitstops: { where: { deletedAt: null }, select: PITSTOP_SELECT },
     },
   });
 
   if (goals.length === 0) return [];
+
+  // Cadence progress for live centres — parent visits Done this month, per goal.
+  const monthWindow = monthBounds(now);
+  const liveGoalIds = goals.filter((g) => g.mode === "live").map((g) => g.id);
+  const doneVisits = await doneVisitsByGoal(liveGoalIds, monthWindow);
 
   // One event query for the whole theme's pitstops in the current month.
   const pitstopToGoal = new Map<string, string>();
@@ -128,7 +138,9 @@ export async function loadCentresForTheme(
       }
       const inMonth = e.scheduledAt >= monthStart && e.scheduledAt <= monthEnd;
       const isToday = e.scheduledAt >= todayStart && e.scheduledAt <= todayEnd;
-      const isOverdue = e.scheduledAt < todayStart && e.status !== "Done";
+      // Month-based overdue: work only counts as overdue once its whole month has passed
+      // (the RP has the full month to do it, any day).
+      const isOverdue = e.scheduledAt < monthStart && e.status !== "Done";
       for (const gid of goalIds) {
         const agg = totals.get(gid) ?? { done: 0, total: 0, overdue: 0, today: 0 };
         if (inMonth) { agg.total += 1; if (e.status === "Done") agg.done += 1; }
@@ -149,6 +161,9 @@ export async function loadCentresForTheme(
       settlement: g.linkedFacility?.settlement ?? g.needsSettlement ?? null,
       phase: deriveCentrePhase(g.pitstops as PhasePitstop[], { mode: g.mode }),
       month: { done: t.done, total: t.total },
+      cadence: g.mode === "live"
+        ? { done: doneVisits.get(g.id) ?? 0, required: requiredVisitsForMonth(resolveCadence(g.centreCatalog, null)) }
+        : null,
       overdue: t.overdue,
       today: t.today,
     };

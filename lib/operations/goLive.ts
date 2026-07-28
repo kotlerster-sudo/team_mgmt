@@ -114,3 +114,33 @@ export async function setCentreLive(goalId: string): Promise<GoLiveResult> {
     alreadyLive,
   };
 }
+
+/**
+ * Auto-transition a setup centre to live when its setup work is finished. Called from the
+ * pitstop-completion path. Fires only when: mode is still "setup", every non-recurring (setup)
+ * pitstop is Done, and a domain catalog exists (the signal that this domain HAS a live phase).
+ * A manager can pre-empt/override via the explicit go-live route. Silent + safe to call often.
+ */
+export async function maybeAutoGoLive(goalId: string): Promise<boolean> {
+  const goal = await prisma.goal.findUnique({
+    where: { id: goalId },
+    select: {
+      mode: true,
+      needsDomain: true,
+      pitstops: { where: { deletedAt: null }, select: { status: true, recurrence: true } },
+    },
+  });
+  if (!goal || goal.mode !== "setup" || !goal.needsDomain) return false;
+
+  const setupPitstops = goal.pitstops.filter((p) => p.recurrence === "None");
+  if (setupPitstops.length === 0 || !setupPitstops.every((p) => p.status === "Done")) return false;
+
+  const hasCatalog = await prisma.catalogTemplateDef.findFirst({
+    where: { needsDomain: goal.needsDomain, isActive: true },
+    select: { id: true },
+  });
+  if (!hasCatalog) return false;
+
+  await setCentreLive(goalId);
+  return true;
+}

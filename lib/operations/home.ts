@@ -64,6 +64,8 @@ export async function loadOperationsHome(
   if (pitstopIds.length > 0) {
     const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date(now); todayEnd.setHours(23, 59, 59, 999);
+    // Month-based overdue: work is only overdue once its whole month has passed.
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
     const events = await prisma.pitstopEvent.findMany({
       where: {
         deletedAt: null,
@@ -77,7 +79,7 @@ export async function loadOperationsHome(
       const goalIds = new Set<string>();
       for (const link of e.pitstops) { const gid = pitstopToGoal.get(link.pitstopId); if (gid) goalIds.add(gid); }
       const isToday = e.scheduledAt >= todayStart && e.scheduledAt <= todayEnd;
-      const isOverdue = e.scheduledAt < todayStart && e.status !== "Done";
+      const isOverdue = e.scheduledAt < monthStart && e.status !== "Done";
       for (const gid of goalIds) {
         if (isToday) todayByGoal.set(gid, (todayByGoal.get(gid) ?? 0) + 1);
         if (isOverdue) overdueByGoal.set(gid, (overdueByGoal.get(gid) ?? 0) + 1);

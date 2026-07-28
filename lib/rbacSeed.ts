@@ -73,7 +73,13 @@ export const RESOURCE_ACTIONS: Record<string, readonly string[]> = {
   user: [...STANDARD_ACTIONS, "reset_password", "change_own_password"],
   goal: [...STANDARD_ACTIONS, "change_owner"],
   pitstop: [...STANDARD_ACTIONS, "generate_partner_briefing"],
-  pitstop_event: [...STANDARD_ACTIONS, "respond", "cancel", "reschedule"],
+  pitstop_event: [...STANDARD_ACTIONS, "respond", "cancel", "reschedule", "arrive"],
+  // Visit-driven ops (live centres). `catalog` = admin-authored domain catalogs;
+  // `catalog_item` = ad-hoc items RPs add (create=OWN) pending supervisor approval (approve=TEAM);
+  // `visit` = the RP's per-visit lifecycle (start/arrive/tick/close), all OWN.
+  catalog: [...STANDARD_ACTIONS],
+  catalog_item: ["create", "approve"],
+  visit: ["create", "arrive", "tick", "close"],
   decision: [...STANDARD_ACTIONS],
   risk: [...STANDARD_ACTIONS],
   settlement: [...STANDARD_ACTIONS, "sync_civic_data"],
@@ -196,6 +202,16 @@ const MEMBER_GRANTS: RoleGrant = {
   "pitstop_event.respond":    SELF,
   "pitstop_event.cancel":     OWN,
   "pitstop_event.reschedule": OWN,
+  "pitstop_event.arrive":     OWN,
+
+  // Visit-driven ops. Visit lifecycle is own-scoped; catalog items an RP adds are own-create,
+  // approval is TEAM so a ZL/PM can approve reportees' additions (RPs have no team → can't approve).
+  "visit.create": OWN,
+  "visit.arrive": OWN,
+  "visit.tick":   OWN,
+  "visit.close":  OWN,
+  "catalog_item.create":  OWN,
+  "catalog_item.approve": TEAM,
 
   "decision.list":   OWN,
   "decision.read":   OWN,

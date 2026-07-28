@@ -241,7 +241,12 @@ function SettingUpRow({ centre, color, href }: { centre: CentreRow; color: strin
 }
 
 function LiveRow({ centre, color, href }: { centre: CentreRow; color: string; href: string }) {
-  const { done, total } = centre.month;
+  // Live centres show visit cadence (visits done / required this month); fall back to activity
+  // totals for non-cadence centres (e.g. done-lifecycle rows).
+  const useCadence = centre.cadence != null;
+  const done = useCadence ? centre.cadence!.done : centre.month.done;
+  const total = useCadence ? centre.cadence!.required : centre.month.total;
+  const behind = useCadence && total > 0 && done < total;
   return (
     <Link href={href} className="group flex items-center gap-3 rounded-lg border border-stone-200 bg-white px-4 py-3 hover:border-stone-300 hover:shadow-sm transition-all">
       <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
@@ -254,7 +259,9 @@ function LiveRow({ centre, color, href }: { centre: CentreRow; color: string; hr
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">
         <Dots done={done} total={total} />
-        <span className="text-[11px] text-stone-400 tabular-nums">{total > 0 ? `${done}/${total}` : "—"}</span>
+        <span className={`text-[11px] tabular-nums ${behind ? "text-amber-600 font-medium" : "text-stone-400"}`}>
+          {total > 0 ? `${done}/${total}${useCadence ? " visits" : ""}` : "—"}
+        </span>
       </div>
       <ChevronRight className="w-4 h-4 text-stone-300 group-hover:text-stone-400 flex-shrink-0" />
     </Link>

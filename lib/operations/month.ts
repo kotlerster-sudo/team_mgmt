@@ -32,8 +32,11 @@ export function requiredVisitsForMonth(cadence: Cadence | null, d: Date = new Da
 }
 
 /**
- * Count completed VISITS (parent Visit events, not child ticks) for a set of goals within a month,
- * grouped by goalId. Parent visits are type=Visit with visitEventId = null.
+ * Count completed cadence VISITS for a set of goals within a month, grouped by goalId.
+ *
+ * A cadence visit is a parent Visit event (type=Visit, visitEventId=null) linked to the goal's
+ * RECURRING (live "Operations") pitstop. The recurrence filter is what distinguishes a real visit
+ * from a legacy site-visit *activity* that merely happens to be typed "Visit" on a setup pitstop.
  */
 export async function doneVisitsByGoal(
   goalIds: string[],
@@ -49,16 +52,18 @@ export async function doneVisitsByGoal(
       status: "Done",
       deletedAt: null,
       completedAt: { gte: bounds.start, lte: bounds.end },
-      pitstops: { some: { pitstop: { deletedAt: null, goalId: { in: goalIds } } } },
+      pitstops: { some: { pitstop: { deletedAt: null, goalId: { in: goalIds }, recurrence: { not: "None" } } } },
     },
-    select: { pitstops: { select: { pitstop: { select: { goalId: true } } } } },
+    select: { pitstops: { select: { pitstop: { select: { goalId: true, recurrence: true } } } } },
   });
 
   for (const r of rows) {
+    // Count each event once per goal, only via its recurring-pitstop link.
+    const goals = new Set<string>();
     for (const p of r.pitstops) {
-      const gid = p.pitstop.goalId;
-      out.set(gid, (out.get(gid) ?? 0) + 1);
+      if (p.pitstop.recurrence !== "None" && goalIds.includes(p.pitstop.goalId)) goals.add(p.pitstop.goalId);
     }
+    for (const gid of goals) out.set(gid, (out.get(gid) ?? 0) + 1);
   }
   return out;
 }
