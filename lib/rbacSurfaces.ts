@@ -60,6 +60,7 @@ export const SURFACES: ReadonlyArray<SurfaceDef> = [
   { id: "operations.today",         label: "On-the-ground today",    description: "Cluster→theme→centre daily driver" },
   { id: "operations.month_planner", label: "Month-end planner",      description: "Pre-filled drag-adjust next-month plan" },
   { id: "operations.oversight",     label: "Supervisory oversight",  description: "Zone→cluster→RP→centre drill-down + approvals for ZL/PM/Leader" },
+  { id: "operations.visit",         label: "Live-centre visit",      description: "RP's per-visit checklist/activity completion (voice/upload/done)" },
 
   // ── Pitstop ──────────────────────────────────────────────────────────────
   { id: "pitstop.list",          label: "Pitstops list" },
