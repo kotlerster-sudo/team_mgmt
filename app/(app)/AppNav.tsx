@@ -8,7 +8,7 @@ import {
   Target, Search, LogOut, Bell, Settings, Users, GanttChartSquare,
   CalendarClock, MoreHorizontal, X, BookOpen, ClipboardList, MapPin,
   CalendarRange, HelpCircle, BarChart3, MessageSquare, LayoutGrid, Route, TrendingUp,
-  Layers, Library, Calculator, GraduationCap,
+  Layers, Library, Calculator, GraduationCap, UserSearch,
 } from "lucide-react";
 import Avatar from "@/components/Avatar";
 import PWAInstallButton from "@/components/PWAInstallButton";
@@ -84,6 +84,7 @@ export default function AppNav({
     { href: "/quarters",   icon: <CalendarRange className="w-3.5 h-3.5" />,    label: "Quarters"       },
     { href: "/models",     icon: <Calculator className="w-3.5 h-3.5" />,       label: "Models"         },
     { href: "/people",     icon: <Users className="w-3.5 h-3.5" />,            label: "People"         },
+    { href: "/recruitment", icon: <UserSearch className="w-3.5 h-3.5" />,      label: "Recruitment"    },
     { href: "/standup",    icon: <ClipboardList className="w-3.5 h-3.5" />,    label: "Field Notes"    },
     { href: "/wiki",       icon: <Library className="w-3.5 h-3.5" />,          label: "Wiki"           },
     { href: "/pitstops-training.html", icon: <GraduationCap className="w-3.5 h-3.5" />, label: "Training", external: true },

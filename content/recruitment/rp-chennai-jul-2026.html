@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RP Trials · Chennai Urban — Scouting Day</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Outfit:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --pitch:#0A2A1D; --pitch2:#0F3626; --pitch3:#144232;
+  --chalk:#F4EFDF; --gold:#FFB424; --sky:#7FC7E8; --red:#E5484D;
+  --dim:#9DB8AA; --line:rgba(244,239,223,.14);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--pitch); color:var(--chalk);
+  font-family:'Outfit',sans-serif; overflow-x:hidden;
+  background-image:
+    radial-gradient(ellipse 1200px 600px at 50% -200px, rgba(127,199,232,.08), transparent),
+    repeating-linear-gradient(0deg, transparent 0 119px, rgba(244,239,223,.035) 119px 120px);
+}
+/* chalk centre circle */
+body::before{
+  content:''; position:fixed; top:38%; left:50%; transform:translate(-50%,-50%);
+  width:min(90vw,720px); height:min(90vw,720px); border-radius:50%;
+  border:2px dashed rgba(244,239,223,.06); pointer-events:none; z-index:0;
+}
+.wrap{position:relative; z-index:1; max-width:1100px; margin:0 auto; padding:0 16px 80px}
+
+/* ============ HEADER ============ */
+header{padding:34px 0 10px; text-align:center}
+.matchday{
+  font-family:'Space Mono',monospace; font-size:12px; letter-spacing:.32em;
+  color:var(--gold); text-transform:uppercase;
+}
+h1{
+  font-family:'Bungee',cursive; font-size:clamp(34px,7.5vw,72px); line-height:1.02;
+  margin:10px 0 4px; text-transform:uppercase;
+}
+h1 .a{color:var(--chalk)} h1 .b{color:var(--sky)}
+.sub{font-family:'Space Mono',monospace; font-size:13px; color:var(--dim); letter-spacing:.08em}
+.sub b{color:var(--gold); font-weight:700}
+.crest{
+  display:inline-flex; align-items:center; gap:10px; margin-top:14px;
+  border:1.5px solid var(--line); border-radius:999px; padding:7px 18px;
+  font-family:'Space Mono',monospace; font-size:11px; letter-spacing:.18em; color:var(--dim);
+}
+.crest .dot{width:8px;height:8px;border-radius:50%;background:var(--red);animation:blink 1.4s infinite}
+@keyframes blink{50%{opacity:.25}}
+
+/* ============ TICKER ============ */
+.ticker{
+  margin:26px -16px 34px; background:var(--gold); color:#20180A;
+  font-family:'Space Mono',monospace; font-weight:700; font-size:13px;
+  overflow:hidden; white-space:nowrap; transform:rotate(-1deg); border:2px solid #20180A;
+  box-shadow:0 4px 0 rgba(0,0,0,.35);
+}
+.ticker-inner{display:inline-block; padding:9px 0; animation:tick 46s linear infinite}
+@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+
+/* ============ SECTION HEADS ============ */
+.secHead{display:flex; align-items:baseline; gap:14px; margin:44px 0 16px; flex-wrap:wrap}
+.secHead h2{font-family:'Bungee',cursive; font-size:clamp(20px,3.6vw,30px); color:var(--gold); text-transform:uppercase}
+.secHead .rule{flex:1; height:2px; background:var(--line); min-width:60px}
+.secHead .tag{font-family:'Space Mono',monospace; font-size:11px; color:var(--dim); letter-spacing:.2em}
+
+/* ============ LEAGUE TABLE ============ */
+.tableCard{
+  background:var(--pitch2); border:1.5px solid var(--line); border-radius:18px;
+  overflow:hidden; box-shadow:0 12px 40px rgba(0,0,0,.35);
+}
+table{width:100%; border-collapse:collapse; font-size:14px}
+th{
+  font-family:'Space Mono',monospace; font-size:10px; letter-spacing:.18em; text-transform:uppercase;
+  color:var(--dim); text-align:left; padding:12px 14px; border-bottom:1.5px solid var(--line);
+  background:rgba(0,0,0,.18);
+}
+td{padding:12px 14px; border-bottom:1px solid rgba(244,239,223,.07); vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tbody tr{transition:background .3s; cursor:pointer}
+tbody tr:hover{background:rgba(127,199,232,.07)}
+tr.flash{animation:rowflash 1s}
+@keyframes rowflash{0%{background:rgba(255,180,36,.25)}100%{background:transparent}}
+.rk{font-family:'Bungee',cursive; color:var(--sky); font-size:16px; width:40px}
+.tn{font-weight:700}
+.tn small{display:block; font-weight:400; color:var(--dim); font-size:11px; font-family:'Space Mono',monospace}
+.si{font-family:'Space Mono',monospace; font-weight:700; color:var(--gold)}
+.ys{font-family:'Bungee',cursive; font-size:16px}
+.ys.empty{color:var(--dim); font-family:'Space Mono',monospace; font-size:11px; font-weight:400}
+.vchip{font-family:'Space Mono',monospace; font-size:10px; font-weight:700; letter-spacing:.12em; padding:3px 9px; border-radius:6px; border:1.5px solid}
+.v-SIGN{color:#7CE0A5; border-color:#7CE0A5}
+.v-TRIAL{color:var(--gold); border-color:var(--gold)}
+.v-PASS{color:var(--red); border-color:var(--red)}
+.v-none{color:var(--dim); border-color:var(--line); font-weight:400}
+
+/* ============ CARDS ============ */
+.grid{display:grid; grid-template-columns:1fr; gap:26px}
+.card{
+  background:linear-gradient(160deg,var(--pitch3),var(--pitch2) 55%);
+  border:2px solid var(--line); border-radius:22px; padding:22px 20px 20px;
+  position:relative; overflow:hidden;
+  box-shadow:0 14px 44px rgba(0,0,0,.4);
+  opacity:0; transform:translateY(28px) rotate(-.6deg);
+  animation:cardIn .7s cubic-bezier(.2,.9,.3,1.2) forwards;
+}
+.card:nth-child(even){transform:translateY(28px) rotate(.6deg)}
+@keyframes cardIn{to{opacity:1; transform:translateY(0) rotate(0)}}
+.card::after{
+  content:attr(data-code); position:absolute; right:-8px; top:-22px;
+  font-family:'Bungee',cursive; font-size:110px; color:rgba(244,239,223,.045);
+  pointer-events:none; letter-spacing:-4px;
+}
+.chead{display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap}
+.jersey{
+  width:62px; height:62px; flex:0 0 62px; border-radius:14px;
+  background:var(--sky); color:#0A2A1D; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; font-family:'Bungee',cursive;
+  border:2.5px solid var(--chalk); transform:rotate(-3deg);
+  box-shadow:3px 4px 0 rgba(0,0,0,.35);
+}
+.jersey span{font-size:20px; line-height:1}
+.jersey small{font-family:'Space Mono',monospace; font-size:8px; letter-spacing:.08em; font-weight:700}
+.cwho{flex:1; min-width:200px}
+.cname{font-family:'Bungee',cursive; font-size:clamp(19px,3.4vw,26px); text-transform:uppercase; line-height:1.05}
+.cpos{font-family:'Space Mono',monospace; font-size:11px; color:var(--gold); letter-spacing:.1em; margin-top:5px; text-transform:uppercase}
+.cmeta{font-size:12.5px; color:var(--dim); margin-top:4px}
+.sindex{text-align:center; flex:0 0 auto}
+.sindex .n{font-family:'Bungee',cursive; font-size:34px; color:var(--gold)}
+.sindex .l{font-family:'Space Mono',monospace; font-size:9px; letter-spacing:.18em; color:var(--dim)}
+
+.cbody{display:grid; grid-template-columns:220px 1fr; gap:18px; margin-top:18px; align-items:start}
+@media(max-width:640px){.cbody{grid-template-columns:1fr}}
+.radarBox{display:flex; justify-content:center}
+svg.radar{width:100%; max-width:230px; overflow:visible}
+.radar .grid-line{fill:none; stroke:var(--line); stroke-width:1}
+.radar .axis{stroke:var(--line); stroke-width:1}
+.radar .val{
+  fill:rgba(127,199,232,.22); stroke:var(--sky); stroke-width:2.5; stroke-linejoin:round;
+  transform-origin:center; transform:scale(0); animation:radarPop .9s .35s cubic-bezier(.2,.9,.3,1.25) forwards;
+}
+@keyframes radarPop{to{transform:scale(1)}}
+.radar text{fill:var(--dim); font-family:'Space Mono',monospace; font-size:8.5px; letter-spacing:.04em}
+.radar .vdot{fill:var(--gold)}
+
+.flags{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px}
+.flag{
+  display:inline-flex; align-items:center; gap:7px; font-size:12px; line-height:1.3;
+  padding:6px 10px; border-radius:10px; border:1.5px solid; max-width:100%;
+}
+.flag .fc{width:11px; height:15px; border-radius:2.5px; flex:0 0 11px; transform:rotate(-8deg)}
+.flag.y{border-color:rgba(255,180,36,.5); color:#FFD98A}
+.flag.y .fc{background:var(--gold)}
+.flag.r{border-color:rgba(229,72,77,.6); color:#FFA7AA}
+.flag.r .fc{background:var(--red)}
+.scoutTxt{font-size:14.5px; line-height:1.62; color:#DCE7DE}
+.scoutTxt b{color:var(--chalk)}
+
+details{margin-top:12px; border:1.5px solid var(--line); border-radius:14px; overflow:hidden; background:rgba(0,0,0,.16)}
+summary{
+  cursor:pointer; list-style:none; padding:11px 14px; font-family:'Space Mono',monospace;
+  font-size:11.5px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--sky);
+  display:flex; justify-content:space-between; align-items:center; user-select:none;
+}
+summary::-webkit-details-marker{display:none}
+summary::after{content:'+'; font-family:'Bungee',cursive; color:var(--gold); transition:transform .25s}
+details[open] summary::after{transform:rotate(45deg)}
+.dbody{padding:2px 14px 14px}
+.qs{list-style:none}
+.qs li{display:flex; gap:10px; padding:9px 0; border-top:1px dashed rgba(244,239,223,.12); font-size:14px; line-height:1.5; align-items:flex-start}
+.qs li:first-child{border-top:none}
+.qs input[type=checkbox]{
+  appearance:none; width:20px; height:20px; flex:0 0 20px; margin-top:1px;
+  border:2px solid var(--sky); border-radius:6px; cursor:pointer; position:relative; transition:.2s;
+}
+.qs input[type=checkbox]:checked{background:var(--sky)}
+.qs input[type=checkbox]:checked::after{
+  content:'✓'; position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  color:#0A2A1D; font-weight:900; font-size:13px;
+}
+.qs li.done label{opacity:.45; text-decoration:line-through}
+.qs label{cursor:pointer}
+
+/* ============ SCORING PANEL ============ */
+.panel{
+  margin-top:16px; border:2px dashed rgba(255,180,36,.45); border-radius:16px;
+  padding:16px 14px 14px; background:rgba(255,180,36,.05);
+}
+.panel .pl{font-family:'Space Mono',monospace; font-size:10.5px; letter-spacing:.22em; color:var(--gold); text-transform:uppercase; margin-bottom:12px}
+.scoreRow{display:flex; align-items:center; gap:16px; flex-wrap:wrap}
+.bigScore{font-family:'Bungee',cursive; font-size:44px; color:var(--chalk); min-width:96px; line-height:1}
+.bigScore small{font-size:16px; color:var(--dim)}
+input[type=range]{flex:1; min-width:160px; accent-color:var(--gold); height:34px; cursor:pointer}
+.stamps{display:flex; gap:10px; margin-top:14px; flex-wrap:wrap}
+.stamp{
+  font-family:'Bungee',cursive; font-size:14px; letter-spacing:.06em; padding:9px 18px;
+  border-radius:10px; border:2.5px solid; background:transparent; cursor:pointer;
+  transition:transform .15s; text-transform:uppercase;
+}
+.stamp:active{transform:scale(.92)}
+.stamp.sign{color:#7CE0A5; border-color:#7CE0A5}
+.stamp.trial{color:var(--gold); border-color:var(--gold)}
+.stamp.pass{color:var(--red); border-color:var(--red)}
+.stamp.on{transform:rotate(-4deg) scale(1.06); box-shadow:0 0 0 3px rgba(244,239,223,.15), 3px 4px 0 rgba(0,0,0,.4)}
+.stamp.on.sign{background:#7CE0A5; color:#0A2A1D}
+.stamp.on.trial{background:var(--gold); color:#20180A}
+.stamp.on.pass{background:var(--red); color:#fff}
+@keyframes thump{0%{transform:rotate(-14deg) scale(1.7); opacity:0}60%{transform:rotate(-4deg) scale(.98); opacity:1}100%{transform:rotate(-4deg) scale(1.06)}}
+.stamp.thump{animation:thump .4s cubic-bezier(.2,.9,.3,1.3)}
+textarea{
+  width:100%; margin-top:14px; background:rgba(0,0,0,.28); border:1.5px solid var(--line);
+  border-radius:12px; color:var(--chalk); font-family:'Outfit',sans-serif; font-size:14px;
+  padding:11px 12px; min-height:74px; resize:vertical;
+}
+textarea:focus{outline:2px solid var(--sky); border-color:transparent}
+textarea::placeholder{color:rgba(157,184,170,.7)}
+.savenote{font-family:'Space Mono',monospace; font-size:10px; color:var(--dim); margin-top:6px; letter-spacing:.1em; min-height:14px}
+
+/* ============ EVERYONE PANEL ============ */
+.everyone{
+  margin-top:48px; border:2px solid var(--sky); border-radius:20px; padding:22px 20px;
+  background:linear-gradient(160deg, rgba(127,199,232,.1), rgba(127,199,232,.03));
+}
+.everyone h3{font-family:'Bungee',cursive; color:var(--sky); text-transform:uppercase; font-size:19px; margin-bottom:10px}
+.everyone p{font-size:14.5px; line-height:1.65; color:#DCE7DE; margin-top:8px}
+.everyone b{color:var(--gold)}
+
+footer{margin-top:44px; text-align:center; font-family:'Space Mono',monospace; font-size:11px; color:var(--dim); letter-spacing:.12em}
+.resetBtn{
+  margin-top:12px; background:none; border:1.5px solid var(--line); color:var(--dim);
+  font-family:'Space Mono',monospace; font-size:10.5px; letter-spacing:.15em; padding:8px 16px;
+  border-radius:999px; cursor:pointer; text-transform:uppercase;
+}
+.resetBtn:hover{border-color:var(--red); color:var(--red)}
+
+.confetti{position:fixed; top:-14px; z-index:99; pointer-events:none; border-radius:2px; animation:fall linear forwards}
+@keyframes fall{to{transform:translateY(110vh) rotate(720deg)}}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important; transition:none!important}
+  .card{opacity:1; transform:none}
+  .radar .val{transform:scale(1)}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="matchday">Matchday · Thu 30 July 2026</div>
+  <h1><span class="a">RP Trials</span><br><span class="b">Chennai Urban FC</span></h1>
+  <div class="sub">8 trialists · 1 shirt · position: <b>Resource Person (box-to-box)</b></div>
+  <div class="crest"><span class="dot"></span> LIVE SCOUTING DESK · SELECTOR: V. HARIKUMAR</div>
+</header>
+
+<div class="ticker"><div class="ticker-inner" id="ticker"></div></div>
+
+<div class="secHead"><h2>League Table</h2><div class="rule"></div><span class="tag">SORTS LIVE AS YOU SCORE</span></div>
+<div class="tableCard">
+  <table>
+    <thead><tr><th>#</th><th>Trialist</th><th>Scout Index</th><th>Your Score</th><th>Verdict</th></tr></thead>
+    <tbody id="ltable"></tbody>
+  </table>
+</div>
+
+<div class="secHead"><h2>Scout Cards</h2><div class="rule"></div><span class="tag">TAP A TABLE ROW TO JUMP</span></div>
+<div class="grid" id="cards"></div>
+
+<div class="everyone">
+  <h3>⚽ Ask every trialist</h3>
+  <p><b>1. The field-day test:</b> "Describe your last full day spent inside a community — where, with whom, doing what." The specificity of the answer is the diagnostic.</p>
+  <p><b>2. The CO friction test:</b> "A community organiser from a partner NGO resists your presence in their settlement. What do you do?" The RP–CO boundary is where this role actually lives.</p>
+  <p><b>3. The pattern in this pool:</b> six of eight currently hold Manager/Lead titles. Motivation and role-expectation calibration is a standing probe in every single interview.</p>
+</div>
+
+<footer>
+  <div>SCOUTING DESK · JANADHIKARA · SCORES &amp; NOTES SAVE AUTOMATICALLY ON THIS DEVICE</div>
+  <button class="resetBtn" id="resetBtn">Reset all scores &amp; notes</button>
+</footer>
+
+</div>
+
+<script>
+/* ================= DATA ================= */
+const AXES = ['FIELD','RANGE','DOCS','DEPTH','STABLE','CHN FIT'];
+const C = [
+{id:'lingesh',code:'0394',name:'V. Lingesh',pos:'Home-grown centre-back',meta:'~5 yrs · Chennai · MA Social Work (Human Rights), Loyola',
+ attrs:[85,65,80,85,75,90],
+ flags:[['r','Currently on an APF-funded Dorcas homeless project — likely one of our own Chennai grants. Resolve the partner-poaching optics with the city lead BEFORE the interview.'],['y','Ops Manager → RP is an authority inversion — probe how he handles being one voice among many.']],
+ scout:'Already in our dressing room: both Dorcas roles are on an <b>APF-funded urban homeless project</b>. Knows the vertical deeply and knows our reporting culture from the receiving end — reference-checkable with unusual precision. TANSACS counselling adds psychosocial range. Modest marks (64% / 54.6%) are irrelevant if field references hold.',
+ qs:['PRE-WORK (internal): confirm with the Chennai lead whether Dorcas is our active grant, and agree the partner-relations handling.','You have seen the Foundation from the partner side — what do we get wrong, or make harder for partners?','You are an Operations Manager. This role means supporting COs employed by organisations like yours. How will you handle that inversion?','Walk the shelter resident pathway — arrival to rehabilitation. Where does the model fail?','Why move to the funder side rather than grow within Dorcas?']},
+{id:'halil',code:'0385',name:'Halil Rahuman S',pos:'Box-to-box grafter',meta:'~5 yrs · Madurai (relocating?) · DHAN Academy PGDDM · BSc Maths',
+ attrs:[90,60,85,90,80,45],
+ flags:[['y','Entire career is rural Madurai — SHG federations, not urban informal settlements.'],['y','Relocation to Chennai required; family situation and timeline unverified.']],
+ scout:'Best pure grassroots engine in the squad: DHAN Academy formation, then three years running <b>150 SHGs monthly</b>, ₹3.5 Cr credit linkage, ₹11L fund generation, and an approved <b>₹4.5 Cr SBIF proposal</b>. Community craft + documentation + financial discipline in one player. Honest, unpolished CV reads as DHAN culture: substance over gloss.',
+ qs:['Why leave DHAN now, and why Chennai specifically?','Urban settlements have no SHG-type institution and fragmented community structures. Where do you begin?','Elderly care, homelessness, welfare rights — verticals with no income-generation logic. Honest reaction?','Tell me about a time DHAN\'s standard method did not fit the ground. What did you do?','Practicals: relocation timeline, family, and salary expectation coming off DHAN\'s pay scale.']},
+{id:'amsaveni',code:'0395',name:'Amsaveni R',pos:'Ball-winning midfielder',meta:'~6.5 yrs · Pudukkottai/Chengalpattu · MSW (CD), Bishop Heber',
+ attrs:[80,70,75,80,85,60],
+ flags:[['y','Depth skews child/adolescent; village development rather than dense urban slum work.'],['y','Base geography is Pudukkottai — Chennai residence plan needs confirming.']],
+ scout:'Quietly solid: three years of <b>1098 crisis casework</b>, then four years at Thozhamai rising to PM of a six-village, <b>multi-domain</b> programme (leadership, education, health, livelihoods) — the closest analogue in this pool to multi-vertical RP work. Rights-based spine, Salesforce discipline, NIMHANS mental-health training useful for elderly and homeless verticals. Role appears to end Mar 2026 — likely project closure, verify.',
+ qs:['Thozhamai after March 2026 — did the project close, or your choice? May we speak to Devaneyan?','Where do you live now, and what is your Chennai plan?','A full quarter mostly on elderly screening or welfare-rights facilitation — honest reaction?','A 1098 case that went wrong or stayed with you. What did it teach you about the state system?','In the six-village programme: what did you personally do in the field vs manage others doing?']},
+{id:'yasmine',code:'0380',name:'Yasmine Bowsiya I',pos:'Playmaker No. 10 · North Chennai',meta:'~5 yrs · Kodungaiyur · MA W&G Studies (First Rank + TN State Rank)',
+ attrs:[60,55,85,70,70,85],
+ flags:[['y','CV language has drifted donor-facing — proposals, ESG, board decks. Field-vs-desk split unclear.'],['y','Title regression: "Lead – Strategy" → RP. Probe why, and whether it will hold.']],
+ scout:'Strong urban-Chennai profile with real distinction — and a dissertation walked through <b>Kannagi Nagar and Ezhil Nagar</b>, exactly our resettlement geography. Lives in Kodungaiyur: useful geography in itself. ATSWA is a small trust, so "Lead" may mean a tiny team where she did everything — which would be fine. If the field-versus-desk probe lands well, a serious pick.',
+ qs:['Your dissertation sites were Kannagi Nagar and Ezhil Nagar — how much time did you actually spend there, and what did you learn about resettlement colonies?','What percentage of your ATSWA week is in the field? Describe your last full day in a community.','How large is ATSWA — headcount and budget? What does "Lead" mean there?','This is a field RP role, not strategy. Why step into it from a Lead position?','Elderly assessment or homeless outreach — verticals with no gender-programme frame. How do you approach them?']},
+{id:'jacquline',code:'0313',name:'S. A. Jacquline',pos:'Veteran captain · systems brain',meta:'14+ yrs · Chennai · MSW Stella Maris · STiR / HCLF MAMTA',
+ attrs:[55,80,90,75,90,75],
+ flags:[['y','Overqualified: 3 yrs at SCERT/state-systems altitude — restlessness risk in a settlement-level role.'],['y','Salary mismatch likely; she would report to a zone lead possibly younger than her.']],
+ scout:'A wildcard worth a serious conversation. Recent work is two divisions up — SCERT knowledge partner across <b>38 districts</b>, EquiBot with GCC schools — but before that, four years of genuine urban MCH work with <b>20+ UPHCs</b> in low-income neighbourhoods, plus six early years of direct service. Long stints throughout: the opposite of a job-hopper. STiR appears to end Apr 2026, which explains the application. Test altitude and appetite, not ability.',
+ qs:['Your last community-facing role ended in 2019. Why return to that altitude — and how do you know you\'ll be content in a year?','What happened with STiR — project end or your choice?','You may report to a zone lead younger and less experienced than you. Talk to me honestly about that.','How did you build the UPHC relationships at MAMTA? What would you replicate in our welfare-rights and elderly work?','Salary: current, and your genuine floor — let\'s address the mismatch now, not at offer stage.']},
+{id:'jerome',code:'0390',name:'Jerome M. D\'Souza',pos:'Journeyman free agent',meta:'15+ yrs · Chennai · MA Social Work, Loyola · 9 orgs since 2007',
+ attrs:[70,75,50,65,45,70],
+ flags:[['r','Out of contract since Dec 2025 — a seven-month gap that needs a direct question.'],['y','Nine organisations in 18 years; lateral coordinator-level moves without deepening.'],['y','CV bullets are generic and outcome-free — no numbers, no named communities.']],
+ scout:'Eighteen-year journeyman across nine clubs: health, HIV (NACO), eye camps, education CSR, entrepreneurship. Breadth is real, and PRA / <b>Theatre of the Oppressed</b> training suggests old-school participatory grounding. But the interview must distinguish a mature preference for field work from a plateaued career — and this role is physically demanding and data-heavy, learned alongside colleagues fifteen years his junior.',
+ qs:['What have you been doing since December, and how did the BYST role end?','Nine organisations in eighteen years — walk me through the three moves you would most need to explain.','Name one community you worked in for over a year. What changed there because of you — concretely?','Our field team runs on a mobile app and structured daily data. Being trained on it by younger colleagues — honest reaction?','Why an RP role at this career stage? What does it give you?']},
+{id:'manisha',code:'0381',name:'Manisha D',pos:'Utility sub · edtech wing',meta:'Claimed 5.5 yrs · Chennai · MSW Madras Univ · LLF / AIF',
+ flags:[['r','Unexplained gap Apr–Nov 2025 between AIF and Learning Links.'],['y','Five organisations in six years, two gaps — retention risk on its face.'],['y','Interviewing seven months into her current Assistant Manager role.']],
+ attrs:[40,45,70,35,30,70],
+ scout:'A scattered trajectory whose current depth — teacher training, STEM/coding, digital literacy in government schools — is classroom-facing, not settlement-level organising. The <b>AIF cluster coordinator</b> role is the one relevant stretch and deserves hard probing. Digital fluency (Python, micro:bit) is a genuine plus for our data systems, but the core question is whether she has ever done, or wants, sustained community immersion.',
+ qs:['Walk me through April to November 2025 — what happened after AIF?','You joined Learning Links seven months ago. Why are you already looking?','The AIF role: how much was inside communities versus inside schools and training halls?','This role means daily presence in settlements — elderly screening, welfare camps, food points, not training delivery. Does that genuinely attract you? Why?','Five organisations in six years — help me understand the pattern.']},
+{id:'gokul',code:'0389',name:'Gokul M',pos:'Hyped academy prospect',meta:'~3 yrs · Chennai · BSW 2023 · MSW (distance, pursuing)',
+ attrs:[45,50,45,40,40,65],
+ flags:[['r','"UNICEF Team Guide" (Feb–Nov 2023) sits entirely inside his Y4D tenure — two concurrent full-time roles on paper.'],['y','"Project Manager" one year out of a BSW — likely designation inflation at a CSR shop.'],['y','Leaving CSRL within roughly a year of joining.']],
+ scout:'The thinnest and most inflated CV in the pool. The "UNICEF" stint is almost certainly <b>agency face-to-face fundraising</b> (the bullet points confirm the fundraising content), not UNICEF programme staff — and it overlaps his Y4D dates entirely. On the plus side: Chennai-based, Tamil-fluent, young, and his exposure list (WASH, NSK, Naan Mudhalvan) at least touches scheme terrain. Open with the timeline and let the answer decide.',
+ qs:['Feb–Nov 2023: your CV shows two full-time roles simultaneously. Which was actually full-time?','The UNICEF "Team Guide" role — who paid your salary, and what did a typical day look like?','One Y4D project where you were on the ground weekly: which community, and what did YOU do vs coordinate?','You have held "Project Manager" twice. This is a field RP role. Why does it make sense for you?','Why are you leaving CSRL within a year?']}
+];
+
+/* ================= STATE ================= */
+const KEY='recruitment:rp-chennai-jul-2026';
+let S={}; C.forEach(c=>S[c.id]={score:null,verdict:null,notes:'',asked:{}});
+
+function load(){
+  try{
+    const r = localStorage.getItem(KEY);
+    if(r){ const p=JSON.parse(r); C.forEach(c=>{ if(p[c.id]) S[c.id]={...S[c.id],...p[c.id]}; }); }
+  }catch(e){/* first run — nothing saved yet */}
+}
+let saveT=null;
+function save(id){
+  markSave(id,'saving…');
+  clearTimeout(saveT);
+  saveT=setTimeout(()=>{
+    try{ localStorage.setItem(KEY, JSON.stringify(S)); markSave(id,'saved ✓'); }
+    catch(e){ markSave(id,'save failed — will retry on next change'); }
+  },500);
+}
+function markSave(id,msg){ if(!id) return; const el=document.getElementById('sv-'+id); if(el){el.textContent=msg;} }
+
+/* ================= RENDER ================= */
+const idx = a => Math.round(a.reduce((x,y)=>x+y,0)/a.length);
+
+function radarSVG(attrs){
+  const cx=110, cy=104, R=76, n=6;
+  const pt=(i,r)=>{const a=-Math.PI/2 + i*2*Math.PI/n; return [cx+r*Math.cos(a), cy+r*Math.sin(a)];};
+  const ring=f=>Array.from({length:n},(_,i)=>pt(i,R*f).map(v=>v.toFixed(1)).join(',')).join(' ');
+  const valPts=attrs.map((v,i)=>pt(i,R*v/100));
+  const val=valPts.map(p=>p.map(v=>v.toFixed(1)).join(',')).join(' ');
+  let axes='', labels='', dots='';
+  for(let i=0;i<n;i++){
+    const [x,y]=pt(i,R); axes+=`<line class="axis" x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}"/>`;
+    const [lx,ly]=pt(i,R+16);
+    labels+=`<text x="${lx.toFixed(1)}" y="${(ly+3).toFixed(1)}" text-anchor="middle">${AXES[i]}</text>`;
+    dots+=`<circle class="vdot" cx="${valPts[i][0].toFixed(1)}" cy="${valPts[i][1].toFixed(1)}" r="3"/>`;
+  }
+  return `<svg class="radar" viewBox="0 0 220 210">
+    <polygon class="grid-line" points="${ring(1)}"/><polygon class="grid-line" points="${ring(.66)}"/><polygon class="grid-line" points="${ring(.33)}"/>
+    ${axes}<polygon class="val" points="${val}"/>${dots}${labels}</svg>`;
+}
+
+function renderCards(){
+  document.getElementById('cards').innerHTML = C.map((c,i)=>`
+  <article class="card" id="card-${c.id}" data-code="${c.code}" style="animation-delay:${i*0.09}s">
+    <div class="chead">
+      <div class="jersey"><small>APPRF</small><span>${c.code.replace(/^0+/,'')}</span></div>
+      <div class="cwho">
+        <div class="cname">${c.name}</div>
+        <div class="cpos">${c.pos}</div>
+        <div class="cmeta">${c.meta}</div>
+      </div>
+      <div class="sindex"><div class="n">${idx(c.attrs)}</div><div class="l">SCOUT<br>INDEX</div></div>
+    </div>
+    <div class="cbody">
+      <div class="radarBox">${radarSVG(c.attrs)}</div>
+      <div>
+        <div class="flags">${c.flags.map(f=>`<span class="flag ${f[0]}"><span class="fc"></span>${f[1]}</span>`).join('')}</div>
+        <p class="scoutTxt">${c.scout}</p>
+      </div>
+    </div>
+    <details><summary>Press-conference questions <span style="color:var(--dim);font-weight:400" id="qc-${c.id}"></span></summary>
+      <div class="dbody"><ul class="qs">${c.qs.map((q,qi)=>`
+        <li id="q-${c.id}-${qi}"><input type="checkbox" id="cb-${c.id}-${qi}" data-c="${c.id}" data-q="${qi}"><label for="cb-${c.id}-${qi}">${q}</label></li>`).join('')}
+      </ul></div>
+    </details>
+    <div class="panel">
+      <div class="pl">⚖ Selector's call — ${c.name.split(' ')[0]}</div>
+      <div class="scoreRow">
+        <div class="bigScore" id="bs-${c.id}">–<small>/10</small></div>
+        <input type="range" min="0" max="10" step="0.5" value="5" id="rg-${c.id}" data-c="${c.id}" aria-label="Score for ${c.name}">
+      </div>
+      <div class="stamps">
+        <button class="stamp sign" data-c="${c.id}" data-v="SIGN">✍ Sign</button>
+        <button class="stamp trial" data-c="${c.id}" data-v="TRIAL">⏳ Trial</button>
+        <button class="stamp pass" data-c="${c.id}" data-v="PASS">✕ Pass</button>
+      </div>
+      <textarea id="nt-${c.id}" data-c="${c.id}" placeholder="Interview notes — what they said, how it landed, gut read…"></textarea>
+      <div class="savenote" id="sv-${c.id}"></div>
+    </div>
+  </article>`).join('');
+}
+
+function renderTable(flashId){
+  const rows=[...C].sort((a,b)=>{
+    const sa=S[a.id].score, sb=S[b.id].score;
+    if(sa!=null&&sb!=null&&sb!==sa) return sb-sa;
+    if(sa!=null&&sb==null) return -1;
+    if(sb!=null&&sa==null) return 1;
+    return idx(b.attrs)-idx(a.attrs);
+  });
+  document.getElementById('ltable').innerHTML = rows.map((c,i)=>{
+    const st=S[c.id];
+    return `<tr data-c="${c.id}" class="${c.id===flashId?'flash':''}">
+      <td class="rk">${i+1}</td>
+      <td class="tn">${c.name}<small>${c.pos}</small></td>
+      <td class="si">${idx(c.attrs)}</td>
+      <td>${st.score!=null?`<span class="ys">${st.score}</span>`:`<span class="ys empty">unscored</span>`}</td>
+      <td>${st.verdict?`<span class="vchip v-${st.verdict}">${st.verdict}</span>`:`<span class="vchip v-none">—</span>`}</td>
+    </tr>`;
+  }).join('');
+}
+
+function syncUI(){
+  C.forEach(c=>{
+    const st=S[c.id];
+    if(st.score!=null){ document.getElementById('rg-'+c.id).value=st.score; document.getElementById('bs-'+c.id).innerHTML=st.score+'<small>/10</small>'; }
+    document.getElementById('nt-'+c.id).value=st.notes||'';
+    document.querySelectorAll(`.stamp[data-c="${c.id}"]`).forEach(b=>b.classList.toggle('on', b.dataset.v===st.verdict));
+    c.qs.forEach((_,qi)=>{
+      const on=!!st.asked[qi];
+      const cb=document.getElementById(`cb-${c.id}-${qi}`); if(cb){cb.checked=on; document.getElementById(`q-${c.id}-${qi}`).classList.toggle('done',on);}
+    });
+    updateQC(c.id);
+  });
+}
+function updateQC(id){
+  const c=C.find(x=>x.id===id); const n=Object.values(S[id].asked).filter(Boolean).length;
+  document.getElementById('qc-'+id).textContent=` ${n}/${c.qs.length} asked`;
+}
+
+/* ================= EVENTS ================= */
+function wire(){
+  document.getElementById('cards').addEventListener('input',e=>{
+    const id=e.target.dataset.c; if(!id) return;
+    if(e.target.type==='range'){
+      S[id].score=parseFloat(e.target.value);
+      document.getElementById('bs-'+id).innerHTML=S[id].score+'<small>/10</small>';
+      renderTable(id); save(id);
+    }else if(e.target.tagName==='TEXTAREA'){ S[id].notes=e.target.value; save(id); }
+  });
+  document.getElementById('cards').addEventListener('change',e=>{
+    if(e.target.type==='checkbox'){
+      const id=e.target.dataset.c, qi=e.target.dataset.q;
+      S[id].asked[qi]=e.target.checked;
+      document.getElementById(`q-${id}-${qi}`).classList.toggle('done',e.target.checked);
+      updateQC(id); save(id);
+    }
+  });
+  document.getElementById('cards').addEventListener('click',e=>{
+    const b=e.target.closest('.stamp'); if(!b) return;
+    const id=b.dataset.c, v=b.dataset.v;
+    S[id].verdict = (S[id].verdict===v)? null : v;
+    document.querySelectorAll(`.stamp[data-c="${id}"]`).forEach(x=>{x.classList.remove('on','thump');});
+    if(S[id].verdict){ b.classList.add('on','thump'); if(v==='SIGN') confetti(); }
+    renderTable(id); save(id);
+  });
+  document.getElementById('ltable').addEventListener('click',e=>{
+    const tr=e.target.closest('tr'); if(!tr) return;
+    document.getElementById('card-'+tr.dataset.c)?.scrollIntoView({behavior:'smooth',block:'start'});
+  });
+  document.getElementById('resetBtn').addEventListener('click',()=>{
+    if(!confirm('Wipe all scores, verdicts, checkmarks and notes?')) return;
+    C.forEach(c=>S[c.id]={score:null,verdict:null,notes:'',asked:{}});
+    try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){}
+    renderCards(); renderTable(); syncUI();
+  });
+}
+
+function confetti(){
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const cols=['#FFB424','#7FC7E8','#F4EFDF','#7CE0A5','#E5484D'];
+  for(let i=0;i<70;i++){
+    const d=document.createElement('div'); d.className='confetti';
+    const s=6+Math.random()*8;
+    d.style.cssText=`left:${Math.random()*100}vw;width:${s}px;height:${s*0.5}px;background:${cols[i%5]};animation-duration:${1.6+Math.random()*1.6}s;animation-delay:${Math.random()*0.4}s`;
+    document.body.appendChild(d); setTimeout(()=>d.remove(),3600);
+  }
+}
+
+/* ================= TICKER ================= */
+const headlines=[
+  'BREAKING: 6 OF 8 TRIALISTS ARRIVE HOLDING MANAGER/LEAD TITLES — MOTIVATION PROBES MANDATORY',
+  'SCOUT DESK: LINGESH MAY ALREADY BE ON OUR WAGE BILL VIA THE DORCAS GRANT — CONFIRM BEFORE KICK-OFF',
+  'TRANSFER RUMOUR: DHAN ENGINE-ROOM GRAFTER EYES MOVE NORTH — RELOCATION TERMS UNKNOWN',
+  'INJURY LIST: TWO CVs REPORT UNEXPLAINED GAPS — FITNESS TESTS AT INTERVIEW',
+  'TACTICS BOARD: SHIRT ON OFFER IS BOX-TO-BOX, NOT DUGOUT — NO ARMCHAIR MANAGERS',
+  'WEATHER: CHENNAI, HOT — HOT TAKES ALSO EXPECTED',
+  'CLUB POLICY: EVERY TRIALIST FACES THE FIELD-DAY TEST AND THE CO-FRICTION TEST'
+];
+(function(){
+  const s=headlines.map(h=>` ⚽ ${h} `).join('');
+  document.getElementById('ticker').textContent=s+s;
+})();
+
+/* ================= BOOT ================= */
+renderCards(); renderTable(); wire();
+load(); syncUI(); renderTable();
+</script>
+</body>
+</html>

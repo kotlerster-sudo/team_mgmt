@@ -13,6 +13,10 @@ const nextConfig: NextConfig = {
   // tracer misses — force-include the dist so PDF rasterization works at runtime.
   outputFileTracingIncludes: {
     "/api/**": ["./node_modules/mupdf/dist/**/*"],
+    // Scouting-day HTML docs read from disk at runtime (recruitment pages + API)
+    "/api/recruitment/**": ["./content/recruitment/**/*"],
+    "/recruitment": ["./content/recruitment/**/*"],
+    "/recruitment/**": ["./content/recruitment/**/*"],
   },
 };
 

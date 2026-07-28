@@ -28,6 +28,8 @@ type NavGate = {
    * /effects, /programmes.
    */
   requiresReports?: boolean;
+  /** Only super-admins see this item (bypasses RBAC catalog). */
+  superAdminOnly?: boolean;
 };
 
 /** Source of truth for which RBAC permission each setup-nav href maps to. */
@@ -42,6 +44,7 @@ export const NAV_GATES: Record<string, NavGate> = {
   "/planner":    { resource: "plan_item",        action: "list" },
   "/quarters":   { resource: "quarter",          action: "list" },
   "/people":     { resource: "user",             action: "list", requiresReports: true },
+  "/recruitment": { resource: null,              action: "", superAdminOnly: true },
   "/standup":    { resource: "standup",          action: "list" },
   "/models":     { resource: "operating_model",  action: "list" },
   // Universal items — appear for every authenticated user.
@@ -71,13 +74,14 @@ export const NAV_GATES: Record<string, NavGate> = {
  */
 export async function computeAllowedNavHrefs(
   ctx: RbacContext | null,
-  opts: { hasReports: boolean; isAdmin: boolean },
+  opts: { hasReports: boolean; isAdmin: boolean; isSuperAdmin?: boolean },
 ): Promise<Set<string>> {
   const out = new Set<string>();
   if (!ctx) return out;
 
   const checks = await Promise.all(
     Object.entries(NAV_GATES).map(async ([href, gate]) => {
+      if (gate.superAdminOnly && !opts.isSuperAdmin) return null;
       if (gate.requiresReports && !opts.hasReports && !opts.isAdmin) return null;
       if (gate.resource === null) return href;
       const ok = await can(ctx, gate.resource, gate.action);

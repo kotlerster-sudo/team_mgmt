@@ -43,6 +43,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const allowedNavHrefs = await computeAllowedNavHrefs(ctx, {
     hasReports: directReportsCount > 0,
     isAdmin,
+    isSuperAdmin: isSuperAdmin(session),
   });
 
   // Hydrate the client-side RBAC context so useCan() works without a fetch.
