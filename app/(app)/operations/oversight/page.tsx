@@ -1,6 +1,6 @@
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
-import { Layers, ChevronLeft, MapPin } from "lucide-react";
+import { Layers, ChevronLeft, MapPin, LayoutGrid, PackagePlus } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { buildRbacContext } from "@/lib/rbac";
 import { getVisibleUserIds } from "@/lib/visibilityScope";
@@ -81,6 +81,20 @@ export default async function OversightPage({
             {" · "}
             <span className="text-amber-600 font-medium">{t.settingUp} setting up</span>
           </p>
+          <div className="flex items-center gap-2 mt-3">
+            <Link
+              href="/operations/oversight/dashboard"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-700 hover:border-stone-300 hover:bg-stone-50"
+            >
+              <LayoutGrid className="w-3.5 h-3.5 text-sky-600" /> Cluster dashboard
+            </Link>
+            <Link
+              href="/operations/oversight/shelf"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-700 hover:border-stone-300 hover:bg-stone-50"
+            >
+              <PackagePlus className="w-3.5 h-3.5 text-sky-600" /> Deploy catalog items
+            </Link>
+          </div>
         </header>
 
         <ApprovalsPanel approvals={approvals} />

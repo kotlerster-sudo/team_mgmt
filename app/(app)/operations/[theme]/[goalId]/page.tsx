@@ -103,6 +103,9 @@ export default async function CentreDetailPage({
           readOnly={readOnly}
           storageKey={`ops-centre-${detail.goalId}-done`}
           initialOpen={lens ?? "today"}
+          phase={detail.phase}
+          monthDone={detail.monthDone}
+          monthRequired={detail.monthRequired}
         />
       </div>
     </SurfaceProvider>

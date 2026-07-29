@@ -17,8 +17,23 @@ export function ClusterBoard({ board }: { board: ClusterBoardData }) {
     );
   }
   const setupCount = board.centres.filter((c) => c.mode !== "live").length;
+  const agg = board.centres.reduce(
+    (t, c) => {
+      t.overdue += c.overdue; t.today += c.today; t.upcoming += c.upcoming; t.followUps += c.followUps;
+      return t;
+    },
+    { overdue: 0, today: 0, upcoming: 0, followUps: 0 },
+  );
   return (
     <div className="space-y-3">
+      {/* Where this cluster stands, at a glance (Gap 3). */}
+      <div className="rounded-xl border border-stone-200 bg-white/60 p-3 grid grid-cols-3 sm:grid-cols-5 gap-2">
+        <AggStat label="Centres" value={board.centres.length} tone="stone" />
+        <AggStat label="Overdue" value={agg.overdue} tone={agg.overdue > 0 ? "red" : "stone"} />
+        <AggStat label="Today" value={agg.today} tone={agg.today > 0 ? "sky" : "stone"} />
+        <AggStat label="Upcoming" value={agg.upcoming} tone="stone" />
+        <AggStat label="Follow-ups" value={agg.followUps} tone={agg.followUps > 0 ? "amber" : "stone"} />
+      </div>
       <p className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider">
         {board.centres.length} centre{board.centres.length === 1 ? "" : "s"}
         {setupCount > 0 && <span className="text-amber-600"> · {setupCount} to take live</span>}
@@ -26,6 +41,16 @@ export function ClusterBoard({ board }: { board: ClusterBoardData }) {
       <div className="space-y-1.5">
         {board.centres.map((c) => <CentreRow key={c.goalId} c={c} />)}
       </div>
+    </div>
+  );
+}
+
+function AggStat({ label, value, tone }: { label: string; value: number; tone: "red" | "sky" | "amber" | "stone" }) {
+  const color = { red: "text-red-600", sky: "text-sky-600", amber: "text-amber-600", stone: "text-stone-700" }[tone];
+  return (
+    <div className="text-center">
+      <div className={`text-lg font-semibold tabular-nums ${value === 0 && tone !== "stone" ? "text-stone-300" : color}`}>{value}</div>
+      <div className="text-[10px] font-medium uppercase tracking-wide text-stone-400">{label}</div>
     </div>
   );
 }

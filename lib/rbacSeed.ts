@@ -76,9 +76,10 @@ export const RESOURCE_ACTIONS: Record<string, readonly string[]> = {
   pitstop_event: [...STANDARD_ACTIONS, "respond", "cancel", "reschedule", "arrive"],
   // Visit-driven ops (live centres). `catalog` = admin-authored domain catalogs;
   // `catalog_item` = ad-hoc items RPs add (create=OWN) pending supervisor approval (approve=TEAM);
+  // supervisors deploy shelf items onto a reportee's centre (deploy=TEAM);
   // `visit` = the RP's per-visit lifecycle (start/arrive/tick/close), all OWN.
   catalog: [...STANDARD_ACTIONS],
-  catalog_item: ["create", "approve"],
+  catalog_item: ["create", "approve", "deploy"],
   visit: ["create", "arrive", "tick", "close"],
   decision: [...STANDARD_ACTIONS],
   risk: [...STANDARD_ACTIONS],
@@ -212,6 +213,7 @@ const MEMBER_GRANTS: RoleGrant = {
   "visit.close":  OWN,
   "catalog_item.create":  OWN,
   "catalog_item.approve": TEAM,
+  "catalog_item.deploy":  TEAM,
 
   "decision.list":   OWN,
   "decision.read":   OWN,

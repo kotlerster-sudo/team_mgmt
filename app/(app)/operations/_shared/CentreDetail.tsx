@@ -5,9 +5,12 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2, ChevronDown, Flag, ListChecks, Check, Loader2 } from "lucide-react";
 import type { Activity, ChecklistItem } from "@/app/(app)/home/_lib/types";
 import type { CentreFollowUp } from "@/lib/operations/today";
-import { isToday, fmtTime, fmtDate, daysAgo } from "@/app/(app)/home/_lib/helpers";
+import type { CentrePhase } from "@/lib/operations/phase";
+import { isToday, fmtDate } from "@/app/(app)/home/_lib/helpers";
 import { ActivityCard } from "@/app/(app)/home/_shared/ActivityCard";
 import { useSessionDoneIds } from "@/app/(app)/home/_shared/useSessionDoneIds";
+import { ReadOnlyChecklistBlock } from "./ReadOnlyChecklistBlock";
+import { CentreSummary } from "./CentreSummary";
 
 /**
  * One centre's work: its activities (this visit's checklist tasks) grouped
@@ -21,6 +24,9 @@ export function CentreDetail({
   readOnly = false,
   storageKey,
   initialOpen = "today",
+  phase,
+  monthDone,
+  monthRequired,
 }: {
   activities: Activity[];
   checklists: ChecklistItem[];
@@ -29,6 +35,10 @@ export function CentreDetail({
   storageKey: string;
   /** Which bucket starts expanded (driven by the drill-down lens). */
   initialOpen?: "today" | "overdue";
+  /** Summary-band inputs (Gap 3). */
+  phase?: CentrePhase;
+  monthDone?: number | null;
+  monthRequired?: number | null;
 }) {
   const router = useRouter();
   const { ids: doneIds, add: addDone } = useSessionDoneIds(storageKey);
@@ -74,10 +84,26 @@ export function CentreDetail({
     if (res.ok) router.refresh();
   };
 
-  const renderRow = (a: Activity, overdue = false) =>
-    readOnly ? (
-      <ReadOnlyRow key={a.id} activity={a} overdue={overdue} />
-    ) : (
+  // Read-only (supervisory) buckets: group each activity under the checklist it hangs off and
+  // render the rich ReadOnlyChecklistBlock — the same structure the RP works through (completion
+  // type, required/pending badges, indicators, done-count), minus the action buttons.
+  const renderReadOnlyBucket = (list: Activity[], overdue: boolean) => {
+    const groups = groupByChecklist(list, checklistMap);
+    return groups.map((g) => (
+      <ReadOnlyChecklistBlock
+        key={g.checklist?.id ?? "__none"}
+        checklist={g.checklist}
+        items={g.items}
+        overdue={overdue}
+      />
+    ));
+  };
+
+  // Interactive (owner) buckets: keep the ActivityCard completion flow, grouped by checklist.
+  const renderInteractiveBucket = (list: Activity[], overdue: boolean) => {
+    const groups = groupByChecklist(list, checklistMap);
+    const onlyUngrouped = groups.length === 1 && groups[0].checklist === null;
+    const row = (a: Activity) => (
       <ActivityCard
         key={a.id}
         activity={a}
@@ -87,20 +113,17 @@ export function CentreDetail({
         isOverdue={overdue}
       />
     );
-
-  // Within a time bucket, park each activity under the checklist it belongs to. One
-  // checklist can carry several activities in a day, so this keeps the drill-down readable
-  // instead of a flat list. When nothing is grouped (no checklist context), stay flat.
-  const renderBucket = (list: Activity[], overdue: boolean) => {
-    const groups = groupByChecklist(list, checklistMap);
-    const onlyUngrouped = groups.length === 1 && groups[0].checklist === null;
-    if (onlyUngrouped) return groups[0].items.map((a) => renderRow(a, overdue));
+    if (onlyUngrouped) return groups[0].items.map(row);
     return groups.map((g) => (
       <ChecklistGroup key={g.checklist?.id ?? "__none"} checklist={g.checklist} count={g.items.length}>
-        {g.items.map((a) => renderRow(a, overdue))}
+        {g.items.map(row)}
       </ChecklistGroup>
     ));
   };
+
+  // Today/Overdue/Upcoming follow the mode; Overall/Past are always read-only (both modes).
+  const renderBucket = (list: Activity[], overdue: boolean) =>
+    readOnly ? renderReadOnlyBucket(list, overdue) : renderInteractiveBucket(list, overdue);
 
   // Supervisors (read-only drill-down) get everything collapsed by default; the interactive RP
   // view keeps the lens bucket (Today/Overdue) open so they land on today's work.
@@ -108,10 +131,26 @@ export function CentreDetail({
   const openOverdue = !readOnly && initialOpen === "overdue";
   const nothing = activities.length === 0 && followUps.length === 0;
 
-  const renderReadOnlyList = (list: Activity[]) => list.map((a) => <ReadOnlyRow key={a.id} activity={a} overdue={false} />);
+  const summaryCounts = {
+    overdue: buckets.overdue.length,
+    today: buckets.today.length,
+    upcoming: buckets.upcoming.length,
+    overall: buckets.overdue.length + buckets.today.length + buckets.upcoming.length,
+    done: buckets.past.length,
+    followUps: followUps.length,
+  };
 
   return (
     <div className="space-y-3">
+      {!nothing && (
+        <CentreSummary
+          counts={summaryCounts}
+          lifecycle={phase?.lifecycle}
+          monthDone={monthDone}
+          monthRequired={monthRequired}
+        />
+      )}
+
       {followUps.length > 0 && (
         <Section title="Open follow-ups" count={followUps.length} tone="amber" defaultOpen={false}>
           {followUps.map((f) => (
@@ -151,12 +190,12 @@ export function CentreDetail({
       )}
       {buckets.overall.length > 0 && (
         <Section title="Overall" count={buckets.overall.length} defaultOpen={false}>
-          {renderReadOnlyList(buckets.overall)}
+          {renderReadOnlyBucket(buckets.overall, false)}
         </Section>
       )}
       {buckets.past.length > 0 && (
         <Section title="Past actions" count={buckets.past.length} defaultOpen={false}>
-          {renderReadOnlyList(buckets.past)}
+          {renderReadOnlyBucket(buckets.past, false)}
         </Section>
       )}
 
@@ -259,19 +298,5 @@ function Section({
       </button>
       {open && <div className="space-y-1.5 px-2.5 pb-2.5">{children}</div>}
     </section>
-  );
-}
-
-/** Non-interactive row for admin "view as" preview. */
-function ReadOnlyRow({ activity, overdue }: { activity: Activity; overdue: boolean }) {
-  return (
-    <div className={`flex items-center gap-3 rounded-xl border px-4 py-2.5 ${overdue ? "border-amber-200 bg-amber-50/50" : "border-stone-200 bg-white"}`}>
-      <div className="flex-shrink-0 w-12 text-right">
-        {overdue
-          ? <span className="text-[10px] font-semibold text-amber-700">{daysAgo(activity.scheduledAt)}d</span>
-          : <span className="text-[11px] font-medium text-stone-500 tabular-nums">{fmtTime(activity.scheduledAt)}</span>}
-      </div>
-      <p className="flex-1 min-w-0 text-sm text-stone-700 truncate">{activity.title}</p>
-    </div>
   );
 }

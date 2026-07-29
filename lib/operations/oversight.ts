@@ -15,7 +15,8 @@ import { slugifyChecklistText } from "@/lib/templateDb";
 import { deriveCentrePhase, type PhasePitstop } from "./phase";
 import { goalInClusterFilter } from "./clusters";
 import { loadThemeCatalog, loadLayerToDomain, resolveGoalThemeKey, indexThemes } from "./themes";
-import type { CatalogCategory, CentreCatalogOverrides } from "@/lib/catalogDb";
+import { monthBounds, requiredVisitsForMonth, doneVisitsByGoal } from "./month";
+import { resolveCadence, type CatalogCategory, type CentreCatalogOverrides } from "@/lib/catalogDb";
 
 export type OversightCentre = {
   goalId: string;
@@ -423,6 +424,141 @@ function mergeRollup(target: Rollup, src: Rollup) {
   target.done += src.done;
   target.today += src.today;
   target.overdue += src.overdue;
+}
+
+// ── Cross-cluster health dashboard ───────────────────────────────────────────
+
+export type ClusterStatus = "critical" | "attention" | "healthy";
+
+export type ClusterHealth = {
+  id: string;
+  name: string;
+  live: number;
+  settingUp: number;
+  today: number;
+  overdue: number;
+  /** Visit-cadence progress this month, summed across the cluster's live centres. */
+  cadenceDone: number;
+  cadenceRequired: number;
+  pendingApprovals: number;
+  status: ClusterStatus;
+};
+
+export type ZoneHealth = { id: string; name: string; clusters: ClusterHealth[] };
+
+export type ClusterHealthDashboard = {
+  zones: ZoneHealth[];
+  totals: { clusters: number; live: number; settingUp: number; today: number; overdue: number; pendingApprovals: number };
+};
+
+// One place to tune "where a cluster stands". Cadence pct = done/required this month.
+const HEALTH_THRESHOLDS = {
+  criticalOverdue: 10,
+  attentionOverdue: 3,
+  criticalCadencePct: 0.4,
+  attentionCadencePct: 0.7,
+};
+
+function deriveClusterStatus(c: {
+  overdue: number; cadenceDone: number; cadenceRequired: number; pendingApprovals: number;
+}): ClusterStatus {
+  const pct = c.cadenceRequired > 0 ? c.cadenceDone / c.cadenceRequired : 1;
+  if (c.overdue >= HEALTH_THRESHOLDS.criticalOverdue || pct < HEALTH_THRESHOLDS.criticalCadencePct) return "critical";
+  if (
+    c.overdue >= HEALTH_THRESHOLDS.attentionOverdue ||
+    pct < HEALTH_THRESHOLDS.attentionCadencePct ||
+    c.pendingApprovals > 0
+  ) return "attention";
+  return "healthy";
+}
+
+type ClusterRef = {
+  needsCluster: { id: string } | null;
+  needsSettlement: { cluster: { id: string } | null } | null;
+  linkedFacility: { cluster: { id: string } | null } | null;
+};
+const clusterIdOf = (g: ClusterRef): string =>
+  g.needsCluster?.id ?? g.needsSettlement?.cluster?.id ?? g.linkedFacility?.cluster?.id ?? UNASSIGNED;
+
+/**
+ * "Where does each cluster stand" for ZL / PM / Leader. Reuses the oversight tree for the
+ * structural rollups (live / setting-up / today / overdue per cluster) and overlays two more
+ * signals — this month's visit-cadence compliance (summed across live centres) and the pending
+ * catalog-approval backlog — into one composite status. Same visible-user scoping as the tree.
+ */
+export async function loadClusterHealthDashboard(
+  userIds: string[],
+  reportIds: string[],
+  now: Date = new Date(),
+): Promise<ClusterHealthDashboard> {
+  const [tree, liveGoals, approvals] = await Promise.all([
+    loadOversightTree(userIds, { now }),
+    prisma.goal.findMany({
+      where: { AND: [goalOwnedByAnyOf(userIds), { deletedAt: null, mode: "live", status: { not: "Complete" } }] },
+      select: {
+        id: true,
+        needsCluster: { select: { id: true } },
+        needsSettlement: { select: { cluster: { select: { id: true } } } },
+        linkedFacility: { select: { cluster: { select: { id: true } } } },
+        centreCatalog: { select: { cadenceCount: true, cadencePeriod: true } },
+      },
+    }),
+    reportIds.length
+      ? prisma.catalogItemApproval.findMany({
+          where: { status: "pending", addedById: { in: reportIds } },
+          select: {
+            goal: {
+              select: {
+                needsCluster: { select: { id: true } },
+                needsSettlement: { select: { cluster: { select: { id: true } } } },
+                linkedFacility: { select: { cluster: { select: { id: true } } } },
+              },
+            },
+          },
+        })
+      : Promise.resolve([] as { goal: ClusterRef }[]),
+  ]);
+
+  // Cadence per cluster: required (from each live centre's cadence) vs done (this month's visits).
+  const monthDoneByGoal = await doneVisitsByGoal(liveGoals.map((g) => g.id), monthBounds(now));
+  const cadenceDone = new Map<string, number>();
+  const cadenceReq = new Map<string, number>();
+  for (const g of liveGoals) {
+    const cid = clusterIdOf(g);
+    const cadence = resolveCadence(g.centreCatalog, { defaultCadenceCount: null, defaultCadencePeriod: null });
+    cadenceReq.set(cid, (cadenceReq.get(cid) ?? 0) + requiredVisitsForMonth(cadence, now));
+    cadenceDone.set(cid, (cadenceDone.get(cid) ?? 0) + (monthDoneByGoal.get(g.id) ?? 0));
+  }
+
+  const approvalsByCluster = new Map<string, number>();
+  for (const a of approvals) {
+    const cid = clusterIdOf(a.goal);
+    approvalsByCluster.set(cid, (approvalsByCluster.get(cid) ?? 0) + 1);
+  }
+
+  const totals = { clusters: 0, live: 0, settingUp: 0, today: 0, overdue: 0, pendingApprovals: 0 };
+  const zones: ZoneHealth[] = tree.zones.map((z) => ({
+    id: z.id,
+    name: z.name,
+    clusters: z.clusters.map((c) => {
+      const cadenceDoneV = cadenceDone.get(c.id) ?? 0;
+      const cadenceRequiredV = cadenceReq.get(c.id) ?? 0;
+      const pendingApprovals = approvalsByCluster.get(c.id) ?? 0;
+      const health: ClusterHealth = {
+        id: c.id, name: c.name,
+        live: c.live, settingUp: c.settingUp, today: c.today, overdue: c.overdue,
+        cadenceDone: cadenceDoneV, cadenceRequired: cadenceRequiredV, pendingApprovals,
+        status: deriveClusterStatus({ overdue: c.overdue, cadenceDone: cadenceDoneV, cadenceRequired: cadenceRequiredV, pendingApprovals }),
+      };
+      totals.clusters += 1;
+      totals.live += health.live; totals.settingUp += health.settingUp;
+      totals.today += health.today; totals.overdue += health.overdue;
+      totals.pendingApprovals += health.pendingApprovals;
+      return health;
+    }),
+  }));
+
+  return { zones, totals };
 }
 
 /** Per-goal today + overdue event counts — mirrors loadOperationsHome's single-pass query. */

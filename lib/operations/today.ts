@@ -12,6 +12,8 @@ import prisma from "@/lib/prisma";
 import { eventOwnedByAnyOf, pitstopOwnedByAnyOf, goalOwnedByAnyOf } from "@/lib/ownership";
 import type { Activity, ChecklistItem } from "@/app/(app)/home/_lib/types";
 import { deriveCentrePhase, type CentrePhase, type PhasePitstop } from "./phase";
+import { loadIndicatorLabelsForChecklistItems } from "./indicatorLabels";
+import { loadCentreCatalogView } from "./catalogView";
 
 // Matches the home loader's event select so the shapes are identical.
 export const EVENT_SELECT = {
@@ -151,6 +153,9 @@ export type CentreDetail = {
   cluster: { id: string; name: string } | null;
   needsDomain: string | null;
   phase: CentrePhase;
+  /** Visit-cadence progress this month (live centres only) — powers the summary band. */
+  monthDone: number | null;
+  monthRequired: number | null;
   activities: Activity[];
   checklists: ChecklistItem[];
   followUps: CentreFollowUp[];
@@ -198,6 +203,7 @@ export async function loadCentreDetail(
       },
       select: {
         id: true, text: true, status: true, checked: true, completionType: true,
+        key: true, templateSlug: true,
         activities: { select: { id: true, title: true, status: true, scheduledAt: true, type: true } },
         pitstop: {
           select: {
@@ -222,14 +228,37 @@ export async function loadCentreDetail(
     }),
   ]);
 
+  // Enrich checklists for the read-only supervisory drill-down: indicator labels
+  // (batched) + the catalog's mandatory/approval/completionType overlay (keyed on
+  // the checklist's stable `key`). Cheap no-ops when nothing is bound / not a live centre.
+  const [indicatorLabels, catalogView] = await Promise.all([
+    loadIndicatorLabelsForChecklistItems(checklists.map((c) => c.id)),
+    loadCentreCatalogView(goal.id, now),
+  ]);
+  const catalogByKey = new Map<string, { mandatory: boolean; approval: string | null; completionType: string }>();
+  for (const cat of catalogView?.live?.categories ?? []) {
+    for (const it of cat.items) catalogByKey.set(it.key, { mandatory: it.mandatory, approval: it.approval, completionType: it.completionType });
+  }
+  const enrichedChecklists = (checklists as unknown as ChecklistItem[]).map((c) => {
+    const meta = c.key ? catalogByKey.get(c.key) : undefined;
+    return {
+      ...c,
+      indicators: indicatorLabels.get(c.id) ?? [],
+      mandatory: meta?.mandatory,
+      approval: meta?.approval ?? null,
+    };
+  });
+
   return {
     goalId: goal.id,
     name: goal.linkedFacility?.name ?? goal.title,
     cluster: goal.linkedFacility?.cluster ?? goal.needsCluster ?? null,
     needsDomain: goal.needsDomain,
     phase: deriveCentrePhase(goal.pitstops as PhasePitstop[]),
+    monthDone: catalogView?.live?.monthDone ?? null,
+    monthRequired: catalogView?.live?.monthRequired ?? null,
     activities: activities as unknown as Activity[],
-    checklists: checklists as unknown as ChecklistItem[],
+    checklists: enrichedChecklists,
     followUps: followUps.map((f) => ({
       id: f.id, title: f.title, detail: f.detail, priority: f.priority, status: f.status,
       dueDate: f.dueDate ? f.dueDate.toISOString() : null,

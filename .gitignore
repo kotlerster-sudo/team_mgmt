@@ -59,3 +59,6 @@ Inventory_Images/
 # Build artifacts + temporary working dirs
 tmp/
 workshop-decks.pdf
+
+# RBAC snapshot backups (prod grant dumps — never commit)
+rbac-backups/

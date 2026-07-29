@@ -84,6 +84,17 @@ export type ChecklistItem = {
   id: string; text: string; status: string; checked: boolean;
   completionType: "Activity" | "Voice" | "Upload";
   activities: { id: string; title: string; status: string; scheduledAt: string; type: string }[];
+  /* Stable catalog binding + read-only enrichments. Populated by the supervisory
+     drill-down (loadCentreDetail) so the read-only view can mirror the RP's rich
+     checklist card — the interactive RP paths leave these undefined. */
+  key?: string | null;
+  templateSlug?: string | null;
+  /** blocksSignoff — soft-mandatory for a clean visit close (from the centre catalog). */
+  mandatory?: boolean;
+  /** null | "pending" | "approved" | "rejected" — from CatalogItemApproval. */
+  approval?: string | null;
+  /** Indicator/journey-outcome labels this checklist captures on completion. */
+  indicators?: { label: string; color: string; kind: "facility" | "journey" }[];
   pitstop: {
     id: string; title: string; targetDate: string | null; status: string; ownerId: string;
     owner: { id: string; name: string | null };
