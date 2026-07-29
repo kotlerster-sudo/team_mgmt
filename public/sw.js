@@ -1,4 +1,10 @@
-const CACHE = "pitstop-v3";
+// v4 (2026-07-29): stopped caching navigation responses. Previously we cached
+// signed-in HTML on the way through, which meant the PWA could serve a stale
+// app shell after permission/nav changes (e.g. a new super-admin nav item
+// wouldn't appear until the SW cache expired). Navigations are now network-
+// only, with the precached shell as the offline fallback. Same behaviour as
+// Safari — no more "PWA sees an older nav than the browser tab" divergence.
+const CACHE = "pitstop-v4";
 const PRECACHE = ["/", "/home", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
@@ -30,13 +36,6 @@ self.addEventListener("fetch", (event) => {
   }
   event.respondWith(
     fetch(event.request)
-      .then((res) => {
-        if (res.ok && event.request.mode === "navigate") {
-          const clone = res.clone();
-          caches.open(CACHE).then((c) => c.put(event.request, clone));
-        }
-        return res;
-      })
       .catch(async () => {
         // Never resolve respondWith to undefined — caches.match() returns
         // undefined on a miss, which throws "Failed to convert value to

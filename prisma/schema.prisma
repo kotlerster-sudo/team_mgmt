@@ -152,6 +152,8 @@ model User {
   schoolRisksOwned          SchoolPlanRisk[]               @relation("SchoolRiskOwner")
   schoolArtifactsUploaded   SchoolPlanArtifact[]           @relation("SchoolArtifactUpload")
   schoolPlanMemberships     SchoolPlanMember[]             @relation("SchoolPlanMemberUser")
+  // Shared team state for recruitment scouting docs
+  recruitmentScoutUpdates   RecruitmentScoutState[]        @relation("RecruitmentScoutUpdater")
 }
 
 model Account {
@@ -4107,4 +4109,18 @@ model SchoolPlanMember {
 
   @@unique([userId, role, planId])
   @@index([userId])
+}
+
+/// Shared team state for a recruitment scouting doc (/recruitment/[slug]).
+/// One row per doc slug; the client PUTs the full state blob (scores, verdicts,
+/// notes, question-asked ticks). `version` bumps on every write so pollers can
+/// detect teammate edits. Super-admin only, gated in the API route.
+model RecruitmentScoutState {
+  slug        String   @id
+  stateJson   Json     @default("{}")
+  version     Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+  updatedBy   User?    @relation("RecruitmentScoutUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
 }
