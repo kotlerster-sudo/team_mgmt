@@ -53,6 +53,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ eve
     },
   });
 
+  // Clear this visit's un-completed materialised activities. They're per-visit scaffolding from the
+  // catalog — once the visit is closed they must not linger as "due" work, and (since every visit
+  // re-materialises the full catalog) leaving them would make the centre's activity count grow on
+  // every close. Done children stay: they're the record of what happened + carry the indicator captures.
+  await prisma.pitstopEvent.updateMany({
+    where: { visitEventId: eventId, deletedAt: null, status: { notIn: ["Done", "Cancelled"] } },
+    data: { deletedAt: new Date(), lastUpdatedById: actorId },
+  });
+
   auditLog({
     entityType: "Activity", entityId: eventId, userId: actorId,
     action: "visit_close", field: "status", newValue: reason ? `Done (reason: ${reason})` : "Done",
