@@ -3,32 +3,58 @@ import path from "path";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { UserSearch } from "lucide-react";
+import { getDownloadUrl, list } from "@vercel/blob";
 import { auth } from "@/lib/auth";
 import { isSuperAdmin } from "@/lib/roleGuard";
+import UploadForm from "./UploadForm";
 
 export const dynamic = "force-dynamic";
 
 const DIR = path.join(process.cwd(), "content", "recruitment");
 
+type DocEntry = { slug: string; title: string; matchday: string | null };
+
+function parseDoc(slug: string, html: string): DocEntry {
+  return {
+    slug,
+    title: html.match(/<title>([^<]*)<\/title>/i)?.[1]?.trim() ?? slug,
+    matchday: html.match(/class="matchday">([^<]*)</)?.[1]?.trim() ?? null,
+  };
+}
+
 export default async function RecruitmentPage() {
   const session = await auth();
   if (!isSuperAdmin(session)) notFound();
 
-  let docs: { slug: string; title: string; matchday: string | null }[] = [];
+  const docs: DocEntry[] = [];
   try {
-    const files = (await readdir(DIR)).filter((f) => f.endsWith(".html")).sort().reverse();
-    docs = await Promise.all(
-      files.map(async (f) => {
-        const html = await readFile(path.join(DIR, f), "utf8");
-        return {
-          slug: f.replace(/\.html$/, ""),
-          title: html.match(/<title>([^<]*)<\/title>/i)?.[1]?.trim() ?? f,
-          matchday: html.match(/class="matchday">([^<]*)</)?.[1]?.trim() ?? null,
-        };
-      }),
+    // Generated docs (private blob store), newest first
+    const { blobs } = await list({ prefix: "recruitment/docs/" });
+    const generated = await Promise.all(
+      blobs
+        .filter((b) => b.pathname.endsWith(".html"))
+        .sort((a, b) => +new Date(b.uploadedAt) - +new Date(a.uploadedAt))
+        .map(async (b) => {
+          const slug = b.pathname.replace(/^recruitment\/docs\//, "").replace(/\.html$/, "");
+          const res = await fetch(getDownloadUrl(b.url));
+          return parseDoc(slug, res.ok ? await res.text() : "");
+        }),
     );
+    docs.push(...generated);
   } catch {
-    // no docs yet
+    // blob store unreachable or unconfigured
+  }
+  try {
+    // Hand-committed docs (content/recruitment/)
+    const files = (await readdir(DIR)).filter((f) => f.endsWith(".html")).sort().reverse();
+    const committed = await Promise.all(
+      files.map(async (f) =>
+        parseDoc(f.replace(/\.html$/, ""), await readFile(path.join(DIR, f), "utf8")),
+      ),
+    );
+    docs.push(...committed);
+  } catch {
+    // no committed docs
   }
 
   return (
@@ -38,6 +64,8 @@ export default async function RecruitmentPage() {
         <h1 className="text-lg font-semibold text-stone-900">Recruitment</h1>
       </div>
       <p className="text-sm text-stone-500 mb-6">Scouting desks for interview days. Scores and notes save on your device.</p>
+
+      <UploadForm />
 
       {docs.length === 0 ? (
         <p className="text-sm text-stone-400">No scouting docs yet.</p>

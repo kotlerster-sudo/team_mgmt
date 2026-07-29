@@ -1,11 +1,13 @@
 import { NextRequest } from "next/server";
 import { readFile } from "fs/promises";
 import path from "path";
+import { getDownloadUrl, list } from "@vercel/blob";
 import { auth } from "@/lib/auth";
 import { isSuperAdmin } from "@/lib/roleGuard";
 
-// Serves scouting-day HTML docs from content/recruitment/ (embedded in an
-// iframe by /recruitment/[slug]). Candidate PII — super-admin only.
+// Serves scouting-day HTML docs (embedded in an iframe by /recruitment/[slug]):
+// hand-committed ones from content/recruitment/, generated ones from the
+// private blob store. Candidate PII — super-admin only.
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const session = await auth();
   if (!isSuperAdmin(session)) return Response.json({ error: "Not found" }, { status: 404 });
@@ -13,16 +15,30 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
   const { slug } = await params;
   if (!/^[a-z0-9-]+$/.test(slug)) return Response.json({ error: "Not found" }, { status: 404 });
 
+  const html = await loadDoc(slug);
+  if (html === null) return Response.json({ error: "Not found" }, { status: 404 });
+  return new Response(html, {
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "private, no-store",
+    },
+  });
+}
+
+async function loadDoc(slug: string): Promise<string | null> {
   try {
-    const file = path.join(process.cwd(), "content", "recruitment", `${slug}.html`);
-    const html = await readFile(file, "utf8");
-    return new Response(html, {
-      headers: {
-        "Content-Type": "text/html; charset=utf-8",
-        "Cache-Control": "private, no-store",
-      },
-    });
+    return await readFile(path.join(process.cwd(), "content", "recruitment", `${slug}.html`), "utf8");
   } catch {
-    return Response.json({ error: "Not found" }, { status: 404 });
+    /* not a committed doc — try the blob store */
+  }
+  try {
+    const pathname = `recruitment/docs/${slug}.html`;
+    const { blobs } = await list({ prefix: pathname, limit: 1 });
+    const blob = blobs.find((b) => b.pathname === pathname);
+    if (!blob) return null;
+    const res = await fetch(getDownloadUrl(blob.url));
+    return res.ok ? await res.text() : null;
+  } catch {
+    return null;
   }
 }
