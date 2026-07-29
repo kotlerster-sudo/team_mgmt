@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { DbPitstop, interpolatePitstops, normalizeActivities, slugifyChecklistText } from "@/lib/templateDb";
 import { attachGoalToProgrammeJourney } from "@/lib/programmeJourneys";
+import { setCentreLive } from "@/lib/operations/goLive";
 import {
   buildScheduleConfig,
   getWorkingDays,
@@ -344,6 +345,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
   } catch (e) {
     console.error("[templates/apply] programme journey attach failed:", e);
+  }
+
+  // Existing-nature templates (`-existing`) describe already-operating programmes/centres, not a
+  // setup project — so they're born LIVE (visit-driven), not setup. setCentreLive freezes the
+  // domain catalog + seeds a recurring Operations pitstop + flips mode. Silent on failure so goal
+  // creation never breaks; a stuck one can still be taken live via the button / backfill.
+  if (id.endsWith("-existing")) {
+    try {
+      await setCentreLive(goal.id);
+    } catch (e) {
+      console.error("[templates/apply] auto go-live for -existing template failed:", e);
+    }
   }
 
   return Response.json({ ...goal, offsetClamps }, { status: 201 });
