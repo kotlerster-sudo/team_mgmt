@@ -8,7 +8,9 @@ import { getVisibleUserIds } from "@/lib/visibilityScope";
 import { goalOwnedByAnyOf } from "@/lib/ownership";
 import { loadCentreDetail } from "@/lib/operations/today";
 import { loadCentreCatalogView } from "@/lib/operations/catalogView";
+import { loadCentrePlan } from "@/lib/operations/plan";
 import { CentreDetail } from "../../_shared/CentreDetail";
+import { CentrePlan } from "../../_shared/plan/CentrePlan";
 import { CatalogViewer } from "../../_shared/CatalogViewer";
 import { GoLiveButton } from "../../_shared/GoLiveButton";
 import { PreviewBanner } from "../../_shared/PreviewBanner";
@@ -46,11 +48,15 @@ export default async function CentreDetailPage({
     ? await getVisibleUserIds({ userId: ctx.userId, role: me.role ?? "member", designation: me.designation ?? "Other" })
     : [ctx.userId];
 
-  const [detail, catalog] = await Promise.all([
+  const [detail, catalog, plan] = await Promise.all([
     loadCentreDetail(visibleIds, goalId),
     loadCentreCatalogView(goalId),
+    loadCentrePlan(goalId),
   ]);
   if (!detail) notFound();
+
+  // Setup-mode centres get the WBS one-page plan; live centres keep the visit/activity view.
+  const isSetup = catalog ? catalog.mode !== "live" : detail.phase.lifecycle !== "live";
 
   const ownedBySelf =
     (await prisma.goal.count({ where: { id: goalId, ...goalOwnedByAnyOf([ctx.userId]) } })) > 0;
@@ -96,17 +102,21 @@ export default async function CentreDetailPage({
         {/* Live centre → show its visit catalog (read-only + add-item + Log-visit). */}
         {catalog?.live && !preview && <CatalogViewer goalId={goalId} live={catalog.live} />}
 
-        <CentreDetail
-          activities={detail.activities}
-          checklists={detail.checklists}
-          followUps={detail.followUps}
-          readOnly={readOnly}
-          storageKey={`ops-centre-${detail.goalId}-done`}
-          initialOpen={lens ?? "today"}
-          phase={detail.phase}
-          monthDone={detail.monthDone}
-          monthRequired={detail.monthRequired}
-        />
+        {isSetup && plan ? (
+          <CentrePlan plan={plan} />
+        ) : (
+          <CentreDetail
+            activities={detail.activities}
+            checklists={detail.checklists}
+            followUps={detail.followUps}
+            readOnly={readOnly}
+            storageKey={`ops-centre-${detail.goalId}-done`}
+            initialOpen={lens ?? "today"}
+            phase={detail.phase}
+            monthDone={detail.monthDone}
+            monthRequired={detail.monthRequired}
+          />
+        )}
       </div>
     </SurfaceProvider>
   );

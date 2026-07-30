@@ -53,6 +53,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pi
       startDate: data.startDate !== undefined ? (data.startDate ? new Date(data.startDate) : null) : undefined,
       targetDate: data.targetDate !== undefined ? (data.targetDate ? new Date(data.targetDate) : null) : undefined,
       completedAt: completedAt instanceof Date ? completedAt : completedAt === null ? null : undefined,
+      // WBS plan: manual reorder within a workstream + milestone (gate) flag.
+      order: typeof data.order === "number" ? data.order : undefined,
+      isMilestone: typeof data.isMilestone === "boolean" ? data.isMilestone : undefined,
     },
     include: {
       attachments: true,

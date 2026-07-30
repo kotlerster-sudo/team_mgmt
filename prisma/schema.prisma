@@ -291,6 +291,7 @@ model Pitstop {
   order          Int               @default(0)
   recurrence     PitstopRecurrence @default(None)
   progressTag    String? // Planning | Mobilisation | Setup | Capacity | Engagement | Delivery | Monitoring
+  isMilestone    Boolean           @default(false) // WBS plan: renders as the LAUNCH/gate node
   startDate      DateTime?
   targetDate     DateTime?
   completedAt    DateTime?

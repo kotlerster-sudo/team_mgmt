@@ -11,7 +11,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ goa
   const veto = viewerForbidden(session); if (veto) return veto;
 
   const { goalId } = await params;
-  const { title, type, customType, notes, status, priority, startDate, targetDate, needsZoneId, needsClusterId } = await req.json();
+  const { title, type, customType, notes, status, priority, startDate, targetDate, needsZoneId, needsClusterId, progressTag, isMilestone } = await req.json();
   if (!title) return Response.json({ error: "Title required" }, { status: 400 });
 
   const [goalRecord, existingCount] = await Promise.all([
@@ -29,6 +29,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ goa
       data: {
         title, type: type ?? "Discussion", customType: type === "Custom" ? (customType?.trim() || null) : null,
         notes, status: status ?? "Upcoming", priority: priority ?? "Medium", goalId, order: existingCount,
+        progressTag: progressTag || null,
+        isMilestone: isMilestone === true,
         ownerId: goalRecord?.ownerId ?? null,
         startDate: startDate ? new Date(startDate) : undefined,
         targetDate: targetDate ? new Date(targetDate) : undefined,
