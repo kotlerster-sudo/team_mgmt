@@ -20,8 +20,10 @@ type NodeDetail = {
  * add-delete sub-items / delete the node. Every mutation reuses an existing route, then refreshes the
  * plan. Rendered under the page's operations.theme_portal surface so completions pass RBAC.
  */
-export function NodeSheet({ pitstopId, editable, onClose, onChanged }: {
-  pitstopId: string; editable: boolean; onClose: () => void; onChanged: () => void;
+export function NodeSheet({ pitstopId, editable, siblings, onClose, onChanged }: {
+  pitstopId: string; editable: boolean;
+  siblings: { pitstopId: string; wbs: string; title: string }[];
+  onClose: () => void; onChanged: () => void;
 }) {
   const [detail, setDetail] = useState<NodeDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -66,6 +68,12 @@ export function NodeSheet({ pitstopId, editable, onClose, onChanged }: {
   };
   const closeFollowUp = async (id: string) => {
     try { await fetch(`/api/action-points/${id}/complete`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); changed(); } catch { /* */ }
+  };
+  const addDep = async (blockedById: string) => {
+    try { await fetchJson(`/api/pitstops/${pitstopId}/dependencies`, { method: "POST", body: JSON.stringify({ blockedById }) }); changed(); } catch { /* */ }
+  };
+  const removeDep = async (blockedById: string) => {
+    try { await fetch(`/api/pitstops/${pitstopId}/dependencies`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ blockedById }) }); changed(); } catch { /* */ }
   };
 
   return (
@@ -119,13 +127,29 @@ export function NodeSheet({ pitstopId, editable, onClose, onChanged }: {
               <span className="text-[11px] text-stone-400">{detail.status}</span>
             </div>
 
-            {/* Depends on */}
-            {detail.blockedBy.length > 0 && (
+            {/* Depends on (editable) */}
+            {(detail.blockedBy.length > 0 || editable) && (
               <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-stone-500">
-                <GitBranch className="w-3.5 h-3.5 text-stone-400" /> Needs:
+                <GitBranch className="w-3.5 h-3.5 text-stone-400 shrink-0" /> Needs:
                 {detail.blockedBy.map((b) => (
-                  <span key={b.id} className={`px-1.5 py-0.5 rounded border ${b.status === "Done" ? "text-emerald-600 border-emerald-200 bg-emerald-50" : "text-stone-600 border-stone-200"}`}>{b.title}</span>
+                  <span key={b.id} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border ${b.status === "Done" ? "text-emerald-600 border-emerald-200 bg-emerald-50" : "text-stone-600 border-stone-200"}`}>
+                    {b.title}
+                    {editable && <button onClick={() => removeDep(b.id)} className="text-stone-300 hover:text-red-500"><X className="w-3 h-3" /></button>}
+                  </span>
                 ))}
+                {detail.blockedBy.length === 0 && <span className="text-stone-400 italic">nothing yet</span>}
+                {editable && (
+                  <select
+                    value=""
+                    onChange={(e) => { if (e.target.value) addDep(e.target.value); }}
+                    className="text-[11px] border border-stone-200 rounded px-1.5 py-0.5 text-stone-600"
+                  >
+                    <option value="">+ add…</option>
+                    {siblings.filter((s) => s.pitstopId !== pitstopId && !detail.blockedBy.some((b) => b.id === s.pitstopId)).map((s) => (
+                      <option key={s.pitstopId} value={s.pitstopId}>{s.wbs} {s.title}</option>
+                    ))}
+                  </select>
+                )}
               </div>
             )}
 
