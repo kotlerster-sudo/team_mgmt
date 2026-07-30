@@ -5,7 +5,7 @@ import { Flag, User } from "lucide-react";
 import { progressTagColor } from "@/lib/progressTags";
 import type { CentrePlan, PlanNode } from "@/lib/operations/plan";
 import { StatusIcon, subItemStatus } from "./statusIcon";
-import { getDueState, type Agenda } from "./dueState";
+import { getDueState, type TodayViewData } from "./dueState";
 import { DueChip } from "./DueChip";
 
 /**
@@ -15,12 +15,11 @@ import { DueChip } from "./DueChip";
  * this handles real cross-workstream / convergence dependencies that a pure vertical connector can't.
  * Critical-path edges are red. Recomputed on resize / sub-item expansion via ResizeObserver.
  */
-export function PlanBoard({ plan, onOpen, nextUpId, waitingOn, flashId }: {
+export function PlanBoard({ plan, onOpen, nextUpId, waitingOn }: {
   plan: CentrePlan;
   onOpen: (pitstopId: string) => void;
   nextUpId?: string | null;
-  waitingOn?: Agenda["waitingOn"];
-  flashId?: string | null;
+  waitingOn?: TodayViewData["waitingOn"];
 }) {
   const allNodes = plan.workstreams.flatMap((w) => w.nodes);
   const wbsById = new Map(allNodes.map((n) => [n.pitstopId, n.wbs]));
@@ -104,7 +103,6 @@ export function PlanBoard({ plan, onOpen, nextUpId, waitingOn, flashId }: {
                     onOpen={onOpen}
                     isNextUp={n.pitstopId === nextUpId}
                     waitingOnWbs={n.pitstopId === waitingOn?.nodeId ? waitingOn.onWbs : null}
-                    isFlashing={n.pitstopId === flashId}
                   />
                 ))}
               </div>
@@ -134,16 +132,14 @@ export function PlanBoard({ plan, onOpen, nextUpId, waitingOn, flashId }: {
   );
 }
 
-function NodeCard({ node, wbsById, innerRef, onOpen, isNextUp, waitingOnWbs, isFlashing }: {
+function NodeCard({ node, wbsById, innerRef, onOpen, isNextUp, waitingOnWbs }: {
   node: PlanNode; wbsById: Map<string, string>; innerRef: (el: HTMLElement | null) => void; onOpen: (id: string) => void;
-  isNextUp: boolean; waitingOnWbs: string | null; isFlashing: boolean;
+  isNextUp: boolean; waitingOnWbs: string | null;
 }) {
   const due = getDueState(node.targetDate, node.status);
-  const ring = isFlashing
-    ? "ring-2 ring-sky-400 bg-sky-50"
-    : isNextUp
-      ? "ring-2 ring-sky-300"
-      : node.onCriticalPath ? "ring-1 ring-red-100" : "";
+  const ring = isNextUp
+    ? "ring-2 ring-sky-300"
+    : node.onCriticalPath ? "ring-1 ring-red-100" : "";
   return (
     <button
       id={`plan-node-${node.pitstopId}`}
