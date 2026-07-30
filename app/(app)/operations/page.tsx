@@ -27,12 +27,15 @@ export default async function OperationsHomePage({
   const userId = ctx.userId;
   const preview = ctx.viewingAs;
 
-  const clusters = await getUserClusters([userId]);
+  const [clusters, me, candidates] = await Promise.all([
+    getUserClusters([userId]),
+    prisma.user.findUnique({ where: { id: userId }, select: { designation: true } }),
+    ctx.isAdmin && !preview ? loadViewAsCandidates() : Promise.resolve([]),
+  ]);
   const selected = clusterParam ? clusters.find((c) => c.id === clusterParam) ?? null : null;
 
   // Supervisors get a shortcut to the oversight drill-down (also the only entry on mobile,
   // where the sidebar "Oversight" item isn't shown). Hidden in admin "view as" preview.
-  const me = await prisma.user.findUnique({ where: { id: userId }, select: { designation: true } });
   const isSupervisor =
     !preview && (ctx.isAdmin || ["ZL", "PM", "Leader"].includes(me?.designation ?? ""));
 
@@ -51,9 +54,16 @@ export default async function OperationsHomePage({
           <header className="flex items-start justify-between gap-3">
             <div>
               <h1 className="text-lg font-semibold text-stone-900">Operations</h1>
-              <p className="text-sm text-stone-500 mt-0.5">Which cluster are you visiting today?</p>
+              <p className="text-sm text-stone-500 mt-0.5">
+                {preview
+                  ? `${preview.name ?? "User"}'s clusters — pick one to preview.`
+                  : "Which cluster are you visiting today?"}
+              </p>
             </div>
-            {isSupervisor && <OversightLink />}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {isSupervisor && <OversightLink />}
+              {ctx.isAdmin && !preview && candidates.length > 0 && <ViewAsPicker candidates={candidates} />}
+            </div>
           </header>
 
           {clusters.length === 0 ? (
@@ -85,10 +95,7 @@ export default async function OperationsHomePage({
   }
 
   // ── Step 1: cluster-scoped landing ─────────────────────────────────────────
-  const [tiles, candidates] = await Promise.all([
-    loadOperationsHome([userId], { clusterId: selected.id }),
-    ctx.isAdmin && !preview ? loadViewAsCandidates() : Promise.resolve([]),
-  ]);
+  const tiles = await loadOperationsHome([userId], { clusterId: selected.id });
 
   const clusterQ = `cluster=${encodeURIComponent(selected.id)}`;
   const href = (key: string, lens?: "today" | "overdue") =>
