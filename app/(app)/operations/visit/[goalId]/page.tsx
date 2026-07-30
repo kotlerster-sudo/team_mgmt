@@ -131,16 +131,42 @@ export default function VisitPage({ params }: { params: Promise<{ goalId: string
           )}
         </div>
 
-        {/* Arrival gate */}
+        {/* Arrival gate — when there's no open visit but this centre has already been visited this
+            month, show a "done for now / log another" card instead of a bare arrival prompt so a
+            close reads as progress rather than looking like nothing happened. */}
         {!arrived ? (
-          <button
-            onClick={startOrArrive}
-            disabled={busy === "arrive"}
-            className="w-full flex items-center justify-center gap-2 px-4 py-4 bg-sky-600 text-white rounded-2xl font-medium hover:bg-sky-700 transition-colors disabled:opacity-50"
-          >
-            {busy === "arrive" ? <Loader2 className="w-5 h-5 animate-spin" /> : <MapPin className="w-5 h-5" />}
-            I have reached
-          </button>
+          !screen.currentVisit && screen.monthDone > 0 ? (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-center space-y-3">
+              <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto" />
+              <div>
+                <p className="text-sm font-semibold text-emerald-800">
+                  Visited {screen.monthDone}{screen.monthRequired ? `/${screen.monthRequired}` : ""} time{screen.monthDone === 1 ? "" : "s"} this month
+                </p>
+                <p className="text-xs text-emerald-700/80 mt-0.5">
+                  {screen.monthRequired && screen.monthDone >= screen.monthRequired
+                    ? "Cadence met for this month — you're all set."
+                    : "Come back for the next visit, or log another now if you're here again."}
+                </p>
+              </div>
+              <button
+                onClick={startOrArrive}
+                disabled={busy === "arrive"}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white border border-emerald-300 text-emerald-800 rounded-xl font-medium hover:bg-emerald-100 transition-colors disabled:opacity-50"
+              >
+                {busy === "arrive" ? <Loader2 className="w-5 h-5 animate-spin" /> : <MapPin className="w-5 h-5" />}
+                Log another visit
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={startOrArrive}
+              disabled={busy === "arrive"}
+              className="w-full flex items-center justify-center gap-2 px-4 py-4 bg-sky-600 text-white rounded-2xl font-medium hover:bg-sky-700 transition-colors disabled:opacity-50"
+            >
+              {busy === "arrive" ? <Loader2 className="w-5 h-5 animate-spin" /> : <MapPin className="w-5 h-5" />}
+              I have reached
+            </button>
+          )
         ) : (
           <>
             <div className="flex items-center justify-between mb-3">

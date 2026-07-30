@@ -13,6 +13,7 @@ import {
   type Cadence, type CatalogCategory, type CentreCatalogOverrides,
 } from "@/lib/catalogDb";
 import { monthBounds, requiredVisitsForMonth } from "./month";
+import { pickAnchor } from "./anchor";
 
 export type CatalogItemView = {
   key: string;
@@ -60,7 +61,9 @@ export async function loadCentreCatalogView(
       needsSettlement: { select: { name: true, cluster: { select: { name: true } } } },
       linkedFacility: { select: { layerKey: true } },
       centreCatalog: { select: { catalogSlug: true, snapshot: true, overrides: true, cadenceCount: true, cadencePeriod: true } },
-      pitstops: { where: { deletedAt: null, recurrence: { not: "None" } }, select: { id: true }, orderBy: { createdAt: "asc" }, take: 1 },
+      // All recurring pitstops — we anchor on the dedicated "Operations" one (pickAnchor), NOT the
+      // earliest, since -existing centres carry several recurring pitstops.
+      pitstops: { where: { deletedAt: null, recurrence: { not: "None" } }, select: { id: true, title: true }, orderBy: { createdAt: "asc" } },
     },
   });
   if (!goal) return null;
@@ -79,14 +82,15 @@ export async function loadCentreCatalogView(
   };
 
   // Live layer only when the centre is live, has a snapshot, and a recurring pitstop.
-  if (goal.mode !== "live" || !goal.centreCatalog || goal.pitstops.length === 0) {
+  const anchor = pickAnchor(goal.pitstops);
+  if (goal.mode !== "live" || !goal.centreCatalog || !anchor) {
     return { ...base, live: null };
   }
 
   const snapshot = (goal.centreCatalog.snapshot ?? []) as unknown as CatalogCategory[];
   const overrides = (goal.centreCatalog.overrides ?? {}) as unknown as CentreCatalogOverrides;
   const cadence = resolveCadence(goal.centreCatalog, { defaultCadenceCount: null, defaultCadencePeriod: null });
-  const livePitstopId = goal.pitstops[0].id;
+  const livePitstopId = anchor.id;
 
   const approvals = await prisma.catalogItemApproval.findMany({
     where: { goalId },

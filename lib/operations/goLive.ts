@@ -7,6 +7,7 @@
 
 import prisma from "@/lib/prisma";
 import { normalizeCategories, type CatalogCategory } from "@/lib/catalogDb";
+import { OPERATIONS_PITSTOP_TITLE } from "./anchor";
 
 export type GoLiveResult = {
   goalId: string;
@@ -50,9 +51,11 @@ export async function setCentreLive(goalId: string): Promise<GoLiveResult> {
   const snapshot = normalizeCategories((def?.categories ?? []) as unknown as CatalogCategory[]);
   const catalogSlug = def?.slug ?? goal.centreCatalog?.catalogSlug ?? null;
 
-  // 2. Ensure a recurring "Operations" pitstop exists to anchor visits.
+  // 2. Ensure the dedicated recurring "Operations" pitstop exists to anchor visits. NOTE: we match
+  // on title, NOT "any recurring pitstop" — a centre may carry several recurring template pitstops
+  // (repeatCount expansion); the visit layer must anchor on exactly one dedicated pitstop.
   const existingRhythm = await prisma.pitstop.findFirst({
-    where: { goalId, deletedAt: null, recurrence: { not: "None" } },
+    where: { goalId, deletedAt: null, recurrence: { not: "None" }, title: OPERATIONS_PITSTOP_TITLE },
     select: { id: true },
     orderBy: { createdAt: "asc" },
   });
