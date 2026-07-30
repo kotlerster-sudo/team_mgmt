@@ -5,6 +5,8 @@ import { Flag, User } from "lucide-react";
 import { progressTagColor } from "@/lib/progressTags";
 import type { CentrePlan, PlanNode } from "@/lib/operations/plan";
 import { StatusIcon, subItemStatus } from "./statusIcon";
+import { getDueState, type Agenda } from "./dueState";
+import { DueChip } from "./DueChip";
 
 /**
  * Clean vertical WBS outline (the launch-plan mock's shape): workstream sections stacked top→bottom,
@@ -13,7 +15,13 @@ import { StatusIcon, subItemStatus } from "./statusIcon";
  * this handles real cross-workstream / convergence dependencies that a pure vertical connector can't.
  * Critical-path edges are red. Recomputed on resize / sub-item expansion via ResizeObserver.
  */
-export function PlanBoard({ plan, onOpen }: { plan: CentrePlan; onOpen: (pitstopId: string) => void }) {
+export function PlanBoard({ plan, onOpen, nextUpId, waitingOn, flashId }: {
+  plan: CentrePlan;
+  onOpen: (pitstopId: string) => void;
+  nextUpId?: string | null;
+  waitingOn?: Agenda["waitingOn"];
+  flashId?: string | null;
+}) {
   const allNodes = plan.workstreams.flatMap((w) => w.nodes);
   const wbsById = new Map(allNodes.map((n) => [n.pitstopId, n.wbs]));
   const onPath = new Set(allNodes.filter((n) => n.onCriticalPath).map((n) => n.pitstopId));
@@ -88,7 +96,16 @@ export function PlanBoard({ plan, onOpen }: { plan: CentrePlan; onOpen: (pitstop
               </div>
               <div className="space-y-2.5">
                 {nodes.map((n) => (
-                  <NodeCard key={n.pitstopId} node={n} wbsById={wbsById} innerRef={setNodeRef(n.pitstopId)} onOpen={onOpen} />
+                  <NodeCard
+                    key={n.pitstopId}
+                    node={n}
+                    wbsById={wbsById}
+                    innerRef={setNodeRef(n.pitstopId)}
+                    onOpen={onOpen}
+                    isNextUp={n.pitstopId === nextUpId}
+                    waitingOnWbs={n.pitstopId === waitingOn?.nodeId ? waitingOn.onWbs : null}
+                    isFlashing={n.pitstopId === flashId}
+                  />
                 ))}
               </div>
             </section>
@@ -100,6 +117,7 @@ export function PlanBoard({ plan, onOpen }: { plan: CentrePlan; onOpen: (pitstop
             {milestones.map((m) => (
               <button
                 key={m.pitstopId}
+                id={`plan-node-${m.pitstopId}`}
                 ref={setNodeRef(m.pitstopId)}
                 onClick={() => onOpen(m.pitstopId)}
                 className={`inline-flex items-center gap-2 rounded-lg border-2 px-6 py-2.5 font-bold uppercase tracking-wide text-sm ${
@@ -116,21 +134,30 @@ export function PlanBoard({ plan, onOpen }: { plan: CentrePlan; onOpen: (pitstop
   );
 }
 
-function NodeCard({ node, wbsById, innerRef, onOpen }: {
+function NodeCard({ node, wbsById, innerRef, onOpen, isNextUp, waitingOnWbs, isFlashing }: {
   node: PlanNode; wbsById: Map<string, string>; innerRef: (el: HTMLElement | null) => void; onOpen: (id: string) => void;
+  isNextUp: boolean; waitingOnWbs: string | null; isFlashing: boolean;
 }) {
+  const due = getDueState(node.targetDate, node.status);
+  const ring = isFlashing
+    ? "ring-2 ring-sky-400 bg-sky-50"
+    : isNextUp
+      ? "ring-2 ring-sky-300"
+      : node.onCriticalPath ? "ring-1 ring-red-100" : "";
   return (
     <button
+      id={`plan-node-${node.pitstopId}`}
       ref={innerRef}
       onClick={() => onOpen(node.pitstopId)}
-      className={`w-full text-left rounded-xl bg-white border px-3.5 py-2.5 hover:shadow-sm transition-shadow ${
-        node.onCriticalPath ? "border-red-300 ring-1 ring-red-100" : "border-stone-200"
-      }`}
+      className={`w-full text-left rounded-xl bg-white border px-3.5 py-2.5 hover:shadow-sm transition-all ${
+        node.onCriticalPath ? "border-red-300" : "border-stone-200"
+      } ${ring}`}
     >
       <div className="flex items-center gap-2">
         <StatusIcon status={node.status} className="w-4 h-4" />
         <span className="text-[11px] font-semibold text-stone-400 tabular-nums">{node.wbs}</span>
         <span className={`text-sm font-medium flex-1 min-w-0 ${node.status === "done" ? "text-stone-400 line-through" : "text-stone-800"}`}>{node.title}</span>
+        {isNextUp && <span className="text-[9px] font-bold uppercase text-sky-600 tracking-wide shrink-0">next</span>}
         {node.onCriticalPath && <span className="text-[9px] font-bold uppercase text-red-500 tracking-wide shrink-0">critical</span>}
       </div>
 
@@ -148,9 +175,17 @@ function NodeCard({ node, wbsById, innerRef, onOpen }: {
 
       {(node.blockedBy.length > 0 || node.ownerName || node.targetDate) && (
         <div className="mt-1.5 pl-6 flex items-center gap-2 flex-wrap text-[10px] text-stone-400">
-          {node.blockedBy.length > 0 && <span className="text-stone-500">needs {node.blockedBy.map((id) => wbsById.get(id) ?? "?").join(", ")}</span>}
+          {waitingOnWbs ? (
+            <span className="italic">waiting on {waitingOnWbs}</span>
+          ) : (
+            node.blockedBy.length > 0 && <span className="text-stone-500">needs {node.blockedBy.map((id) => wbsById.get(id) ?? "?").join(", ")}</span>
+          )}
           {node.ownerName && <span className="inline-flex items-center gap-0.5"><User className="w-2.5 h-2.5" />{node.ownerName}</span>}
-          {node.targetDate && <span className="ml-auto tabular-nums">{new Date(node.targetDate).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</span>}
+          {node.targetDate && (due ? (
+            <DueChip due={due} className="ml-auto" />
+          ) : (
+            <span className="ml-auto tabular-nums">{new Date(node.targetDate).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</span>
+          ))}
         </div>
       )}
     </button>

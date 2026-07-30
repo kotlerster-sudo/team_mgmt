@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil, Plus, Loader2 } from "lucide-react";
 import { fetchJson } from "@/lib/fetchJson";
@@ -9,6 +9,7 @@ import type { CentrePlan as CentrePlanData } from "@/lib/operations/plan";
 import { PlanBoard } from "./PlanBoard";
 import { ThisWeekPanel } from "./ThisWeekPanel";
 import { NodeSheet } from "./NodeSheet";
+import { buildAgenda } from "./dueState";
 
 /**
  * The setup-centre WBS one-page plan — a clean vertical outline (PlanBoard): workstream sections →
@@ -29,6 +30,18 @@ export function CentrePlan({ plan }: { plan: CentrePlanData }) {
   const refresh = useCallback(() => router.refresh(), [router]);
   const onOpen = useCallback((pitstopId: string) => setSelected(pitstopId), []);
 
+  // "On this visit" agenda: overdue + due-today nodes, ranked; computed client-side (local day).
+  const agenda = useMemo(() => buildAgenda(plan), [plan]);
+  const [flashId, setFlashId] = useState<string | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onAgendaSelect = useCallback((pitstopId: string) => {
+    setSelected(pitstopId);
+    document.getElementById(`plan-node-${pitstopId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setFlashId(pitstopId);
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlashId(null), 1600);
+  }, []);
+
   const siblings = plan.workstreams.flatMap((w) => w.nodes).map((n) => ({ pitstopId: n.pitstopId, wbs: n.wbs, title: n.title }));
 
   const addNode = useCallback(async () => {
@@ -45,7 +58,7 @@ export function CentrePlan({ plan }: { plan: CentrePlanData }) {
 
   return (
     <div className="space-y-4">
-      <ThisWeekPanel plan={plan} />
+      <ThisWeekPanel plan={plan} agenda={agenda} onSelect={onAgendaSelect} />
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         {plan.workstreams.map((w) => (
@@ -76,7 +89,7 @@ export function CentrePlan({ plan }: { plan: CentrePlanData }) {
         </div>
       </div>
 
-      <PlanBoard plan={plan} onOpen={onOpen} />
+      <PlanBoard plan={plan} onOpen={onOpen} nextUpId={agenda.nextUpId} waitingOn={agenda.waitingOn} flashId={flashId} />
 
       {selected && (
         <NodeSheet pitstopId={selected} editable={editMode} siblings={siblings} onClose={() => setSelected(null)} onChanged={refresh} />
