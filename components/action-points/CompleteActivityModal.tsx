@@ -27,6 +27,11 @@ import { X, Plus, Check, Gauge } from "lucide-react";
 import { ActionPointInputRows, draftsToPayload } from "./ActionPointInputRows";
 import type { ActionPointDraft } from "./types";
 import { SurfaceProvider } from "@/components/rbac/RbacProviders";
+import {
+  IndicatorChecklistCapture,
+  type ChecklistCaptureAnswer,
+  type ChecklistCaptureItem,
+} from "@/components/indicators/IndicatorChecklistCapture";
 
 type IndicatorBinding = {
   kind: "facility" | "journey";
@@ -38,6 +43,9 @@ type IndicatorBinding = {
   defColor: string;
   journeyId?: string;
   journeyLabel?: string;
+  // Present when the def carries a scored tick-list (e.g. creche 24-point
+  // safety) — rendered as per-item Yes/No(/N-A) instead of a numeric input.
+  checklistItems?: ChecklistCaptureItem[];
 };
 
 export function CompleteActivityModal({
@@ -86,9 +94,67 @@ export function CompleteActivityModal({
     setIndicatorValues(prev => ({ ...prev, [numericField]: raw }));
   }
 
+  // Tick-list answers per checklist-carrying binding: numericField →
+  // (itemDefId → answer). Score is recomputed server-side; we mirror it
+  // client-side for display + the values payload.
+  const [checklistAnswers, setChecklistAnswers] = useState<
+    Record<string, Record<string, ChecklistCaptureAnswer | undefined>>
+  >({});
+
+  function setChecklistAnswer(
+    binding: IndicatorBinding,
+    item: ChecklistCaptureItem,
+    answer: ChecklistCaptureAnswer | undefined,
+  ) {
+    setChecklistAnswers(prev => ({
+      ...prev,
+      [binding.numericField]: { ...prev[binding.numericField], [item.id]: answer },
+    }));
+    // Auto-AP on failed non-negotiables: flipping to "No" appends an editable
+    // draft tagged with sourceItemKey; flipping away removes exactly that
+    // auto-draft (manual drafts and edits to other rows untouched).
+    if (item.nonNegotiable && answer === "no") {
+      setDrafts(prev => {
+        if (prev.some(d => d.sourceItemKey === item.itemKey)) return prev;
+        setShowAPs(true);
+        return [...prev, {
+          clientId: crypto.randomUUID(),
+          pitstopEventId: eventId,
+          title: `Fix: ${item.text}${goalTitle ? ` — ${goalTitle}` : ""}`,
+          detail: "",
+          dueDateYmd: defaultDueYmd(),
+          priority: "urgent",
+          partnerStaffLabel: "",
+          sourceItemKey: item.itemKey,
+        }];
+      });
+    } else if (item.nonNegotiable) {
+      setDrafts(prev => prev.filter(d => d.sourceItemKey !== item.itemKey));
+    }
+  }
+
   async function submit() {
     setSubmitting(true);
     setErr(null);
+
+    // Tick-list gating: each checklist must be fully answered or fully
+    // untouched — a partial checklist would make the /N score ambiguous.
+    const answersPayload: Record<string, Record<string, ChecklistCaptureAnswer>> = {};
+    for (const b of bindings ?? []) {
+      const items = b.checklistItems;
+      if (!items || items.length === 0) continue;
+      const perItem = checklistAnswers[b.numericField] ?? {};
+      const answeredCount = items.filter(i => perItem[i.id] !== undefined).length;
+      if (answeredCount === 0) continue; // untouched → skip capture entirely
+      if (answeredCount < items.length) {
+        setErr(`Answer all ${items.length} items on "${b.defLabel}" or clear the checklist`);
+        setSubmitting(false);
+        return;
+      }
+      const clean: Record<string, ChecklistCaptureAnswer> = {};
+      for (const i of items) clean[i.id] = perItem[i.id]!;
+      answersPayload[b.numericField] = clean;
+    }
 
     // Step 1: capture indicator values (if any non-empty). Coerce strings →
     // numbers; drop empties + non-finites at the boundary so the server doesn't
@@ -99,11 +165,16 @@ export function CompleteActivityModal({
       const n = Number(v);
       if (Number.isFinite(n)) numericValues[k] = n;
     }
-    if (Object.keys(numericValues).length > 0) {
+    // Client-computed scores for completed checklists — display/back-compat;
+    // the server recomputes from the answers and its value wins.
+    for (const [field, perItem] of Object.entries(answersPayload)) {
+      numericValues[field] = Object.values(perItem).filter(a => a !== "no").length;
+    }
+    if (Object.keys(numericValues).length > 0 || Object.keys(answersPayload).length > 0) {
       const indRes = await fetch(`/api/pitstop-events/${eventId}/indicators`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ values: numericValues }),
+        body: JSON.stringify({ values: numericValues, answers: answersPayload }),
       });
       if (!indRes.ok) {
         setErr((await indRes.json().catch(() => ({})))?.error ?? "Couldn't save indicator values");
@@ -150,7 +221,16 @@ export function CompleteActivityModal({
   }
 
   const apCount = drafts.filter(d => d.title.trim().length > 0).length;
-  const filledIndicators = Object.entries(indicatorValues).filter(([, v]) => v !== "" && Number.isFinite(Number(v))).length;
+  // A fully answered tick-list counts as one filled indicator.
+  const completedChecklists = (bindings ?? []).filter(b => {
+    const items = b.checklistItems;
+    if (!items || items.length === 0) return false;
+    const perItem = checklistAnswers[b.numericField] ?? {};
+    return items.every(i => perItem[i.id] !== undefined);
+  }).length;
+  const filledIndicators =
+    Object.entries(indicatorValues).filter(([, v]) => v !== "" && Number.isFinite(Number(v))).length +
+    completedChecklists;
 
   return (
     <SurfaceProvider id="activities.complete_modal">
@@ -191,6 +271,16 @@ export function CompleteActivityModal({
             </div>
             <div className="space-y-1.5">
               {bindings.map(b => (
+                b.checklistItems && b.checklistItems.length > 0 ? (
+                  <IndicatorChecklistCapture
+                    key={b.bindingId}
+                    defLabel={b.defLabel}
+                    defColor={b.defColor}
+                    items={b.checklistItems}
+                    answers={checklistAnswers[b.numericField] ?? {}}
+                    onAnswer={(item, answer) => setChecklistAnswer(b, item, answer)}
+                  />
+                ) : (
                 <div key={b.bindingId} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-stone-200 bg-stone-50/60">
                   <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: b.defColor }} />
                   <label className="text-xs text-stone-700 flex-1 truncate" title={b.defLabel}>
@@ -212,6 +302,7 @@ export function CompleteActivityModal({
                     <span className="text-[10px] text-stone-400 w-10 truncate">{b.defUnit}</span>
                   )}
                 </div>
+                )
               ))}
             </div>
           </div>

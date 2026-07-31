@@ -51,4 +51,8 @@ export type ActionPointDraft = {
   dueDateYmd: string;
   priority: APPriority;
   partnerStaffLabel: string;
+  // Client-only tag linking an auto-prefilled draft to the failed
+  // non-negotiable checklist item that spawned it (so flipping the answer
+  // back removes exactly this draft). Never sent to the server.
+  sourceItemKey?: string;
 };

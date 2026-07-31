@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { ChevronLeft, Plus, Pencil, Trash2, Check, X, Activity, Cloud, User, ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronLeft, Plus, Pencil, Trash2, Check, X, Activity, Cloud, User, ChevronDown, ChevronRight, Star, ListChecks } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { SurfaceProvider } from "@/components/rbac/RbacProviders";
@@ -620,7 +620,10 @@ function IndicatorForm({
         )}
         {draft.captureSource === "RP_ACTIVITY" && (
           draft.id ? (
-            <BindingsPanel defId={draft.id} />
+            <>
+              <BindingsPanel defId={draft.id} />
+              <ChecklistItemsPanel defId={draft.id} />
+            </>
           ) : (
             <p className="text-[10px] text-stone-400 leading-relaxed">
               Save this indicator first, then add bindings to specific checklist items.
@@ -845,6 +848,214 @@ function BindingsPanel({ defId }: { defId: string }) {
           No templates have checklist items with stable keys yet. Open a template, save it once to populate keys.
         </p>
       )}
+    </div>
+  );
+}
+
+// ── Scored checklist panel (tick-list defs, e.g. creche 24-point safety) ─────
+
+interface ChecklistItemDefRow {
+  id: string;
+  defId: string;
+  itemKey: string;
+  text: string;
+  category: string | null;
+  nonNegotiable: boolean;
+  naAllowed: boolean;
+  sortOrder: number;
+  isActive: boolean;
+}
+
+function ChecklistItemsPanel({ defId }: { defId: string }) {
+  const [items, setItems] = useState<ChecklistItemDefRow[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    const res = await fetch(`/api/admin/facility-indicators/${defId}/checklist-items`);
+    if (res.ok) setItems(await res.json());
+  }, [defId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const active = items.filter(i => i.isActive);
+  const categories = [...new Set(active.map(i => i.category).filter((c): c is string => !!c))];
+
+  async function saveItem(row: Partial<ChecklistItemDefRow> & { text: string }, itemId?: string) {
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch(
+        itemId
+          ? `/api/admin/facility-indicators/${defId}/checklist-items/${itemId}`
+          : `/api/admin/facility-indicators/${defId}/checklist-items`,
+        {
+          method: itemId ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(row),
+        },
+      );
+      if (res.ok) {
+        setEditingId(null);
+        setAdding(false);
+        load();
+      } else {
+        setError((await res.json().catch(() => ({})))?.error ?? "Failed to save item");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeItem(itemId: string) {
+    if (!confirm("Remove this item from the tick-list? Historical answers are kept.")) return;
+    await fetch(`/api/admin/facility-indicators/${defId}/checklist-items/${itemId}`, { method: "DELETE" });
+    load();
+  }
+
+  return (
+    <div className="border border-stone-200 rounded-lg p-3 bg-stone-50 space-y-2">
+      <div className="text-[10px] font-semibold text-stone-500 uppercase tracking-wide flex items-center gap-1.5">
+        <ListChecks className="w-3 h-3" /> Scored checklist ({active.length} items)
+      </div>
+      <p className="text-[10px] text-stone-500 leading-relaxed">
+        When items exist, the RP completion form shows a Yes/No tick-list instead of a number and the
+        indicator value = count of compliant items (N/A counts compliant). ★ non-negotiable items
+        pre-fill a follow-up action point when failing.
+      </p>
+
+      {active.length > 0 && (
+        <div className="space-y-1 max-h-64 overflow-y-auto">
+          {active.map(it =>
+            editingId === it.id ? (
+              <ChecklistItemEditRow
+                key={it.id}
+                initial={it}
+                categories={categories}
+                busy={busy}
+                onSave={row => saveItem(row, it.id)}
+                onCancel={() => setEditingId(null)}
+              />
+            ) : (
+              <div key={it.id} className="flex items-center gap-2 px-2 py-1 bg-white border border-stone-200 rounded">
+                {it.category && (
+                  <span className="text-[9px] px-1 py-0.5 rounded bg-stone-100 text-stone-500 shrink-0 max-w-[90px] truncate" title={it.category}>
+                    {it.category}
+                  </span>
+                )}
+                <span className="flex-1 min-w-0 text-xs text-stone-700 truncate" title={it.text}>{it.text}</span>
+                {it.nonNegotiable && <Star className="w-3 h-3 text-amber-500 fill-amber-400 shrink-0" aria-label="Non-negotiable" />}
+                {it.naAllowed && <span className="text-[9px] text-stone-400 shrink-0">N/A ok</span>}
+                <button
+                  onClick={() => { setEditingId(it.id); setAdding(false); }}
+                  className="p-1 hover:bg-stone-100 rounded text-stone-400 hover:text-stone-600 transition-colors shrink-0"
+                >
+                  <Pencil className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={() => removeItem(it.id)}
+                  className="p-1 hover:bg-red-50 rounded text-stone-400 hover:text-red-500 transition-colors shrink-0"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
+            ),
+          )}
+        </div>
+      )}
+
+      {adding ? (
+        <ChecklistItemEditRow
+          initial={{ text: "", category: active[active.length - 1]?.category ?? null, nonNegotiable: false, naAllowed: false, sortOrder: (active[active.length - 1]?.sortOrder ?? 0) + 1 }}
+          categories={categories}
+          busy={busy}
+          onSave={row => saveItem(row)}
+          onCancel={() => setAdding(false)}
+        />
+      ) : (
+        <button
+          onClick={() => { setAdding(true); setEditingId(null); }}
+          className="px-2.5 py-1.5 text-xs rounded-lg text-stone-500 hover:text-stone-700 hover:bg-stone-100 border border-dashed border-stone-300 flex items-center gap-1"
+        >
+          <Plus className="w-3 h-3" /> Add item
+        </button>
+      )}
+      {error && <p className="text-[10px] text-red-500">{error}</p>}
+    </div>
+  );
+}
+
+function ChecklistItemEditRow({
+  initial,
+  categories,
+  busy,
+  onSave,
+  onCancel,
+}: {
+  initial: Partial<ChecklistItemDefRow>;
+  categories: string[];
+  busy: boolean;
+  onSave: (row: { text: string; category: string | null; nonNegotiable: boolean; naAllowed: boolean; sortOrder: number }) => void;
+  onCancel: () => void;
+}) {
+  const [text, setText] = useState(initial.text ?? "");
+  const [category, setCategory] = useState(initial.category ?? "");
+  const [nonNegotiable, setNonNegotiable] = useState(initial.nonNegotiable ?? false);
+  const [naAllowed, setNaAllowed] = useState(initial.naAllowed ?? false);
+  const [sortOrder, setSortOrder] = useState(initial.sortOrder ?? 0);
+
+  return (
+    <div className="px-2 py-2 bg-white border border-sky-200 rounded space-y-1.5">
+      <input
+        className={inputCls + " w-full text-xs"}
+        value={text}
+        onChange={e => setText(e.target.value)}
+        placeholder="Item text (ticked = compliant)"
+        autoFocus
+      />
+      <div className="flex flex-wrap gap-2 items-center">
+        <input
+          className={inputCls + " text-xs w-40"}
+          value={category}
+          onChange={e => setCategory(e.target.value)}
+          placeholder="Category"
+          list="checklist-item-categories"
+        />
+        <datalist id="checklist-item-categories">
+          {categories.map(c => <option key={c} value={c} />)}
+        </datalist>
+        <label className="flex items-center gap-1 text-[10px] text-stone-600">
+          <input type="checkbox" checked={nonNegotiable} onChange={e => setNonNegotiable(e.target.checked)} />
+          ★ non-negotiable
+        </label>
+        <label className="flex items-center gap-1 text-[10px] text-stone-600">
+          <input type="checkbox" checked={naAllowed} onChange={e => setNaAllowed(e.target.checked)} />
+          N/A allowed
+        </label>
+        <label className="flex items-center gap-1 text-[10px] text-stone-600">
+          Order
+          <input
+            type="number"
+            className={inputCls + " text-xs w-14"}
+            value={sortOrder}
+            onChange={e => setSortOrder(Number(e.target.value))}
+          />
+        </label>
+        <div className="flex gap-1 ml-auto">
+          <button onClick={onCancel} className="p-1.5 text-xs rounded-lg text-stone-500 hover:bg-stone-100">
+            <X className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => onSave({ text: text.trim(), category: category.trim() || null, nonNegotiable, naAllowed, sortOrder })}
+            disabled={busy || !text.trim()}
+            className="px-2 py-1.5 text-xs rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-40 flex items-center gap-1"
+          >
+            <Check className="w-3.5 h-3.5" /> Save
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

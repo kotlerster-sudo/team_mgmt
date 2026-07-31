@@ -26,7 +26,19 @@ import { viewerForbidden } from "@/lib/roleGuard";
 import {
   captureIndicatorPointsForChecklistItem,
   captureJourneyOutcomePointsForChecklistItem,
+  type ChecklistAnswer,
+  type ChecklistAnswers,
 } from "@/lib/captureIndicatorPoints";
+
+type ChecklistItemDef = {
+  id: string;
+  itemKey: string;
+  text: string;
+  category: string | null;
+  nonNegotiable: boolean;
+  naAllowed: boolean;
+  sortOrder: number;
+};
 
 type ItemBinding = {
   kind: "facility" | "journey";
@@ -38,6 +50,9 @@ type ItemBinding = {
   defColor: string;
   journeyId?: string;
   journeyLabel?: string;
+  // Present when the def carries a scored tick-list — the modal renders
+  // per-item Yes/No(/N-A) buttons instead of a numeric input.
+  checklistItems?: ChecklistItemDef[];
 };
 
 async function resolveChecklistItemId(eventId: string): Promise<string | null> {
@@ -95,11 +110,31 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ eve
       AND ci.key IS NOT NULL AND ci."templateSlug" IS NOT NULL
   `;
 
+  // Scored tick-list items for any of the facility defs (creche 24-point
+  // safety etc.) — grouped per def and attached to its binding below.
+  const defIds = [...new Set(facility.map(f => f.defId))];
+  const checklistByDef = new Map<string, ChecklistItemDef[]>();
+  if (defIds.length > 0) {
+    const items = await prisma.$queryRaw<(ChecklistItemDef & { defId: string })[]>`
+      SELECT id, "defId", "itemKey", text, category, "nonNegotiable", "naAllowed", "sortOrder"
+      FROM "IndicatorChecklistItemDef"
+      WHERE "defId" = ANY(${defIds}) AND "isActive" = true
+      ORDER BY "defId", "sortOrder", "createdAt"
+    `;
+    for (const it of items) {
+      const { defId, ...rest } = it;
+      const list = checklistByDef.get(defId) ?? [];
+      list.push(rest);
+      checklistByDef.set(defId, list);
+    }
+  }
+
   const result: ItemBinding[] = [
     ...facility.map(f => ({
       kind: "facility" as const,
       bindingId: f.bindingId, numericField: f.numericField,
       defId: f.defId, defLabel: f.defLabel, defUnit: f.defUnit, defColor: f.defColor,
+      ...(checklistByDef.has(f.defId) ? { checklistItems: checklistByDef.get(f.defId) } : {}),
     })),
     ...journey.map(j => ({
       kind: "journey" as const,
@@ -122,19 +157,34 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ eve
   const { eventId } = await params;
   const body = await req.json().catch(() => ({}));
   const rawValues = body?.values;
-  if (!rawValues || typeof rawValues !== "object") {
-    return Response.json({ ok: true, captured: 0 });
-  }
+  const rawAnswers = body?.answers;
 
   // Coerce to number, drop non-finite / empty entries — same defensiveness
   // captureIndicatorPointsForChecklistItem already has, but we strip here
   // so the helper sees a clean numeric record.
   const values: Record<string, number> = {};
-  for (const [k, v] of Object.entries(rawValues)) {
-    const n = typeof v === "number" ? v : Number(v);
-    if (Number.isFinite(n)) values[k] = n;
+  if (rawValues && typeof rawValues === "object") {
+    for (const [k, v] of Object.entries(rawValues)) {
+      const n = typeof v === "number" ? v : Number(v);
+      if (Number.isFinite(n)) values[k] = n;
+    }
   }
-  if (Object.keys(values).length === 0) {
+
+  // Sanitize tick-list answers: { numericField: { itemDefId: "yes"|"no"|"na" } }.
+  // The helper re-validates item ids against the def and recomputes the score.
+  const answers: ChecklistAnswers = {};
+  if (rawAnswers && typeof rawAnswers === "object") {
+    for (const [field, perItem] of Object.entries(rawAnswers)) {
+      if (!perItem || typeof perItem !== "object") continue;
+      const clean: Record<string, ChecklistAnswer> = {};
+      for (const [itemDefId, a] of Object.entries(perItem as Record<string, unknown>)) {
+        if (a === "yes" || a === "no" || a === "na") clean[itemDefId] = a;
+      }
+      if (Object.keys(clean).length > 0) answers[field] = clean;
+    }
+  }
+
+  if (Object.keys(values).length === 0 && Object.keys(answers).length === 0) {
     return Response.json({ ok: true, captured: 0 });
   }
 
@@ -148,6 +198,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ eve
   await captureIndicatorPointsForChecklistItem({
     itemId: checklistItemId,
     values,
+    checklistAnswers: answers,
     capturedById: session.user.id,
   });
   await captureJourneyOutcomePointsForChecklistItem({

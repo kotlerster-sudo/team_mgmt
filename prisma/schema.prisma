@@ -898,10 +898,11 @@ model FacilityIndicatorDef {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  misProvider      MISProviderConfig?         @relation(fields: [misProviderId], references: [id], onDelete: SetNull)
-  scheme           EntitlementScheme?         @relation("IndicatorScheme", fields: [schemeId], references: [id], onDelete: SetNull)
+  misProvider      MISProviderConfig?          @relation(fields: [misProviderId], references: [id], onDelete: SetNull)
+  scheme           EntitlementScheme?          @relation("IndicatorScheme", fields: [schemeId], references: [id], onDelete: SetNull)
   indicators       FacilityIndicator[]
   activityBindings ActivityIndicatorBinding[]
+  checklistItems   IndicatorChecklistItemDef[]
 }
 
 model FacilityIndicator {
@@ -935,8 +936,9 @@ model FacilityIndicatorPoint {
   capturedById String?
   createdAt    DateTime                @default(now())
 
-  indicator  FacilityIndicator @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
-  capturedBy User?             @relation("IndicatorCapture", fields: [capturedById], references: [id], onDelete: SetNull)
+  indicator  FacilityIndicator      @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
+  capturedBy User?                  @relation("IndicatorCapture", fields: [capturedById], references: [id], onDelete: SetNull)
+  answers    IndicatorPointAnswer[]
 
   @@index([indicatorId, capturedAt])
 }
@@ -990,6 +992,45 @@ model ActivityIndicatorBinding {
 
   @@unique([defId, templateSlug, checklistKey])
   @@index([templateSlug, checklistKey])
+}
+
+// Scored checklist items attachable to any indicator def (creche 24-point
+// safety tick-list first; water/sanitation later). When a def has active
+// items, the RP completion modal renders a Yes/No(/N-A) tick-list instead of
+// a bare numeric input and the captured value = count(yes) + count(na).
+model IndicatorChecklistItemDef {
+  id            String   @id @default(cuid())
+  defId         String
+  itemKey       String // stable slug per def, e.g. "roof-walls-structural-safety"
+  text          String
+  category      String? // grouping label in the modal, e.g. "Fire Safety"
+  nonNegotiable Boolean  @default(false) // failing pre-fills a follow-up action point
+  naAllowed     Boolean  @default(false) // conditional items (well cover, solar); N/A counts compliant
+  sortOrder     Int      @default(0)
+  isActive      Boolean  @default(true) // soft-delete; historical answers preserved
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  def     FacilityIndicatorDef   @relation(fields: [defId], references: [id], onDelete: Cascade)
+  answers IndicatorPointAnswer[]
+
+  @@unique([defId, itemKey])
+  @@index([defId, sortOrder])
+}
+
+// Per-item answer recorded alongside a FacilityIndicatorPoint capture.
+model IndicatorPointAnswer {
+  id        String   @id @default(cuid())
+  pointId   String
+  itemDefId String
+  answer    String // "yes" | "no" | "na"
+  createdAt DateTime @default(now())
+
+  point   FacilityIndicatorPoint    @relation(fields: [pointId], references: [id], onDelete: Cascade)
+  itemDef IndicatorChecklistItemDef @relation(fields: [itemDefId], references: [id], onDelete: Restrict)
+
+  @@unique([pointId, itemDefId])
+  @@index([itemDefId, answer])
 }
 
 // ── Themes ────────────────────────────────────────────────────────────────────

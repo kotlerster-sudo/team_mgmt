@@ -13,6 +13,10 @@ type Binding = {
   numericField: string;
 };
 
+export type ChecklistAnswer = "yes" | "no" | "na";
+// numericField → (itemDefId → answer)
+export type ChecklistAnswers = Record<string, Record<string, ChecklistAnswer>>;
+
 /**
  * Writes FacilityIndicatorPoint rows for an RP_ACTIVITY capture.
  *
@@ -20,19 +24,28 @@ type Binding = {
  * each binding whose numericField is present in `values`, upserts the per-
  * settlement FacilityIndicator and inserts a time-series point.
  *
+ * When `checklistAnswers` carries per-item tick-list answers for a binding's
+ * numericField (defs with IndicatorChecklistItemDef rows), the score is
+ * recomputed server-side as count(yes) + count(na) — overriding any client
+ * value — and the answers are persisted alongside the point.
+ *
  * Silent on missing settlement / missing key / no bindings — completion
  * is never blocked by indicator capture failures.
  */
 export async function captureIndicatorPointsForChecklistItem({
   itemId,
   values,
+  checklistAnswers,
   capturedById,
 }: {
   itemId: string;
   values: Record<string, number>;
+  checklistAnswers?: ChecklistAnswers;
   capturedById: string | null;
 }) {
-  if (!values || Object.keys(values).length === 0) return;
+  const hasAnswers =
+    !!checklistAnswers && Object.values(checklistAnswers).some(a => a && Object.keys(a).length > 0);
+  if ((!values || Object.keys(values).length === 0) && !hasAnswers) return;
 
   const ctxRows = await prisma.$queryRaw<ItemContext[]>`
     SELECT
@@ -58,7 +71,32 @@ export async function captureIndicatorPointsForChecklistItem({
   `;
 
   for (const b of bindings) {
-    const raw = values[b.numericField];
+    let raw = values[b.numericField];
+    let note: string | null = null;
+    // Sanitized (itemDefId → answer) pairs to persist alongside the point.
+    let answerRows: { itemDefId: string; answer: ChecklistAnswer }[] = [];
+
+    // Tick-list path: recompute the score server-side from per-item answers.
+    const rawAnswers = checklistAnswers?.[b.numericField];
+    if (rawAnswers && Object.keys(rawAnswers).length > 0) {
+      const items = await prisma.$queryRaw<{ id: string; nonNegotiable: boolean }[]>`
+        SELECT id, "nonNegotiable" FROM "IndicatorChecklistItemDef"
+        WHERE "defId" = ${b.defId} AND "isActive" = true
+      `;
+      const itemById = new Map(items.map(i => [i.id, i]));
+      answerRows = Object.entries(rawAnswers)
+        .filter(([itemDefId, a]) => itemById.has(itemDefId) && (a === "yes" || a === "no" || a === "na"))
+        .map(([itemDefId, a]) => ({ itemDefId, answer: a }));
+      if (answerRows.length > 0) {
+        const score = answerRows.filter(a => a.answer !== "no").length;
+        const nnFailing = answerRows.filter(
+          a => a.answer === "no" && itemById.get(a.itemDefId)?.nonNegotiable
+        ).length;
+        raw = score;
+        note = `${score}/${answerRows.length}${nnFailing > 0 ? ` · ${nnFailing} non-negotiable failing` : ""}`;
+      }
+    }
+
     if (raw === undefined || raw === null || !isFinite(raw)) continue;
 
     const indicatorId = randomUUID();
@@ -85,16 +123,30 @@ export async function captureIndicatorPointsForChecklistItem({
     const resolvedIndicatorId = existing[0]?.id;
     if (!resolvedIndicatorId) continue;
 
-    await prisma.$executeRaw`
+    const pointId = randomUUID();
+    const pointInsert = prisma.$executeRaw`
       INSERT INTO "FacilityIndicatorPoint" (
         id, "indicatorId", value, "capturedAt", source,
-        "sourceRefId", "capturedById", "createdAt"
+        "sourceRefId", note, "capturedById", "createdAt"
       ) VALUES (
-        ${randomUUID()}, ${resolvedIndicatorId}, ${raw},
+        ${pointId}, ${resolvedIndicatorId}, ${raw},
         NOW(), 'RP_ACTIVITY'::"FacilityIndicatorSource",
-        ${itemId}, ${capturedById}, NOW()
+        ${itemId}, ${note}, ${capturedById}, NOW()
       )
     `;
+    if (answerRows.length > 0) {
+      await prisma.$transaction([
+        pointInsert,
+        ...answerRows.map(
+          a => prisma.$executeRaw`
+            INSERT INTO "IndicatorPointAnswer" (id, "pointId", "itemDefId", answer, "createdAt")
+            VALUES (${randomUUID()}, ${pointId}, ${a.itemDefId}, ${a.answer}, NOW())
+          `
+        ),
+      ]);
+    } else {
+      await pointInsert;
+    }
   }
 }
 
