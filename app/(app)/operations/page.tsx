@@ -53,11 +53,13 @@ export default async function OperationsHomePage({
           {preview && <PreviewBanner name={preview.name} exitHref="/operations" />}
           <header className="flex items-start justify-between gap-3">
             <div>
-              <h1 className="text-lg font-semibold text-stone-900">Operations</h1>
+              <h1 className="text-lg font-semibold text-stone-900">
+                {preview ? "Operations" : "Where are you today?"}
+              </h1>
               <p className="text-sm text-stone-500 mt-0.5">
                 {preview
                   ? `${preview.name ?? "User"}'s clusters — pick one to preview.`
-                  : "Which cluster are you visiting today?"}
+                  : "Pick the cluster you're visiting."}
               </p>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
@@ -98,11 +100,11 @@ export default async function OperationsHomePage({
   const tiles = await loadOperationsHome([userId], { clusterId: selected.id });
 
   const clusterQ = `cluster=${encodeURIComponent(selected.id)}`;
-  const href = (key: string, lens?: "today" | "overdue") =>
+  const href = (key: string, lens?: "visit" | "overdue") =>
     withParams(`/operations/${encodeURIComponent(key)}`, [lens ? `lens=${lens}` : "", clusterQ].filter(Boolean));
 
-  const todayTiles = tiles.filter((t) => t.today > 0).sort((a, b) => b.today - a.today);
-  const overdueTiles = tiles.filter((t) => t.overdue > 0).sort((a, b) => b.overdue - a.overdue);
+  const needsVisitTiles = tiles.filter((t) => t.needsVisitCentres > 0).sort((a, b) => b.visitsToGo - a.visitsToGo);
+  const missedTiles = tiles.filter((t) => t.missedVisits > 0).sort((a, b) => b.missedVisits - a.missedVisits);
   const whose = preview ? `${preview.name ?? "User"}'s` : "Your";
 
   return (
@@ -129,23 +131,23 @@ export default async function OperationsHomePage({
           </div>
         </header>
 
-        <TileSection title="Today">
-          {todayTiles.length === 0 ? (
-            <CaughtUp label="Nothing due today." />
+        <TileSection title="Needs a visit this month">
+          {needsVisitTiles.length === 0 ? (
+            <CaughtUp label="Every centre visited this month." />
           ) : (
             <TileGrid>
-              {todayTiles.map((t) => (
-                <TileCard key={t.theme.key} tile={t} href={href(t.theme.key, "today")} count={t.today} tone="today" />
+              {needsVisitTiles.map((t) => (
+                <TileCard key={t.theme.key} tile={t} href={href(t.theme.key, "visit")} tone="visit" />
               ))}
             </TileGrid>
           )}
         </TileSection>
 
-        {overdueTiles.length > 0 && (
-          <TileSection title="Overdue">
+        {missedTiles.length > 0 && (
+          <TileSection title="Overdue · last month">
             <TileGrid>
-              {overdueTiles.map((t) => (
-                <TileCard key={t.theme.key} tile={t} href={href(t.theme.key, "overdue")} count={t.overdue} tone="overdue" />
+              {missedTiles.map((t) => (
+                <TileCard key={t.theme.key} tile={t} href={href(t.theme.key, "overdue")} tone="overdue" />
               ))}
             </TileGrid>
           </TileSection>
@@ -218,13 +220,14 @@ function CaughtUp({ label }: { label: string }) {
 }
 
 function TileCard({
-  tile, href, count, tone,
+  tile, href, tone,
 }: {
   tile: ThemeTile;
   href: string;
-  count?: number;
-  tone: "today" | "overdue" | "overall";
+  tone: "visit" | "overdue" | "overall";
 }) {
+  const centres = (n: number) => `${n} centre${n === 1 ? "" : "s"}`;
+  const visits = (n: number) => `${n} visit${n === 1 ? "" : "s"}`;
   return (
     <Link
       href={href}
@@ -239,14 +242,26 @@ function TileCard({
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-stone-800 truncate">{tile.theme.label}</p>
         <p className="text-xs text-stone-500 mt-0.5">
-          {tone === "today" && <span className="text-sky-600 font-medium tabular-nums">{count} due today</span>}
-          {tone === "overdue" && <span className="text-amber-600 font-medium tabular-nums">{count} overdue</span>}
+          {tone === "visit" && (
+            <span className="text-sky-600 font-medium tabular-nums">
+              {centres(tile.needsVisitCentres)} · {visits(tile.visitsToGo)} to go
+            </span>
+          )}
+          {tone === "overdue" && (
+            <span className="text-amber-600 font-medium tabular-nums">
+              {visits(tile.missedVisits)} missed last month
+            </span>
+          )}
           {tone === "overall" && (
             <>
               {tile.settingUp > 0 && <span className="text-amber-600 font-medium">{tile.settingUp} setting up</span>}
               {tile.settingUp > 0 && tile.live > 0 && <span className="text-stone-300"> · </span>}
-              {tile.live > 0 && <span className="text-emerald-600 font-medium">{tile.live} live</span>}
-              {tile.settingUp === 0 && tile.live === 0 && <span>{tile.total} centre{tile.total === 1 ? "" : "s"}</span>}
+              {tile.live > 0 && (
+                <span className="text-emerald-600 font-medium">
+                  {tile.live} live{tile.monthRequired > 0 && <span className="text-stone-400 font-normal tabular-nums"> · {tile.monthDone}/{tile.monthRequired} visits</span>}
+                </span>
+              )}
+              {tile.settingUp === 0 && tile.live === 0 && <span>{centres(tile.total)}</span>}
             </>
           )}
         </p>

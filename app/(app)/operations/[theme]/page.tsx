@@ -27,8 +27,8 @@ export default async function OperationsThemePage({
   if (!ctx) redirect("/login");
   const userId = ctx.userId;
   const preview = ctx.viewingAs;
-  const lens: "today" | "overdue" | null =
-    lensParam === "today" ? "today" : lensParam === "overdue" ? "overdue" : null;
+  const lens: "visit" | "overdue" | null =
+    lensParam === "visit" ? "visit" : lensParam === "overdue" ? "overdue" : null;
 
   const { theme: themeParam } = await params;
   const key = decodeURIComponent(themeParam);
@@ -69,8 +69,8 @@ export default async function OperationsThemePage({
   // Lens views: a single flat list of the centres/geographies that carry work
   // in that bucket, each showing its count. No lens → the full lifecycle view.
   const lensCentres =
-    lens === "today" ? centres.filter((c) => c.today > 0)
-    : lens === "overdue" ? centres.filter((c) => c.overdue > 0)
+    lens === "visit" ? centres.filter((c) => c.cadence != null && c.cadence.done < c.cadence.required)
+    : lens === "overdue" ? centres.filter((c) => c.missedLastMonth > 0)
     : null;
 
   const settingUp = centres.filter((c) => c.phase.lifecycle === "setting_up");
@@ -94,24 +94,23 @@ export default async function OperationsThemePage({
           </h1>
           {lens && (
             <p className={`text-xs font-medium mt-0.5 ${lens === "overdue" ? "text-amber-700" : "text-sky-700"}`}>
-              {lens === "today" ? "Due today" : "Overdue"}
+              {lens === "visit" ? "Needs a visit this month" : "Overdue · last month"}
             </p>
           )}
         </div>
 
         {lensCentres ? (
           lensCentres.length === 0 ? (
-            <EmptyNote label={lens === "today" ? "Nothing due today in this programme." : "Nothing overdue in this programme."} />
+            <EmptyNote label={lens === "visit" ? "Every centre visited this month." : "Nothing missed last month."} />
           ) : (
-            <CentreGroup title={lens === "today" ? "Due today" : "Overdue"} count={lensCentres.length}>
+            <CentreGroup title={lens === "visit" ? "Needs a visit this month" : "Overdue · last month"} count={lensCentres.length}>
               {lensCentres.map((c) => (
                 <CountRow
                   key={c.goalId}
                   centre={c}
                   color={resolved.color}
                   href={rowHref(c)}
-                  count={lens === "today" ? c.today : c.overdue}
-                  tone={lens === "today" ? "today" : "overdue"}
+                  tone={lens === "visit" ? "visit" : "overdue"}
                 />
               ))}
             </CentreGroup>
@@ -163,14 +162,22 @@ function EmptyNote({ label }: { label: string }) {
 }
 
 function CountRow({
-  centre, color, href, count, tone,
+  centre, color, href, tone,
 }: {
   centre: CentreRow;
   color: string;
   href: string;
-  count: number;
-  tone: "today" | "overdue";
+  tone: "visit" | "overdue";
 }) {
+  // Visit lens: remaining visits this month (or "not visited" when none done yet).
+  // Overdue lens: last month's shortfall.
+  const remaining = centre.cadence ? centre.cadence.required - centre.cadence.done : 0;
+  const label =
+    tone === "overdue"
+      ? `${centre.missedLastMonth} missed`
+      : centre.cadence && centre.cadence.done === 0
+      ? "not visited"
+      : `${remaining} to go`;
   return (
     <Link href={href} className="group flex items-center gap-3 rounded-lg border border-stone-200 bg-white px-4 py-3 hover:border-stone-300 hover:shadow-sm transition-all">
       <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
@@ -178,6 +185,7 @@ function CountRow({
         <p className="text-sm font-medium text-stone-800 truncate">{centre.name}</p>
         <CentreLocation centre={centre} />
       </div>
+      {tone === "visit" && centre.cadence && <Dots done={centre.cadence.done} total={centre.cadence.required} />}
       <span
         className={`text-[11px] font-semibold rounded-full px-2 py-0.5 tabular-nums flex-shrink-0 ${
           tone === "overdue"
@@ -185,7 +193,7 @@ function CountRow({
             : "text-sky-700 bg-sky-50 border border-sky-200"
         }`}
       >
-        {count} {tone === "overdue" ? "overdue" : "today"}
+        {label}
       </span>
       <ChevronRight className="w-4 h-4 text-stone-300 group-hover:text-stone-400 flex-shrink-0" />
     </Link>
@@ -219,6 +227,15 @@ function OverdueBadge({ n }: { n: number }) {
   return (
     <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-1.5 py-0.5 tabular-nums">
       {n} overdue
+    </span>
+  );
+}
+
+function MissedBadge({ n }: { n: number }) {
+  if (n <= 0) return null;
+  return (
+    <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-1.5 py-0.5 tabular-nums">
+      {n} missed last month
     </span>
   );
 }
@@ -257,6 +274,13 @@ function LiveRow({ centre, color, href }: { centre: CentreRow; color: string; hr
   const done = useCadence ? centre.cadence!.done : centre.month.done;
   const total = useCadence ? centre.cadence!.required : centre.month.total;
   const behind = useCadence && total > 0 && done < total;
+  // Monthly-rhythm language for cadence centres: Not visited → N/M visits → Visited.
+  const label = !useCadence
+    ? (total > 0 ? `${done}/${total}` : "—")
+    : total === 0 ? "—"
+    : done === 0 ? "Not visited"
+    : done >= total ? "Visited"
+    : `${done}/${total} visits`;
   return (
     <Link href={href} className="group flex items-center gap-3 rounded-lg border border-stone-200 bg-white px-4 py-3 hover:border-stone-300 hover:shadow-sm transition-all">
       <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
@@ -264,13 +288,13 @@ function LiveRow({ centre, color, href }: { centre: CentreRow; color: string; hr
         <p className="text-sm font-medium text-stone-800 truncate">{centre.name}</p>
         <div className="flex items-center gap-2 mt-0.5">
           <CentreLocation centre={centre} />
-          <OverdueBadge n={centre.overdue} />
+          <MissedBadge n={centre.missedLastMonth} />
         </div>
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">
         <Dots done={done} total={total} />
-        <span className={`text-[11px] tabular-nums ${behind ? "text-amber-600 font-medium" : "text-stone-400"}`}>
-          {total > 0 ? `${done}/${total}${useCadence ? " visits" : ""}` : "—"}
+        <span className={`text-[11px] tabular-nums ${behind ? "text-amber-600 font-medium" : done >= total && useCadence && total > 0 ? "text-emerald-600 font-medium" : "text-stone-400"}`}>
+          {label}
         </span>
       </div>
       <ChevronRight className="w-4 h-4 text-stone-300 group-hover:text-stone-400 flex-shrink-0" />

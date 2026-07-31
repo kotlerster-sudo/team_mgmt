@@ -9,8 +9,10 @@
 
 import prisma from "@/lib/prisma";
 import { goalOwnedByAnyOf } from "@/lib/ownership";
+import { resolveCadence } from "@/lib/catalogDb";
 import { deriveCentrePhase, type PhasePitstop } from "./phase";
 import { goalInClusterFilter } from "./clusters";
+import { monthBounds, prevMonthBounds, requiredVisitsForMonth, doneVisitsByGoal } from "./month";
 import { loadThemeCatalog, loadLayerToDomain, resolveGoalThemeKey, indexThemes, type ThemeDef } from "./themes";
 
 export type ThemeTile = {
@@ -19,11 +21,30 @@ export type ThemeTile = {
   live: number;
   done: number;
   total: number;
-  /** Activities scheduled today across this theme's centres. */
-  today: number;
-  /** Non-Done activities scheduled before today across this theme's centres. */
-  overdue: number;
+  /** Live centres in this theme that are below their required visits this month. */
+  needsVisitCentres: number;
+  /** Sum of remaining visits (required − done) across those centres. */
+  visitsToGo: number;
+  /** Visits completed this month across this theme's live centres. */
+  monthDone: number;
+  /** Visits required this month across this theme's live centres. */
+  monthRequired: number;
+  /** Live centres that fell short of their cadence last month. */
+  missedCentres: number;
+  /** Sum of last month's cadence shortfall across those centres. */
+  missedVisits: number;
 };
+
+type MonthAgg = {
+  settingUp: number; live: number; done: number; total: number;
+  needsVisitCentres: number; visitsToGo: number;
+  monthDone: number; monthRequired: number;
+  missedCentres: number; missedVisits: number;
+};
+const emptyAgg = (): MonthAgg => ({
+  settingUp: 0, live: 0, done: 0, total: 0,
+  needsVisitCentres: 0, visitsToGo: 0, monthDone: 0, monthRequired: 0, missedCentres: 0, missedVisits: 0,
+});
 
 export async function loadOperationsHome(
   userIds: string[],
@@ -46,6 +67,7 @@ export async function loadOperationsHome(
         mode: true,
         needsDomain: true,
         linkedFacility: { select: { layerKey: true } },
+        centreCatalog: { select: { cadenceCount: true, cadencePeriod: true } },
         pitstops: {
           where: { deletedAt: null },
           select: { id: true, status: true, recurrence: true, order: true, progressTag: true, title: true },
@@ -54,53 +76,39 @@ export async function loadOperationsHome(
     }),
   ]);
 
-  // Today + overdue event counts per goal (scheduledAt-based, so the tile totals
-  // match what the theme portal sums per centre). One query for the whole set.
-  const pitstopToGoal = new Map<string, string>();
-  for (const g of goals) for (const p of g.pitstops) pitstopToGoal.set(p.id, g.id);
-  const pitstopIds = [...pitstopToGoal.keys()];
-  const todayByGoal = new Map<string, number>();
-  const overdueByGoal = new Map<string, number>();
-  if (pitstopIds.length > 0) {
-    const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date(now); todayEnd.setHours(23, 59, 59, 999);
-    // Month-based overdue: work is only overdue once its whole month has passed.
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-    const events = await prisma.pitstopEvent.findMany({
-      where: {
-        deletedAt: null,
-        status: { not: "Cancelled" },
-        scheduledAt: { lte: todayEnd },
-        pitstops: { some: { pitstopId: { in: pitstopIds } } },
-      },
-      select: { status: true, scheduledAt: true, pitstops: { select: { pitstopId: true } } },
-    });
-    for (const e of events) {
-      const goalIds = new Set<string>();
-      for (const link of e.pitstops) { const gid = pitstopToGoal.get(link.pitstopId); if (gid) goalIds.add(gid); }
-      const isToday = e.scheduledAt >= todayStart && e.scheduledAt <= todayEnd;
-      const isOverdue = e.scheduledAt < monthStart && e.status !== "Done";
-      for (const gid of goalIds) {
-        if (isToday) todayByGoal.set(gid, (todayByGoal.get(gid) ?? 0) + 1);
-        if (isOverdue) overdueByGoal.set(gid, (overdueByGoal.get(gid) ?? 0) + 1);
-      }
-    }
-  }
+  // Monthly visit cadence per live centre — visits done this month + last month, so the tile
+  // reflects the monthly rhythm (needs-a-visit / missed-last-month), matching the theme portal.
+  const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 15);
+  const liveGoalIds = goals.filter((g) => g.mode === "live").map((g) => g.id);
+  const [doneThis, doneLast] = await Promise.all([
+    doneVisitsByGoal(liveGoalIds, monthBounds(now)),
+    doneVisitsByGoal(liveGoalIds, prevMonthBounds(now)),
+  ]);
 
   const themeIndex = indexThemes(catalog);
-  const buckets = new Map<string, { settingUp: number; live: number; done: number; total: number; today: number; overdue: number }>();
+  const buckets = new Map<string, MonthAgg>();
 
   for (const g of goals) {
     const key = resolveGoalThemeKey(g, layerToDomain);
     if (!key) continue;
     const phase = deriveCentrePhase(g.pitstops as PhasePitstop[], { mode: g.mode });
-    const b = buckets.get(key) ?? { settingUp: 0, live: 0, done: 0, total: 0, today: 0, overdue: 0 };
+    const b = buckets.get(key) ?? emptyAgg();
     b.total += 1;
     if (phase.lifecycle === "setting_up") b.settingUp += 1;
     else if (phase.lifecycle === "live") b.live += 1;
     else b.done += 1;
-    b.today += todayByGoal.get(g.id) ?? 0;
-    b.overdue += overdueByGoal.get(g.id) ?? 0;
+
+    if (g.mode === "live") {
+      const cadence = resolveCadence(g.centreCatalog, null);
+      const required = requiredVisitsForMonth(cadence, now);
+      const requiredLast = requiredVisitsForMonth(cadence, lastMonthDate);
+      const done = doneThis.get(g.id) ?? 0;
+      const missed = Math.max(0, requiredLast - (doneLast.get(g.id) ?? 0));
+      b.monthDone += done;
+      b.monthRequired += required;
+      if (required > done) { b.needsVisitCentres += 1; b.visitsToGo += required - done; }
+      if (missed > 0) { b.missedCentres += 1; b.missedVisits += missed; }
+    }
     buckets.set(key, b);
   }
 
