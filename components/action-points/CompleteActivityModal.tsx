@@ -137,19 +137,33 @@ export function CompleteActivityModal({
     setSubmitting(true);
     setErr(null);
 
-    // Tick-list gating: each checklist must be fully answered or fully
-    // untouched — a partial checklist would make the /N score ambiguous.
+    // Tick-list gating. A scored checklist is MANDATORY when the modal owns
+    // the close ("complete" mode): the activity can't be marked done until
+    // every item is answered — that's the whole point of a required safety
+    // check. In "post-complete" mode the activity was already closed by an
+    // upstream endpoint (Voice/Upload), so we can't force it — accept a
+    // fully-answered checklist or none. A partial checklist is always
+    // rejected (it would make the /N score ambiguous).
     const answersPayload: Record<string, Record<string, ChecklistCaptureAnswer>> = {};
     for (const b of bindings ?? []) {
       const items = b.checklistItems;
       if (!items || items.length === 0) continue;
       const perItem = checklistAnswers[b.numericField] ?? {};
       const answeredCount = items.filter(i => perItem[i.id] !== undefined).length;
-      if (answeredCount === 0) continue; // untouched → skip capture entirely
-      if (answeredCount < items.length) {
-        setErr(`Answer all ${items.length} items on "${b.defLabel}" or clear the checklist`);
-        setSubmitting(false);
-        return;
+      const fullyAnswered = answeredCount === items.length;
+      if (mode === "complete") {
+        if (!fullyAnswered) {
+          setErr(`Answer all ${items.length} items on "${b.defLabel}" before marking done`);
+          setSubmitting(false);
+          return;
+        }
+      } else {
+        if (answeredCount === 0) continue; // already closed + untouched → skip
+        if (!fullyAnswered) {
+          setErr(`Answer all ${items.length} items on "${b.defLabel}" or clear the checklist`);
+          setSubmitting(false);
+          return;
+        }
       }
       const clean: Record<string, ChecklistCaptureAnswer> = {};
       for (const i of items) clean[i.id] = perItem[i.id]!;
@@ -267,7 +281,11 @@ export function CompleteActivityModal({
                 <Gauge className="w-3 h-3 text-stone-400" />
                 Indicators ({bindings.length})
               </h3>
-              <p className="text-[11px] text-stone-400">Optional — fill what you observed</p>
+              <p className="text-[11px] text-stone-400">
+                {mode === "complete" && bindings.some(b => b.checklistItems && b.checklistItems.length > 0)
+                  ? "Checklist required to mark done"
+                  : "Optional — fill what you observed"}
+              </p>
             </div>
             <div className="space-y-1.5">
               {bindings.map(b => (

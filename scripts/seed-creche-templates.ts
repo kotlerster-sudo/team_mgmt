@@ -208,7 +208,10 @@ const existingCrechePitstops: Pitstop[] = [
       item("Monthly Visit Conducted", "Field visit notes", "Voice"),
       item("Caregiver conduct observed in each creche", "Caregiver observations", "Voice"),
       item("Child nutrition records reviewed", "Nutrition record review", "Voice"),
-      item("Hygiene and safety standards checked against 24-point checklist", "24-point safety check", "Upload"),
+      // Mark-done ("Activity") so completion routes through CompleteActivityModal
+      // where the 24-point safety tick-list is required. The structured checklist
+      // is the evidence (replaces the old photo upload).
+      item("Hygiene and safety standards checked against 24-point checklist", "24-point safety check", "Activity"),
       item("Attendance register and child card records reviewed", "Attendance register notes", "Voice"),
       item("Growth monitoring data spot-checked (weight/height records up to date)", "Growth monitoring spot-check", "Voice"),
       item("Health referrals verified", "Referral verification notes", "Voice"),
