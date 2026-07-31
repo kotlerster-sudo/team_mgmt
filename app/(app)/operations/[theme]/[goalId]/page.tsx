@@ -13,6 +13,7 @@ import { CentreDetail } from "../../_shared/CentreDetail";
 import { CentrePlan } from "../../_shared/plan/CentrePlan";
 import { CatalogViewer } from "../../_shared/CatalogViewer";
 import { GoLiveButton } from "../../_shared/GoLiveButton";
+import { RevertToSetupButton } from "../../_shared/RevertToSetupButton";
 import { PreviewBanner } from "../../_shared/PreviewBanner";
 
 export const dynamic = "force-dynamic";
@@ -99,8 +100,17 @@ export default async function CentreDetailPage({
           <GoLiveButton goalId={goalId} />
         )}
 
-        {/* Live centre → show its visit catalog (read-only + add-item + Log-visit). */}
-        {catalog?.live && !preview && <CatalogViewer goalId={goalId} live={catalog.live} />}
+        {/* Live centre → show its visit catalog (cadence editor + add-item + Log-visit). */}
+        {catalog?.live && !preview && (
+          <div className="space-y-2">
+            <CatalogViewer goalId={goalId} live={catalog.live} readOnly={readOnly} />
+            {!readOnly && (
+              <div className="flex justify-end">
+                <RevertToSetupButton goalId={goalId} />
+              </div>
+            )}
+          </div>
+        )}
 
         {isSetup && plan ? (
           <CentrePlan plan={plan} />

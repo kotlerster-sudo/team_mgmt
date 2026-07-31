@@ -119,6 +119,56 @@ export async function setCentreLive(goalId: string): Promise<GoLiveResult> {
 }
 
 /**
+ * Revert a centre from live back to setup mode — the inverse of setCentreLive. Soft-deletes the
+ * dedicated recurring "Operations" anchor (so the visit rhythm/cadence stops and the centre no
+ * longer reads as live), and flips Goal.mode → "setup". The CentreCatalog snapshot + cadence are
+ * left frozen in place, so a later go-live restores instantly (a fresh anchor is created and the
+ * existing cadence is preserved). Idempotent.
+ */
+export async function setCentreSetup(goalId: string): Promise<{ goalId: string; revertedAnchorId: string | null }> {
+  const goal = await prisma.goal.findUnique({ where: { id: goalId }, select: { id: true, mode: true } });
+  if (!goal) throw new Error(`Goal ${goalId} not found`);
+
+  // Retire the visit anchor. Other recurring pitstops (template rhythms) are left untouched.
+  const anchor = await prisma.pitstop.findFirst({
+    where: { goalId, deletedAt: null, recurrence: { not: "None" }, title: OPERATIONS_PITSTOP_TITLE },
+    select: { id: true },
+    orderBy: { createdAt: "asc" },
+  });
+  if (anchor) {
+    await prisma.pitstop.update({ where: { id: anchor.id }, data: { deletedAt: new Date() } });
+  }
+
+  if (goal.mode !== "setup") {
+    await prisma.goal.update({ where: { id: goalId }, data: { mode: "setup" } });
+  }
+
+  return { goalId, revertedAnchorId: anchor?.id ?? null };
+}
+
+/**
+ * Update a live centre's visit cadence (per-centre override on its frozen CentreCatalog). Pass
+ * count=null (or period=null) to clear the cadence. Only valid once a centre is live (has a
+ * CentreCatalog); throws otherwise.
+ */
+export async function setCentreCadence(
+  goalId: string,
+  cadence: { count: number | null; period: "week" | "month" | null },
+): Promise<void> {
+  const cat = await prisma.centreCatalog.findUnique({ where: { goalId }, select: { id: true } });
+  if (!cat) throw new Error(`Centre ${goalId} has no catalog — take it live before setting cadence`);
+  // Clear both together: a count with no period (or vice-versa) is not a valid cadence.
+  const clear = cadence.count == null || cadence.period == null || cadence.count <= 0;
+  await prisma.centreCatalog.update({
+    where: { goalId },
+    data: {
+      cadenceCount: clear ? null : Math.floor(cadence.count!),
+      cadencePeriod: clear ? null : cadence.period,
+    },
+  });
+}
+
+/**
  * Auto-transition a setup centre to live when its setup work is finished. Called from the
  * pitstop-completion path. Fires only when: mode is still "setup", every non-recurring (setup)
  * pitstop is Done, and a domain catalog exists (the signal that this domain HAS a live phase).

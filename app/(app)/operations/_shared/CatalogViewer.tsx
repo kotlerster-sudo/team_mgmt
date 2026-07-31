@@ -3,8 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Repeat, Plus, Loader2, ClipboardList, MapPin } from "lucide-react";
+import { ChevronDown, Plus, Loader2, ClipboardList, MapPin } from "lucide-react";
 import type { CentreCatalogView } from "@/lib/operations/catalogView";
+import { CadenceEditor } from "./CadenceEditor";
 
 /**
  * Read-only visit catalog for a live centre, shown on the centre-detail page so the catalog
@@ -12,20 +13,21 @@ import type { CentreCatalogView } from "@/lib/operations/catalogView";
  * their source (added) and approval (pending). Includes a "Log a visit" entry into the tick
  * flow and an "Add item" control that works anytime (→ pending approval via the add-item route).
  */
-export function CatalogViewer({ goalId, live }: { goalId: string; live: NonNullable<CentreCatalogView["live"]> }) {
+export function CatalogViewer({ goalId, live, readOnly = false }: { goalId: string; live: NonNullable<CentreCatalogView["live"]>; readOnly?: boolean }) {
   const router = useRouter();
   const behind = live.monthRequired > 0 && live.monthDone < live.monthRequired;
 
   return (
     <section className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <h2 className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider flex items-center gap-1.5">
           <ClipboardList className="w-3.5 h-3.5" /> Visit catalog
         </h2>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3 flex-wrap">
+          <CadenceEditor goalId={goalId} count={live.cadence?.count ?? null} period={live.cadence?.period ?? null} readOnly={readOnly} />
           {live.cadence && (
             <span className={`inline-flex items-center gap-1 text-xs ${behind ? "text-amber-600 font-medium" : "text-stone-400"}`} title="Visits done / required this month">
-              <Repeat className="w-3.5 h-3.5" /> {live.monthDone}/{live.monthRequired} this month
+              {live.monthDone}/{live.monthRequired} this month
             </span>
           )}
           <Link
