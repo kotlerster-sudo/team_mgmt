@@ -170,7 +170,7 @@ export default function ImportBudgetClient({
           )}
 
           <div className="max-h-[460px] overflow-auto">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[560px] text-sm">
               <thead className="sticky top-0 bg-stone-50 text-stone-500 text-xs">
                 <tr>
                   <th className="text-left font-medium px-4 py-2">Description</th>

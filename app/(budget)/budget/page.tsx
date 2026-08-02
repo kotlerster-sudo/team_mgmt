@@ -66,7 +66,7 @@ export default async function BudgetCityLandingPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <h1 className="text-xl font-semibold text-stone-900">Budgets</h1>
         <Link href="/budget/dashboard" className="bg-sky-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-sky-700">
           Grant dashboard →

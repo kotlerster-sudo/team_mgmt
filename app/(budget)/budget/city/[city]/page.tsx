@@ -30,7 +30,7 @@ export default async function CityBudgetsPage({ params }: { params: Promise<{ ci
       <div className="mb-2">
         <Link href="/budget" className="text-xs text-stone-400 hover:text-stone-600">← All cities</Link>
       </div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <h1 className="text-xl font-semibold text-stone-900">{city} budgets</h1>
         <div className="flex gap-2">
           <Link href={`/budget/import${cityQ}`} className="border border-stone-300 text-stone-700 text-sm px-4 py-2 rounded-lg hover:bg-stone-50">
@@ -55,10 +55,10 @@ export default async function CityBudgetsPage({ params }: { params: Promise<{ ci
           const y3 = b.lines.reduce((s, l) => s + l.y1Total + l.y2Total + l.y3Total, 0);
           return (
             <div key={b.id} className="relative bg-white border border-stone-200 rounded-xl hover:border-sky-300 hover:shadow-sm transition-all">
-              <Link href={`/budget/${b.id}`} className="block px-5 py-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="flex items-center gap-2">
+              <Link href={`/budget/${b.id}`} className="block px-4 sm:px-5 py-4 pr-12">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-4">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium text-stone-900">{b.name}</span>
                       <span className={`text-xs px-2 py-0.5 rounded-full ${b.status === "approved" ? "bg-emerald-100 text-emerald-700" : b.status === "final" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
                         {b.status === "approved" ? "Approved" : b.status === "final" ? "Finalized" : "Draft"}
@@ -74,7 +74,7 @@ export default async function CityBudgetsPage({ params }: { params: Promise<{ ci
                       ))}
                     </div>
                   </div>
-                  <div className="text-right shrink-0 pr-14">
+                  <div className="sm:text-right shrink-0 sm:pr-14">
                     <div className="text-sm font-semibold text-stone-900">{fmt(y1)}<span className="text-stone-400 font-normal">/yr</span></div>
                     {b.years === 3 && <div className="text-xs text-stone-400">{fmt(y3)} total (3yr)</div>}
                   </div>

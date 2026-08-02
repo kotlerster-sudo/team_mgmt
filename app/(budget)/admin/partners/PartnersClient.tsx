@@ -79,7 +79,7 @@ export default function PartnersClient({ partners, candidates = [] }: { partners
             <div className="overflow-hidden rounded-xl border border-stone-200 bg-white divide-y divide-stone-100">
               {rows.map((p) => (
                 <div key={p.id} className="px-4 py-2.5">
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                     {editing === p.id ? (
                       <>
                         <input value={editName} onChange={(e) => setEditName(e.target.value)} className="flex-1 rounded border border-stone-300 px-2 py-1 text-sm" />
@@ -99,7 +99,7 @@ export default function PartnersClient({ partners, candidates = [] }: { partners
                     )}
                   </div>
                   {/* Login link */}
-                  <div className="mt-1.5 flex items-center gap-2 text-xs">
+                  <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
                     {p.loginEmail ? (
                       <>
                         <span className="text-stone-400">Login:</span>
@@ -108,7 +108,7 @@ export default function PartnersClient({ partners, candidates = [] }: { partners
                       </>
                     ) : linking === p.id ? (
                       <>
-                        <input list="partner-accounts" value={linkEmail} onChange={(e) => setLinkEmail(e.target.value)} placeholder="partner account email" className="rounded border border-stone-300 px-2 py-1 text-xs w-56" />
+                        <input list="partner-accounts" value={linkEmail} onChange={(e) => setLinkEmail(e.target.value)} placeholder="partner account email" className="rounded border border-stone-300 px-2 py-1 text-xs w-full sm:w-56" />
                         <button disabled={pending || !linkEmail.trim()} onClick={() => run(async () => { await linkGrantPartnerLogin(p.id, linkEmail); setLinking(null); setLinkEmail(""); })} className="text-sky-600 hover:underline">Link</button>
                         <button onClick={() => { setLinking(null); setLinkEmail(""); }} className="text-stone-400">Cancel</button>
                       </>

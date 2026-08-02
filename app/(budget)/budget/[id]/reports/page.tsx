@@ -84,8 +84,8 @@ export default async function BudgetReportsPage({ params }: { params: Promise<{ 
                 const overdue = slot.status === "pending" && new Date(slot.dueDate) < new Date();
 
                 return (
-                  <div key={slot.id} className="bg-white border border-stone-200 rounded-xl px-5 py-4 flex items-center justify-between gap-4">
-                    <div>
+                  <div key={slot.id} className="bg-white border border-stone-200 rounded-xl px-4 sm:px-5 py-4 flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-medium text-stone-900">
                           {fmtDate(slot.periodFrom)} – {fmtDate(slot.periodTo)}

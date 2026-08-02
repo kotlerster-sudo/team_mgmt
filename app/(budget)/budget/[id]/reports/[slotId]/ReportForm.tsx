@@ -407,8 +407,8 @@ export default function ReportForm({
             return (
               <div key={sec}>
                 <h3 className="text-xs font-semibold text-stone-400 uppercase tracking-wide mb-2">{SECTION_LABELS[sec]}</h3>
-                <div className="bg-white border border-stone-200 rounded-xl overflow-hidden">
-                  <table className="w-full text-sm">
+                <div className="bg-white border border-stone-200 rounded-xl overflow-x-auto">
+                  <table className="w-full min-w-[860px] text-sm">
                     <thead className="bg-stone-50 border-b border-stone-200">
                       <tr>
                         <th className="text-left px-4 py-2.5 font-medium text-stone-500 text-xs">Line item</th>
@@ -515,8 +515,8 @@ export default function ReportForm({
       {/* Budget head summary */}
       <section>
         <h2 className="text-base font-semibold text-stone-800 mb-4">Budget head summary</h2>
-        <div className="bg-white border border-stone-200 rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="bg-white border border-stone-200 rounded-xl overflow-x-auto">
+          <table className="w-full min-w-[720px] text-sm">
             <thead className="bg-stone-50 border-b border-stone-200">
               <tr>
                 <th className="text-left px-4 py-2.5 font-medium text-stone-500 text-xs">Budget head</th>
@@ -810,7 +810,7 @@ export default function ReportForm({
       {/* FD details schedule */}
       {(canEdit || fds.length > 0) && (
         <section>
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex flex-wrap items-center justify-between gap-y-2 mb-3">
             <div>
               <h2 className="text-base font-semibold text-stone-800">Fixed deposit details</h2>
               <p className="text-xs text-stone-400 mt-0.5">One row per FD held during the period. The FD balance in the reconciliation above is the sum of closing balances.</p>
@@ -885,7 +885,7 @@ export default function ReportForm({
       {/* Reallocation requests */}
       {(canEdit || reallocRequests.length > 0) && (
         <section>
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-wrap items-center justify-between gap-y-2 mb-4">
             <div>
               <h2 className="text-base font-semibold text-stone-800">Reallocation requests</h2>
               <p className="text-xs text-stone-400 mt-0.5">Request budget reallocation from one line to another</p>

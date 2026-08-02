@@ -67,8 +67,8 @@ export default function PartnerBudgetHome({ budgets, linked }: { budgets: Budget
                     {g.slots.map(s => {
                       const overdue = s.status === "pending" && new Date(s.dueDate).getTime() < now;
                       return (
-                        <div key={s.id} className="bg-white border border-stone-200 rounded-xl px-5 py-4 flex items-center justify-between gap-4">
-                          <div>
+                        <div key={s.id} className="bg-white border border-stone-200 rounded-xl px-4 sm:px-5 py-4 flex flex-wrap items-center justify-between gap-3">
+                          <div className="min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-sm font-medium text-stone-900">{fmtDate(s.periodFrom)} – {fmtDate(s.periodTo)}</span>
                               <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[s.status]}`}>{STATUS_LABEL[s.status]}</span>
@@ -102,9 +102,9 @@ export default function PartnerBudgetHome({ budgets, linked }: { budgets: Budget
                 const done = b.reportSlots.filter(s => s.status === "approved").length;
                 return (
                   <Link key={b.id} href={`/budget/${b.id}/reports`}
-                    className="block bg-white border border-stone-200 rounded-xl px-5 py-4 hover:border-sky-300 hover:shadow-sm transition-all">
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
+                    className="block bg-white border border-stone-200 rounded-xl px-4 sm:px-5 py-4 hover:border-sky-300 hover:shadow-sm transition-all">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="min-w-0">
                         <div className="text-sm font-medium text-stone-900">{b.name}</div>
                         <div className="text-xs text-stone-400 mt-0.5">{b.city}{b.reportConfig ? ` · ${b.reportConfig.frequency.replace("_", "-")} reporting` : ""}</div>
                       </div>

@@ -169,7 +169,7 @@ function CadencePicker({
               key={m}
               type="button"
               onClick={() => toggleMonth(m)}
-              className={`text-[10px] px-1.5 py-0.5 rounded border ${
+              className={`text-xs px-2 py-1 min-h-8 min-w-8 inline-flex items-center justify-center rounded border ${
                 plannedMonths.includes(m)
                   ? "bg-sky-600 text-white border-sky-600"
                   : "bg-white text-stone-500 border-stone-300 hover:bg-stone-50"
@@ -494,8 +494,8 @@ export default function BudgetEditor({ budget }: { budget: Budget }) {
 
       {/* Grand total bar */}
       {hasInputs && (
-        <div className="bg-sky-50 border border-sky-200 rounded-xl px-5 py-4 mb-6 flex flex-wrap gap-6 items-start">
-          <div className="self-center text-xs font-semibold text-sky-700 uppercase tracking-wide min-w-[100px]">
+        <div className="bg-sky-50 border border-sky-200 rounded-xl px-4 sm:px-5 py-4 mb-6 flex flex-wrap gap-x-6 gap-y-3 items-start">
+          <div className="self-center w-full sm:w-auto text-xs font-semibold text-sky-700 uppercase tracking-wide sm:min-w-[100px]">
             {grandTotalLabel}
           </div>
           {bands.map(b => (
@@ -642,7 +642,8 @@ export default function BudgetEditor({ budget }: { budget: Budget }) {
                             {editingThis ? (
                               <div className="mb-4">
                                 <div className="text-xs font-semibold text-stone-500 mb-1.5">Edit working — components set this line’s unit cost</div>
-                                <table className="w-full text-xs max-w-2xl">
+                                <div className="overflow-x-auto">
+                                <table className="w-full min-w-[460px] text-xs max-w-2xl">
                                   <thead><tr className="text-stone-400"><th className="text-left py-1 font-medium">Item</th><th className="text-left font-medium">Spec</th><th className="text-right font-medium w-16">Qty</th><th className="text-right font-medium w-24">Unit ₹</th><th className="text-right font-medium w-24">Amount ₹</th><th className="w-6" /></tr></thead>
                                   <tbody>
                                     {wRows.map((r, idx) => (
@@ -662,6 +663,7 @@ export default function BudgetEditor({ budget }: { budget: Budget }) {
                                     </tr>
                                   </tbody>
                                 </table>
+                                </div>
                                 <div className="mt-2 max-w-2xl">
                                   <label className="text-xs text-stone-500">Derivation note (for rates that aren’t itemised)</label>
                                   <textarea value={wDeriv} onChange={e => setWDeriv(e.target.value)} rows={2} placeholder="e.g. average of 3 vendor quotes" className="mt-1 w-full text-xs border border-stone-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-sky-500" />
@@ -676,7 +678,8 @@ export default function BudgetEditor({ budget }: { budget: Budget }) {
                                 {w && w.components.length > 0 ? (
                                   <>
                                     <div className="text-xs font-semibold text-stone-500 mb-1.5">Working — how ₹{l.y1UnitCost.toLocaleString("en-IN")} is derived <span className="text-stone-400">{w.customised ? "(customised for this budget)" : w.frozen ? "(standard — frozen at generation)" : "(standard — from registry)"}</span></div>
-                                    <table className="w-full text-xs max-w-2xl">
+                                    <div className="overflow-x-auto">
+                                    <table className="w-full min-w-[420px] text-xs max-w-2xl">
                                       <thead><tr className="text-stone-400"><th className="text-left py-1 font-medium">Item</th><th className="text-left font-medium">Spec</th><th className="text-right font-medium">Qty</th><th className="text-right font-medium">Unit ₹</th><th className="text-right font-medium">Amount ₹</th></tr></thead>
                                       <tbody>
                                         {w.components.map((c, idx) => (
@@ -694,6 +697,7 @@ export default function BudgetEditor({ budget }: { budget: Budget }) {
                                         </tr>
                                       </tbody>
                                     </table>
+                                    </div>
                                   </>
                                 ) : (
                                   <div className="text-xs text-stone-400">No breakup recorded for this line yet.</div>
@@ -749,7 +753,7 @@ export default function BudgetEditor({ budget }: { budget: Budget }) {
                     value={newDesc}
                     onChange={e => setNewDesc(e.target.value)}
                     placeholder="Description"
-                    className="flex-1 min-w-48 border border-stone-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-sky-500"
+                    className="w-full sm:w-auto sm:flex-1 sm:min-w-48 border border-stone-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-sky-500"
                   />
                   <select value={newCostCat} onChange={e => setNewCostCat(e.target.value as InflationType)}
                     className="border border-stone-300 rounded px-2 py-1 text-xs focus:outline-none">
@@ -876,7 +880,7 @@ function ViewRow({ line, i, bands, showAlloc, onEdit, onDelete, onWorking, hasWo
           <span className="text-stone-800">{line.description}</span>
           <span className={`text-xs px-1.5 py-0.5 rounded ${INFLATION_BADGE[line.costCategory]}`}>{line.costCategory}</span>
           {hasWorking && (
-            <button onClick={onWorking} className={`text-[10px] px-1.5 py-0.5 rounded border ${isOwnWorking ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-sky-50 text-sky-600 border-sky-100"}`} title={isOwnWorking ? "Custom working on this budget" : "Standard working from the cost registry"}>
+            <button onClick={onWorking} className={`text-xs px-2 py-1 min-h-8 inline-flex items-center rounded border ${isOwnWorking ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-sky-50 text-sky-600 border-sky-100"}`} title={isOwnWorking ? "Custom working on this budget" : "Standard working from the cost registry"}>
               working{isOwnWorking ? " ✎" : ""}
             </button>
           )}

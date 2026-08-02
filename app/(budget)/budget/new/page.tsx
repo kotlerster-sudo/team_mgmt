@@ -140,7 +140,7 @@ export default async function NewBudgetPage({ searchParams }: { searchParams: Pr
 
   return (
     <div className="max-w-2xl mx-auto">
-      <div className="mb-6 flex items-start justify-between gap-4">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-stone-900">New Budget</h1>
           <p className="text-sm text-stone-500 mt-1">Select domains and enter programme scale to auto-generate a draft budget.</p>

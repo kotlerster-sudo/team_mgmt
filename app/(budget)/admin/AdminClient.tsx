@@ -294,7 +294,7 @@ function CostRegistryTab({ costs, isSeeded, city, domainOrder, domainLabels, nee
                 <div className="text-stone-800">
                   {formatKey(row.itemKey)}
                   {comps.length > 0 && (
-                    <button onClick={() => toggleExpand(row.itemKey)} className={`ml-2 text-[10px] px-1.5 py-0.5 rounded border ${reconciles ? "bg-sky-50 text-sky-600 border-sky-100" : "bg-red-50 text-red-600 border-red-200"}`}>
+                    <button onClick={() => toggleExpand(row.itemKey)} className={`ml-2 text-xs sm:text-[10px] px-1.5 py-0.5 rounded border ${reconciles ? "bg-sky-50 text-sky-600 border-sky-100" : "bg-red-50 text-red-600 border-red-200"}`}>
                       working · {comps.length}{reconciles ? "" : " ⚠"}
                     </button>
                   )}
@@ -303,8 +303,8 @@ function CostRegistryTab({ costs, isSeeded, city, domainOrder, domainLabels, nee
                 {row.notes && <div className="text-xs text-stone-400 mt-0.5">{row.notes}</div>}
                 {row.itemKey.startsWith("inp.") && (
                   row.needsDomain
-                    ? <span className="text-[10px] font-mono bg-sky-50 text-sky-600 border border-sky-100 px-1.5 py-0.5 rounded mt-0.5 inline-block">→ {row.needsDomain}</span>
-                    : <span className="text-[10px] text-stone-300 mt-0.5 inline-block">no needs domain</span>
+                    ? <span className="text-xs sm:text-[10px] font-mono bg-sky-50 text-sky-600 border border-sky-100 px-1.5 py-0.5 rounded mt-0.5 inline-block">→ {row.needsDomain}</span>
+                    : <span className="text-xs sm:text-[10px] text-stone-300 mt-0.5 inline-block">no needs domain</span>
                 )}
               </div>
             </div>
@@ -331,7 +331,8 @@ function CostRegistryTab({ costs, isSeeded, city, domainOrder, domainLabels, nee
                 wEditKey === row.itemKey ? (
                   <div className="mb-4">
                     <div className="text-xs font-semibold text-stone-500 mb-1.5">Edit working — components sum to the unit cost</div>
-                    <table className="w-full text-xs max-w-2xl">
+                    <div className="overflow-x-auto max-w-2xl">
+                    <table className="w-full min-w-[480px] text-xs">
                       <thead>
                         <tr className="text-stone-400">
                           <th className="text-left py-1 font-medium">Item</th>
@@ -363,6 +364,7 @@ function CostRegistryTab({ costs, isSeeded, city, domainOrder, domainLabels, nee
                         </tr>
                       </tbody>
                     </table>
+                    </div>
                     <div className="mt-2 max-w-2xl">
                       <label className="text-xs text-stone-500">Derivation note (for rates that aren’t itemised)</label>
                       <textarea value={wDeriv} onChange={e => setWDeriv(e.target.value)} rows={2} placeholder="e.g. average of 3 vendor quotes · ₹500/hr × 2 staff × 8 hrs"
@@ -378,7 +380,8 @@ function CostRegistryTab({ costs, isSeeded, city, domainOrder, domainLabels, nee
                     {comps.length > 0 ? (
                       <>
                         <div className="text-xs font-semibold text-stone-500 mb-1.5">Working — how ₹{row.currentCost.toLocaleString("en-IN")} is derived</div>
-                        <table className="w-full text-xs max-w-2xl">
+                        <div className="overflow-x-auto max-w-2xl">
+                        <table className="w-full min-w-[480px] text-xs">
                           <thead>
                             <tr className="text-stone-400">
                               <th className="text-left py-1 font-medium">Item</th>
@@ -406,6 +409,7 @@ function CostRegistryTab({ costs, isSeeded, city, domainOrder, domainLabels, nee
                             </tr>
                           </tbody>
                         </table>
+                        </div>
                       </>
                     ) : (
                       <div className="text-xs text-stone-400">No breakup recorded for this item yet.</div>
@@ -455,7 +459,7 @@ function CostRegistryTab({ costs, isSeeded, city, domainOrder, domainLabels, nee
 
   return (
     <>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-y-2 mb-4">
         <p className="text-sm text-stone-500">Unit costs used to auto-generate budgets. Changes apply to new budgets only.</p>
         <div className="flex items-center gap-3">
           {isSeeded && (
@@ -569,7 +573,7 @@ function CostRegistryTab({ costs, isSeeded, city, domainOrder, domainLabels, nee
 
       {/* Programme inputs — editable */}
       <div className="mt-8">
-        <div className="flex items-start justify-between mb-2">
+        <div className="flex flex-wrap items-start justify-between gap-y-2 mb-2">
           <div>
             <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide">Programme inputs</p>
             <p className="text-xs text-stone-400 mt-0.5">
@@ -1033,7 +1037,7 @@ function LineTemplatesTab({ templates, city, registryKeys, costs, domains }: {
 
   return (
     <>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-y-2 mb-4">
         <p className="text-sm text-stone-500">
           Line items generated for each new budget. Changes apply to newly created budgets only.
         </p>
@@ -1060,7 +1064,7 @@ function LineTemplatesTab({ templates, city, registryKeys, costs, domains }: {
           <p className="px-4 py-6 text-sm text-stone-400 text-center">No templates for this domain yet.</p>
         ) : (
           <div className="overflow-x-auto">
-          <table className="w-full sm:min-w-[640px] text-xs sm:text-sm">
+          <table className="w-full min-w-[640px] text-xs sm:text-sm">
             <thead>
               <tr className="border-b border-stone-100 bg-stone-50 text-xs text-stone-500">
                 <th className="w-6 px-2 py-2.5"></th>
@@ -1778,7 +1782,7 @@ function CostAnalysisTab({ templates, costs, domains, city, zones, cityBudgets }
     return (
       <div key={key} className="flex items-center justify-between text-xs py-0.5">
         <span className="text-stone-500">
-          {label} <span className="font-mono text-[10px] text-stone-300 ml-1">{key}</span>
+          {label} <span className="font-mono text-xs sm:text-[10px] text-stone-300 ml-1">{key}</span>
         </span>
         <span className="tabular-nums">
           <span className={isOverride ? "text-stone-400 line-through mr-2" : "text-stone-700 font-medium"}>
@@ -1800,7 +1804,7 @@ function CostAnalysisTab({ templates, costs, domains, city, zones, cityBudgets }
     const pct = ((you - std) / std) * 100;
     const cls = pct < 0 ? "text-emerald-600" : "text-red-500";
     const sym = pct > 0 ? "▲" : "▼";
-    return <span className={`text-[10px] ${cls} ml-1 tabular-nums`}>{sym}{Math.abs(pct).toFixed(0)}%</span>;
+    return <span className={`text-xs sm:text-[10px] ${cls} ml-1 tabular-nums`}>{sym}{Math.abs(pct).toFixed(0)}%</span>;
   };
 
   return (
@@ -1837,7 +1841,7 @@ function CostAnalysisTab({ templates, costs, domains, city, zones, cityBudgets }
           <label className="text-xs text-stone-500">Compare with budget:</label>
           <select value={compareBudgetId} onChange={e => onCompareChange(e.target.value)}
             disabled={comparePending}
-            className="text-xs border border-stone-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-sky-500 bg-white max-w-xs">
+            className="w-full sm:w-auto text-xs border border-stone-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-sky-500 bg-white max-w-full sm:max-w-xs">
             <option value="">— Standard only —</option>
             {cityBudgets.map(b => (
               <option key={b.id} value={b.id}>{b.name}</option>
@@ -1885,7 +1889,7 @@ function CostAnalysisTab({ templates, costs, domains, city, zones, cityBudgets }
 
       {/* Programme size assumptions — fully driven by displayGroup on each inp.* item */}
       <div className="mb-4 p-3 sm:p-4 bg-white border border-stone-200 rounded-xl space-y-4">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 gap-y-2">
           <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide">Programme size assumptions</p>
           {scenarioLabel && (
             <div className="flex items-center gap-2 shrink-0">
@@ -1897,7 +1901,7 @@ function CostAnalysisTab({ templates, costs, domains, city, zones, cityBudgets }
 
         {/* Scenario picker — collapsed by default; opens into the city/zone/cluster/settlement cascade. */}
         <details className="group rounded-lg border border-stone-200 bg-stone-50">
-          <summary className="cursor-pointer px-3 py-2 text-[11px] font-semibold text-stone-500 uppercase tracking-widest flex items-center justify-between">
+          <summary className="cursor-pointer px-3 py-2 text-[11px] font-semibold text-stone-500 uppercase tracking-widest flex flex-wrap items-center justify-between gap-y-1">
             <span>Load from geography</span>
             <span className="text-stone-400 group-open:hidden text-[10px] font-normal normal-case">click to load need / addressable / plan / gap from a zone, cluster, or settlement</span>
           </summary>
@@ -1920,7 +1924,7 @@ function CostAnalysisTab({ templates, costs, domains, city, zones, cityBudgets }
             {geoLevel !== "city" && (
               <select value={geoZoneId} onChange={e => handleZoneChange(e.target.value)}
                 disabled={cascadePending}
-                className="text-xs border border-stone-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-sky-500 bg-white">
+                className="w-full sm:w-auto text-xs border border-stone-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-sky-500 bg-white">
                 <option value="">— Zone —</option>
                 {zones.map(z => <option key={z.id} value={z.id}>{z.name}</option>)}
               </select>
@@ -1928,7 +1932,7 @@ function CostAnalysisTab({ templates, costs, domains, city, zones, cityBudgets }
             {(geoLevel === "cluster" || geoLevel === "settlement") && (
               <select value={geoClusterId} onChange={e => handleClusterChange(e.target.value)}
                 disabled={cascadePending || !geoZoneId}
-                className="text-xs border border-stone-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-sky-500 bg-white disabled:opacity-50">
+                className="w-full sm:w-auto text-xs border border-stone-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-sky-500 bg-white disabled:opacity-50">
                 <option value="">— Cluster —</option>
                 {clusterOptions.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
@@ -1936,13 +1940,13 @@ function CostAnalysisTab({ templates, costs, domains, city, zones, cityBudgets }
             {geoLevel === "settlement" && (
               <select value={geoSettlementId} onChange={e => setGeoSettlementId(e.target.value)}
                 disabled={cascadePending || !geoClusterId}
-                className="text-xs border border-stone-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-sky-500 bg-white disabled:opacity-50">
+                className="w-full sm:w-auto text-xs border border-stone-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-sky-500 bg-white disabled:opacity-50">
                 <option value="">— Settlement —</option>
                 {settlementOptions.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             )}
             <select value={scenarioMetric} onChange={e => setScenarioMetric(e.target.value as ScenarioMetric)}
-              className="text-xs border border-stone-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-sky-500 bg-white">
+              className="w-full sm:w-auto text-xs border border-stone-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-sky-500 bg-white">
               {(Object.entries(METRIC_LABELS) as [ScenarioMetric, string][]).map(([v, l]) => (
                 <option key={v} value={v}>{l}</option>
               ))}
@@ -1952,7 +1956,7 @@ function CostAnalysisTab({ templates, costs, domains, city, zones, cityBudgets }
               {loadPending ? "Loading…" : "Load"}
             </button>
           </div>
-          <p className="text-[10px] text-stone-400">
+          <p className="text-xs sm:text-[10px] text-stone-400">
             Only inputs linked to a needs domain via Cost Registry will be populated. Geography counts (settlements, clusters) are always updated.
           </p>
         </div>
@@ -2141,7 +2145,7 @@ function CostAnalysisTab({ templates, costs, domains, city, zones, cityBudgets }
               <h3 className="text-sm font-semibold text-stone-700">{g.label}</h3>
               <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-stone-400">
                 <span>Y1 <span className="font-medium text-stone-600">{fmtCost(effectiveGroupY1)}</span>
-                  {excludedHere > 0 && <span className="ml-1 text-[10px] text-amber-600">(−{fmtCost(excludedHere)} excluded)</span>}
+                  {excludedHere > 0 && <span className="ml-1 text-xs sm:text-[10px] text-amber-600">(−{fmtCost(excludedHere)} excluded)</span>}
                 </span>
                 {!compareData && <span>Y2 <span className="font-medium text-stone-600">{fmtCost(g.y2)}</span></span>}
                 {!compareData && <span>Y3 <span className="font-medium text-stone-600">{fmtCost(g.y3)}</span></span>}
@@ -2152,7 +2156,7 @@ function CostAnalysisTab({ templates, costs, domains, city, zones, cityBudgets }
             </div>
             <div className="bg-white border border-stone-200 rounded-xl overflow-hidden">
               <div className="overflow-x-auto">
-              <table className="w-full sm:min-w-[640px] text-xs sm:text-sm">
+              <table className="w-full min-w-[640px] text-xs sm:text-sm">
                 <thead>
                   <tr className="border-b border-stone-100 bg-stone-50 text-xs text-stone-500">
                     <th className="text-left px-4 py-2 font-medium">Description</th>
@@ -2203,7 +2207,7 @@ function CostAnalysisTab({ templates, costs, domains, city, zones, cityBudgets }
                             <td className="px-4 py-2 text-stone-800">
                               <button onClick={() => canExpand && toggleLineExpand(lineKey)}
                                 disabled={!canExpand}
-                                className={`mr-1 inline-block w-3 text-[10px] ${canExpand ? "text-stone-400 hover:text-stone-700" : "text-stone-200 cursor-default"}`}
+                                className={`mr-1 inline-block w-3 text-xs sm:text-[10px] ${canExpand ? "text-stone-400 hover:text-stone-700" : "text-stone-200 cursor-default"}`}
                                 title={canExpand ? "Show formula" : "No formula breakdown"}>
                                 {canExpand ? (expanded ? "▾" : "▸") : "·"}
                               </button>
@@ -2270,7 +2274,7 @@ function CostAnalysisTab({ templates, costs, domains, city, zones, cityBudgets }
                         return (
                         <tr key={`orphan-${o.id}-${oi}`} className={`group border-b border-stone-50 hover:bg-sky-50/40 ${oExcluded ? "bg-stone-50/60" : "bg-sky-50/20"}`}>
                           <td className="px-4 py-2 text-stone-700">
-                            <span className="mr-1 inline-block w-3 text-[10px] text-stone-200" title="No standard template">·</span>
+                            <span className="mr-1 inline-block w-3 text-xs sm:text-[10px] text-stone-200" title="No standard template">·</span>
                             <span className={oExcluded ? "text-stone-400" : ""}>{o.description}</span>
                             {oExcluded
                               ? <span className="ml-2 text-[10px] uppercase tracking-widest text-stone-400">excluded</span>
@@ -2291,7 +2295,7 @@ function CostAnalysisTab({ templates, costs, domains, city, zones, cityBudgets }
                           <td className="px-3 py-2 text-right text-stone-300 tabular-nums">—</td>
                           <td className="px-3 py-2 text-right text-stone-300 tabular-nums">—</td>
                           <td className={`px-3 py-2 text-right font-medium tabular-nums ${yMutedCls}`}>{fmtCost(o.y1Total)}</td>
-                          <td className={`px-3 py-2 text-right text-[10px] tabular-nums ${oExcluded ? "text-stone-300" : "text-sky-600"}`}>{oExcluded ? "" : "new"}</td>
+                          <td className={`px-3 py-2 text-right text-xs sm:text-[10px] tabular-nums ${oExcluded ? "text-stone-300" : "text-sky-600"}`}>{oExcluded ? "" : "new"}</td>
                         </tr>
                         );
                       })}
@@ -2366,7 +2370,7 @@ function CostAnalysisTab({ templates, costs, domains, city, zones, cityBudgets }
               <p className="text-xs text-stone-400">Year 1</p>
               <p className="text-lg font-bold">{fmtCost(grand.y1 - totalExcludedStdY1)}</p>
               {totalExcludedStdY1 > 0 && (
-                <p className="text-[10px] text-amber-300">−{fmtCost(totalExcludedStdY1)} excluded</p>
+                <p className="text-xs sm:text-[10px] text-amber-300">−{fmtCost(totalExcludedStdY1)} excluded</p>
               )}
             </div>
             {compareData && (() => {
@@ -2450,7 +2454,7 @@ function DomainsTab({ domains, city, progInputKeys }: { domains: BudgetDomainCon
 
   return (
     <>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-y-2 mb-4">
         <p className="text-sm text-stone-500">
           Programme domains available when creating a budget. Changes apply immediately to new budgets.
         </p>

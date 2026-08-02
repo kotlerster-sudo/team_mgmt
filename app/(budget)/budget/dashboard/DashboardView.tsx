@@ -69,7 +69,7 @@ export default function DashboardView({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div>
           <Link href="/budget" className="text-xs text-stone-400 hover:text-stone-600">← Budgets</Link>
           <h1 className="text-xl font-semibold text-stone-900">Grant dashboard</h1>
@@ -78,7 +78,7 @@ export default function DashboardView({
       </div>
 
       {/* City tabs */}
-      <div className="flex gap-1 border-b border-stone-200">
+      <div className="flex gap-1 border-b border-stone-200 overflow-x-auto">
         {CITIES.map((c) => (
           <button key={c} onClick={() => setCity(c)}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${city === c ? "border-sky-600 text-sky-700" : "border-transparent text-stone-500 hover:text-stone-800"}`}>
@@ -110,8 +110,8 @@ export default function DashboardView({
       {/* Partner-wise */}
       <section>
         <h2 className="text-sm font-semibold text-stone-700 mb-2">By partner</h2>
-        <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
+          <table className="w-full min-w-[680px] text-sm">
             <thead className="bg-stone-50 text-xs text-stone-500">
               <tr>
                 <th className="px-4 py-2 text-left font-medium">Partner</th>
@@ -169,8 +169,8 @@ export default function DashboardView({
       {/* Domain-wise */}
       <section>
         <h2 className="text-sm font-semibold text-stone-700 mb-2">By domain</h2>
-        <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
+          <table className="w-full min-w-[600px] text-sm">
             <thead className="bg-stone-50 text-xs text-stone-500">
               <tr>
                 <th className="px-4 py-2 text-left font-medium">Domain</th>
@@ -198,12 +198,12 @@ export default function DashboardView({
 
       {/* Borrowings */}
       <section>
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex flex-wrap items-center justify-between gap-y-2 mb-2">
           <h2 className="text-sm font-semibold text-stone-700">Cross-grant borrowing</h2>
           <label className="text-xs text-stone-500">as of <input type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} className="ml-1 rounded border border-stone-300 px-2 py-1 text-xs" /></label>
         </div>
-        <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
+          <table className="w-full min-w-[760px] text-sm">
             <thead className="bg-stone-50 text-xs text-stone-500">
               <tr>
                 <th className="px-4 py-2 text-left font-medium">From grant (lender)</th>

@@ -286,7 +286,7 @@ export default function NewBudgetForm({
   };
 
   return (
-    <div className="bg-white border border-stone-200 rounded-xl p-6 space-y-6">
+    <div className="bg-white border border-stone-200 rounded-xl p-4 sm:p-6 space-y-6">
 
       {step === 1 && (
         <>
@@ -388,7 +388,7 @@ export default function NewBudgetForm({
                 );
               })}
             </div>
-            <div className="mt-2 flex items-center gap-2">
+            <div className="mt-2 flex flex-wrap items-center gap-2">
               <label className="text-xs text-stone-500">Custom (months, max 60):</label>
               <input type="number" min={1} max={60} value={customMonths}
                 onChange={e => {
@@ -407,7 +407,7 @@ export default function NewBudgetForm({
               </span>
             </div>
             {horizonMonths % 12 !== 0 && (
-              <div className="flex items-center gap-2 mt-2">
+              <div className="flex flex-wrap items-center gap-2 mt-2">
                 <span className="text-xs text-stone-500">Pro-rated stub:</span>
                 {(["end", "start"] as const).map(pos => (
                   <button key={pos} type="button" onClick={() => setPartialPosition(pos)}
@@ -503,14 +503,14 @@ export default function NewBudgetForm({
                   const isAdding = inlineNewPartnerFor === activePartnerIdx;
                   return (
                     <div className="flex flex-wrap items-end gap-3 bg-stone-50 rounded-lg p-3">
-                      <div className="flex flex-col gap-1">
+                      <div className="w-full sm:w-auto flex flex-col gap-1">
                         <span className="text-xs text-stone-500">Partner</span>
                         {isAdding ? (
-                          <div className="flex gap-1">
+                          <div className="flex flex-wrap gap-1">
                             <input type="text" autoFocus value={inlineNewPartnerName}
                               onChange={e => setInlineNewPartnerName(e.target.value)}
                               placeholder={`New partner (${city})`}
-                              className="w-48 border border-stone-300 rounded px-2 py-1 text-sm" />
+                              className="w-full sm:w-48 border border-stone-300 rounded px-2 py-1 text-sm" />
                             <button type="button" disabled={!inlineNewPartnerName.trim()}
                               onClick={() => createInlinePartner(activePartnerIdx)}
                               className="px-2 py-1 rounded bg-sky-600 text-white text-xs disabled:opacity-40">Add</button>
@@ -519,10 +519,10 @@ export default function NewBudgetForm({
                               className="px-2 py-1 text-xs text-stone-400">Cancel</button>
                           </div>
                         ) : (
-                          <div className="flex gap-1">
+                          <div className="flex flex-wrap gap-1">
                             <select value={partnerList[activePartnerIdx].grantPartnerId ?? ""}
                               onChange={e => pickPartner(activePartnerIdx, e.target.value)}
-                              className="w-48 border border-stone-300 rounded px-2 py-1 text-sm">
+                              className="w-full sm:w-48 border border-stone-300 rounded px-2 py-1 text-sm">
                               <option value="">Select partner…</option>
                               {options.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                             </select>

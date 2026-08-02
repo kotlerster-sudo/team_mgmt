@@ -85,12 +85,12 @@ export default function BorrowingsClient({ budgets, borrowings }: { budgets: Bud
           const outstanding = Math.max(0, b.amount - repaid);
           return (
             <div key={b.id} className="rounded-xl border border-stone-200 bg-white p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
                   <div className="text-sm font-medium text-stone-900">{b.fromBudget.name} <span className="text-stone-400">→</span> {b.toBudget.name}</div>
                   <div className="text-xs text-stone-500">{money(b.amount)} on {new Date(b.borrowedOn).toLocaleDateString("en-IN")}{b.reason ? ` · ${b.reason}` : ""}</div>
                 </div>
-                <div className="text-right">
+                <div className="sm:text-right">
                   <div className="text-sm font-semibold text-stone-900">{money(outstanding)} <span className="text-xs font-normal text-stone-400">outstanding</span></div>
                   <span className={`text-xs px-2 py-0.5 rounded-full ${b.status === "reimbursed" ? "bg-emerald-100 text-emerald-700" : b.status === "partially_reimbursed" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
                     {b.status === "partially_reimbursed" ? "partial" : b.status}
@@ -104,7 +104,7 @@ export default function BorrowingsClient({ budgets, borrowings }: { budgets: Bud
                   ))}
                 </div>
               )}
-              <div className="mt-2 flex items-center gap-3">
+              <div className="mt-2 flex flex-wrap items-center gap-3">
                 {repayFor === b.id
                   ? <RepayForm borrowingId={b.id} onDone={() => setRepayFor(null)} />
                   : outstanding > 0 && <button onClick={() => setRepayFor(b.id)} className="text-xs text-sky-600 hover:underline">+ Add repayment</button>}
@@ -124,7 +124,7 @@ function RepayForm({ borrowingId, onDone }: { borrowingId: string; onDone: () =>
   const [amount, setAmount] = useState("");
   const [on, setOn] = useState(today());
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <input type="number" placeholder="Amount" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-28 rounded border border-stone-300 px-2 py-1 text-xs" />
       <input type="date" value={on} onChange={(e) => setOn(e.target.value)} className="rounded border border-stone-300 px-2 py-1 text-xs" />
       <button disabled={pending || !amount} onClick={() => start(async () => { await addRepayment({ borrowingId, amount: Number(amount), repaidOn: on }); onDone(); })}

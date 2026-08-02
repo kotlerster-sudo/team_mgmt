@@ -118,9 +118,9 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
 
   return (
     <div>
-      <div className="flex items-center gap-3 mb-6">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-6">
         <Link href={`/budget/${budget.id}`} className="text-xs text-stone-400 hover:text-stone-700">← Back to budget</Link>
-        <span className="text-stone-300">|</span>
+        <span className="hidden sm:inline text-stone-300">|</span>
         <h1 className="text-lg font-semibold text-stone-900">{budget.name} — Cost Analysis</h1>
       </div>
 
@@ -189,7 +189,8 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
         <section>
           <h2 className="text-sm font-semibold text-stone-700 mb-3">Budget Head Breakdown</h2>
           <div className="bg-white border border-stone-200 rounded-xl overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[420px] text-sm">
               <thead>
                 <tr className="border-b border-stone-100 bg-stone-50 text-xs text-stone-500">
                   <th className="text-left px-4 py-2.5">Head</th>
@@ -219,7 +220,8 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
                 ))}
               </tbody>
             </table>
-            <div className="px-4 py-3 border-t border-stone-100 grid grid-cols-3 gap-3 bg-stone-50">
+            </div>
+            <div className="px-4 py-3 border-t border-stone-100 grid grid-cols-1 sm:grid-cols-3 gap-3 bg-stone-50">
               <MiniStat label="Salary %" value={gt1 > 0 ? `${(salaryTotal/gt1*100).toFixed(1)}%` : "–"} />
               <MiniStat label="Programme %" value={gt1 > 0 ? `${(programmeTotal/gt1*100).toFixed(1)}%` : "–"} />
               <MiniStat label="Admin %" value={gt1 > 0 ? `${(adminTotal/gt1*100).toFixed(1)}%` : "–"}

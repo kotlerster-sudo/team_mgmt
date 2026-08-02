@@ -135,9 +135,9 @@ export default function BudgetApprovalsClient({ budgets }: { budgets: Budget[] }
   const drafts = budgets.filter(b => b.status === "draft");
 
   const BudgetRow = ({ b }: { b: Budget }) => (
-    <div className="bg-white border border-stone-200 rounded-xl p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
+    <div className="bg-white border border-stone-200 rounded-xl p-4 sm:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-medium text-stone-900">{b.name}</span>
             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_BADGE[b.status]}`}>
