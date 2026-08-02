@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import NewBudgetForm from "./NewBudgetForm";
 import { refsInFormula } from "@/lib/formula/engine";
 import { ENUM_PICKERS, ENUM_MANAGED_INPUT_KEYS, type EnumPicker } from "@/lib/budget/inputEnumOptions";
+import { listGrantingUnits } from "@/lib/budget/grantingUnits";
 
 const FIXED_VARS = new Set(["fixed_1", "fixed_12", "cosTotal", ""]);
 
@@ -131,11 +132,14 @@ export default async function NewBudgetPage({ searchParams }: { searchParams: Pr
       ...inputMeta[k],
     }));
 
-  const partners = await prisma.grantPartner.findMany({
-    where: { isActive: true },
-    orderBy: { name: "asc" },
-    select: { id: true, name: true, city: true },
-  });
+  const [partners, units] = await Promise.all([
+    prisma.grantPartner.findMany({
+      where: { isActive: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, city: true },
+    }),
+    listGrantingUnits(),
+  ]);
   const cityQ = initialCity ? `?city=${encodeURIComponent(initialCity)}` : "";
 
   return (
@@ -152,7 +156,7 @@ export default async function NewBudgetPage({ searchParams }: { searchParams: Pr
           Import from Excel →
         </Link>
       </div>
-      <NewBudgetForm domains={domains} crossCuttingInputs={crossCuttingInputs} costItems={costItems} initialCity={initialCity} partners={partners} enumPickers={ENUM_PICKERS as EnumPicker[]} />
+      <NewBudgetForm domains={domains} crossCuttingInputs={crossCuttingInputs} costItems={costItems} initialCity={initialCity} units={units} partners={partners} enumPickers={ENUM_PICKERS as EnumPicker[]} />
     </div>
   );
 }

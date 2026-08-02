@@ -3,6 +3,7 @@
 import { auth } from "@/lib/auth";
 import { isBudgetAdminOrSuperAdmin } from "@/lib/roleGuard";
 import { requireBudgetAccess } from "@/lib/budget/budgetAccess";
+import { requireGrantingUnit } from "@/lib/budget/grantingUnits";
 import prisma from "@/lib/prisma";
 import { generateBudgetLines, DEFAULT_INFLATION_RATES, activeYearBands } from "@/lib/budget-generator";
 import type { BudgetSection, BudgetLineCadence, InflationType } from "@/app/generated/prisma/client";
@@ -100,15 +101,16 @@ export async function listGrantPartners(city: string) {
   });
 }
 
-/** Create-or-return a partner for a city (idempotent on the unique [city,name]). */
+/** Create-or-return a partner for a granting unit (idempotent on [grantingUnitId, name]). */
 export async function createGrantPartner(city: string, name: string): Promise<{ id: string; name: string }> {
   const session = await auth();
   if (!session?.user?.id) throw new Error("Not authenticated");
   const trimmed = name.trim();
   if (!trimmed) throw new Error("Partner name required");
+  const unit = await requireGrantingUnit(city);
   const gp = await prisma.grantPartner.upsert({
-    where: { city_name: { city, name: trimmed } },
-    create: { city, name: trimmed },
+    where: { grantingUnitId_name: { grantingUnitId: unit.id, name: trimmed } },
+    create: { city: unit.name, grantingUnitId: unit.id, name: trimmed },
     update: { isActive: true },
     select: { id: true, name: true },
   });
@@ -134,31 +136,29 @@ export async function toggleGrantPartner(id: string, isActive: boolean) {
   revalidatePath("/budget/admin/partners");
 }
 
-const PARTNER_CITIES = ["Bangalore", "Chennai", "Others"];
-
-/** Move a partner (and all its budgets) to another city. Keeps the
- *  partner↔budget city invariant intact by migrating both together. Refuses if a
- *  partner of the same name already lives in the target city (the [city,name]
- *  unique). Budget-admin/super-admin only. */
+/** Move a partner (and all its budgets) to another granting unit. Keeps the
+ *  partner↔budget invariant intact by migrating both together. Refuses if a
+ *  partner of the same name already lives in the target unit (the
+ *  [grantingUnitId, name] unique). Budget-admin/super-admin only. */
 export async function reassignGrantPartnerCity(partnerId: string, newCity: string): Promise<{ movedBudgets: number }> {
   const session = await auth();
   if (!isBudgetAdminOrSuperAdmin(session)) throw new Error("Forbidden");
-  const city = newCity.trim();
-  if (!PARTNER_CITIES.includes(city)) throw new Error("Unknown city");
+  const unit = await requireGrantingUnit(newCity.trim());
+  const city = unit.name;
 
   const gp = await prisma.grantPartner.findUnique({ where: { id: partnerId }, select: { name: true, city: true } });
   if (!gp) throw new Error("Partner not found");
   if (gp.city === city) return { movedBudgets: 0 };
 
   const clash = await prisma.grantPartner.findUnique({
-    where: { city_name: { city, name: gp.name } },
+    where: { grantingUnitId_name: { grantingUnitId: unit.id, name: gp.name } },
     select: { id: true },
   });
   if (clash) throw new Error(`A partner named "${gp.name}" already exists in ${city}. Rename or merge it there first.`);
 
   const movedBudgets = await prisma.$transaction(async (tx) => {
-    await tx.grantPartner.update({ where: { id: partnerId }, data: { city } });
-    const res = await tx.budget.updateMany({ where: { grantPartnerId: partnerId }, data: { city } });
+    await tx.grantPartner.update({ where: { id: partnerId }, data: { city, grantingUnitId: unit.id } });
+    const res = await tx.budget.updateMany({ where: { grantPartnerId: partnerId }, data: { city, grantingUnitId: unit.id } });
     return res.count;
   });
 
@@ -203,14 +203,15 @@ export async function unlinkGrantPartnerLogin(partnerId: string) {
 }
 
 /** One-way import: copy every active Settings → Partners org (Org kind="partner")
- *  into GrantPartner for the given city. Idempotent on [city, name]; existing
+ *  into GrantPartner for the given granting unit. Idempotent on
+ *  [grantingUnitId, name]; existing
  *  rows are left untouched (and reactivated if they were deactivated). Returns
  *  how many were newly created. */
 export async function importGrantPartnersFromOrgs(city: string): Promise<{ added: number; total: number }> {
   const session = await auth();
   if (!session?.user?.id) throw new Error("Not authenticated");
-  const trimmedCity = city.trim();
-  if (!trimmedCity) throw new Error("City required");
+  const unit = await requireGrantingUnit(city.trim());
+  const trimmedCity = unit.name;
 
   const orgs = await prisma.org.findMany({
     where: { kind: "partner", archivedAt: null },
@@ -223,11 +224,11 @@ export async function importGrantPartnersFromOrgs(city: string): Promise<{ added
     const name = o.name.trim();
     if (!name) continue;
     const existing = await prisma.grantPartner.findUnique({
-      where: { city_name: { city: trimmedCity, name } },
+      where: { grantingUnitId_name: { grantingUnitId: unit.id, name } },
       select: { id: true },
     });
     if (existing) continue;
-    await prisma.grantPartner.create({ data: { city: trimmedCity, name } });
+    await prisma.grantPartner.create({ data: { city: trimmedCity, grantingUnitId: unit.id, name } });
     added++;
   }
 
@@ -311,12 +312,12 @@ export async function createBudget(payload: CreateBudgetPayload) {
   // grantYear lookups, etc.). years = number of year-bands the horizon covers.
   const years = activeYearBands(horizonMonths);
 
-  // "Others" is a placeholder city for test / cross-city mock budgets — it has
-  // no CostRegistry or LineTemplate rows of its own. Fall back to Bangalore's
-  // (same fallback the new-budget form applies for domain visibility) so the
-  // generator produces non-zero lines. Budget.city itself still stores "Others"
-  // so the budget stays under the Others tab.
-  const sourceCity = payload.city === "Others" ? "Bangalore" : payload.city;
+  // A unit like "Others" has no CostRegistry or LineTemplate rows of its own;
+  // it generates from whichever standard set its `registryCity` points at, so
+  // the generator produces non-zero lines. Budget.city keeps the unit's own name
+  // so the budget stays under that unit's tab.
+  const unit = await requireGrantingUnit(payload.city);
+  const sourceCity = unit.registryCity;
   const [registryRows, templates] = await Promise.all([
     prisma.costRegistry.findMany({ where: { city: sourceCity } }),
     prisma.lineTemplate.findMany({ where: { city: sourceCity }, orderBy: { position: "asc" } }),
@@ -368,7 +369,7 @@ export async function createBudget(payload: CreateBudgetPayload) {
 
     const budget = await prisma.budget.create({
       data: {
-        name: payload.name, city: payload.city, partnerId: session.user.id,
+        name: payload.name, city: payload.city, grantingUnitId: unit.id, partnerId: session.user.id,
         grantPartnerId: payload.grantPartnerId ?? null,
         domains: payload.domains, years, horizonMonths, partialPosition,
         applyInflation: payload.applyInflation, costSnapshot, costOverrides,
@@ -413,6 +414,7 @@ export async function createBudget(payload: CreateBudgetPayload) {
     data: {
       name: payload.name,
       city: payload.city,
+      grantingUnitId: unit.id,
       partnerId: session.user.id,
       grantPartnerId: payload.grantPartnerId ?? null,
       domains: payload.domains,
@@ -502,11 +504,13 @@ export async function createBudgetFromImport(
   const years = activeYearBands(horizonMonths);
   const pi = parsed.inputs ?? {};
   const num = (k: string) => Math.round(Number(pi[k]) || 0);
+  const unit = await requireGrantingUnit(opts?.city?.trim() || parsed.city);
 
   const budget = await prisma.budget.create({
     data: {
       name: parsed.name,
-      city: opts?.city?.trim() || parsed.city,
+      city: unit.name,
+      grantingUnitId: unit.id,
       grantPartnerId: opts?.grantPartnerId ?? null,
       partnerId: session.user.id,
       domains: parsed.domains,

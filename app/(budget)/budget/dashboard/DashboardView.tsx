@@ -18,8 +18,6 @@ type Borrowing = {
   repayments: { amount: number; repaidOn: string }[];
 };
 
-const CITIES = ["All", "Bangalore", "Chennai", "Others"] as const;
-type CityTab = (typeof CITIES)[number];
 
 const money = (n: number) => (n >= 1e7 ? `₹${(n / 1e7).toFixed(2)} Cr` : n >= 1e5 ? `₹${(n / 1e5).toFixed(1)} L` : `₹${Math.round(n).toLocaleString("en-IN")}`);
 const pctStr = (u: number, a: number) => { const p = pct(u, a); return p === null ? "—" : `${p}%`; };
@@ -40,13 +38,15 @@ function UtilBar({ u, a }: { u: number; a: number }) {
 }
 
 export default function DashboardView({
-  grants, domainLabels, borrowings,
+  grants, domainLabels, borrowings, units,
 }: {
   grants: GrantRow[];
   domainLabels: Record<string, string>;
   borrowings: Borrowing[];
+  units: { id: string; name: string }[];
 }) {
-  const [city, setCity] = useState<CityTab>("All");
+  const tabs = ["All", ...units.map((u) => u.name)];
+  const [city, setCity] = useState<string>("All");
   const [openPartner, setOpenPartner] = useState<string | null>(null);
   const [asOf, setAsOf] = useState<string>(new Date().toISOString().slice(0, 10));
 
@@ -77,11 +77,11 @@ export default function DashboardView({
         <Link href="/budget/borrowings" className="text-sm text-sky-600 hover:underline">Manage borrowings →</Link>
       </div>
 
-      {/* City tabs */}
+      {/* Granting unit tabs */}
       <div className="flex gap-1 border-b border-stone-200 overflow-x-auto">
-        {CITIES.map((c) => (
+        {tabs.map((c) => (
           <button key={c} onClick={() => setCity(c)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${city === c ? "border-sky-600 text-sky-700" : "border-transparent text-stone-500 hover:text-stone-800"}`}>
+            className={`whitespace-nowrap px-4 py-2 text-sm font-medium border-b-2 -mb-px ${city === c ? "border-sky-600 text-sky-700" : "border-transparent text-stone-500 hover:text-stone-800"}`}>
             {c}
           </button>
         ))}

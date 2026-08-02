@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { buildBudgetWorkbook, type ExportLine } from "@/lib/budget/exportTemplate";
 import { extractCostComponents, type RegistryItem, type TemplateLike } from "@/lib/budget/costDriver";
 import { activeYearBands } from "@/lib/budget-generator";
+import { canAccessBudget } from "@/lib/budget/budgetAccess";
+import { resolveRegistryCity } from "@/lib/budget/grantingUnits";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -18,13 +20,15 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       deliveryPartners: { orderBy: { sortOrder: "asc" } },
     },
   });
-  if (!budget || budget.partnerId !== session.user.id) return new NextResponse("Not found", { status: 404 });
+  if (!(await canAccessBudget(session, budget, "read"))) return new NextResponse("Not found", { status: 404 });
+  if (!budget) return new NextResponse("Not found", { status: 404 });
 
   // Pull templates + cost registry so each programme line on the Working sheet
   // shows its cost-registry components and computes its unit cost from them.
-  // "Others" budgets are generated from Bangalore's registry/templates, so
-  // resolve the working against the same source city (matches createBudget).
-  const sourceCity = budget.city === "Others" ? "Bangalore" : budget.city;
+  // A unit with no registry/templates of its own generates from its
+  // registryCity, so resolve the working against the same source (matches
+  // createBudget).
+  const sourceCity = await resolveRegistryCity(budget.city);
   const [templates, registryRows] = await Promise.all([
     prisma.lineTemplate.findMany({
       where: { city: sourceCity },

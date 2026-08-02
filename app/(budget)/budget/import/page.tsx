@@ -3,17 +3,21 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import prisma from "@/lib/prisma";
 import ImportBudgetClient from "./ImportBudgetClient";
+import { listGrantingUnits } from "@/lib/budget/grantingUnits";
 
 export default async function ImportBudgetPage({ searchParams }: { searchParams: Promise<{ city?: string }> }) {
   const session = await auth();
   if (!session?.user?.id) redirect("/");
   const initialCity = (await searchParams).city;
 
-  const partners = await prisma.grantPartner.findMany({
-    where: { isActive: true },
-    orderBy: { name: "asc" },
-    select: { id: true, name: true, city: true },
-  });
+  const [partners, units] = await Promise.all([
+    prisma.grantPartner.findMany({
+      where: { isActive: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, city: true },
+    }),
+    listGrantingUnits(),
+  ]);
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-8">
@@ -25,7 +29,7 @@ export default async function ImportBudgetPage({ searchParams }: { searchParams:
         Upload a filled copy of a template that was <span className="font-medium">exported from this app</span>.
         We&apos;ll read the line items, units and costs you entered and pre-fill a new draft budget.
       </p>
-      <ImportBudgetClient initialCity={initialCity} partners={partners} />
+      <ImportBudgetClient initialCity={initialCity} units={units.map((u) => ({ id: u.id, name: u.name }))} partners={partners} />
     </div>
   );
 }

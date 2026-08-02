@@ -34,14 +34,14 @@ function initInputs(crossCutting: DomainInputField[], allDomains: DomainOption[]
   return init;
 }
 
-type CityName = "Bangalore" | "Chennai" | "Others";
-const CITY_NAMES: CityName[] = ["Bangalore", "Chennai", "Others"];
+type UnitOption = { id: string; name: string; registryCity: string };
 
 export default function NewBudgetForm({
   domains: allDomains = [],
   crossCuttingInputs: allCrossCutting = [],
   costItems = [],
   initialCity,
+  units = [],
   partners = [],
   enumPickers = [],
 }: {
@@ -49,15 +49,17 @@ export default function NewBudgetForm({
   crossCuttingInputs?: DomainInputField[];
   costItems?: CostItem[];
   initialCity?: string;
+  units?: UnitOption[];
   partners?: { id: string; name: string; city: string }[];
   enumPickers?: EnumPicker[];
 }) {
   const effectiveDomains     = allDomains.length > 0     ? allDomains     : FALLBACK_DOMAINS;
   const effectiveCrossCutting = allCrossCutting.length > 0 ? allCrossCutting : FALLBACK_CROSS_CUTTING;
 
+  const unitNames = units.map(u => u.name);
   const [step, setStep]       = useState<1 | 2>(1);
-  const [city, setCity]       = useState<CityName>(
-    (CITY_NAMES as string[]).includes(initialCity ?? "") ? (initialCity as CityName) : "Bangalore",
+  const [city, setCity]       = useState<string>(
+    unitNames.includes(initialCity ?? "") ? (initialCity as string) : (unitNames[0] ?? "Bangalore"),
   );
   const [allPartners, setAllPartners] = useState(partners);
   const [grantPartnerId, setGrantPartnerId] = useState<string>("");
@@ -135,8 +137,10 @@ export default function NewBudgetForm({
   const [costOverrides, setCostOverrides] = useState<Record<string, number>>({});
   const [pending, startTransition] = useTransition();
 
-  // "Others" has no domain configs of its own — fall back to Bangalore's set.
-  const cityDomains = effectiveDomains.filter(d => d.city === (city === "Others" ? "Bangalore" : city));
+  // A unit with no domain configs of its own generates from whichever standard
+  // set its registryCity points at (e.g. "Others" → Bangalore).
+  const registryCity = units.find(u => u.name === city)?.registryCity ?? city;
+  const cityDomains = effectiveDomains.filter(d => d.city === registryCity);
   const cityPartners = allPartners.filter(p => p.city === city);
 
   // Cross-cutting inputs only show when at least one of their consuming domains
@@ -298,17 +302,17 @@ export default function NewBudgetForm({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-stone-700 mb-2">City</label>
-            <div className="flex gap-3">
-              {CITY_NAMES.map(c => (
+            <label className="block text-sm font-medium text-stone-700 mb-2">Granting unit</label>
+            <div className="flex flex-wrap gap-3">
+              {unitNames.map(c => (
                 <button key={c} type="button"
                   onClick={() => {
                     setCity(c); setSelectedDomains(new Set()); setGrantPartnerId("");
-                    // Wrong-city registry links must be dropped when city flips.
+                    // Wrong-unit registry links must be dropped when the unit flips.
                     setPartnerList(prev => prev.map(p => ({ ...p, grantPartnerId: null, name: "" })));
                     setInlineNewPartnerFor(null); setInlineNewPartnerName("");
                   }}
-                  className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-all ${city === c ? "border-sky-500 bg-sky-50 text-sky-700" : "border-stone-200 text-stone-700 hover:border-stone-300"}`}>
+                  className={`flex-1 min-w-[7rem] py-2 rounded-lg border text-sm font-medium transition-all ${city === c ? "border-sky-500 bg-sky-50 text-sky-700" : "border-stone-200 text-stone-700 hover:border-stone-300"}`}>
                   {c}
                 </button>
               ))}

@@ -5,8 +5,7 @@ import { auth } from "@/lib/auth";
 import { isPartner } from "@/lib/roleGuard";
 import { getPartnerAccess } from "@/lib/budget/partnerAccess";
 import PartnerBudgetHome from "./PartnerBudgetHome";
-
-const CITIES = ["Bangalore", "Chennai", "Others"] as const;
+import { listGrantingUnits } from "@/lib/budget/grantingUnits";
 
 // ₹ in Cr when ≥ 1 Cr, else L.
 function fmtINR(n: number): string {
@@ -46,15 +45,18 @@ export default async function BudgetCityLandingPage() {
     return <PartnerBudgetHome budgets={JSON.parse(JSON.stringify(budgets))} linked={!!access.grantPartnerId} />;
   }
 
-  const budgets = await prisma.budget.findMany({
-    select: {
-      city: true, status: true, horizonMonths: true,
-      lines: { select: { y1Total: true, y2Total: true, y3Total: true, y4Total: true, y5Total: true } },
-    },
-  });
+  const [units, budgets] = await Promise.all([
+    listGrantingUnits(),
+    prisma.budget.findMany({
+      select: {
+        city: true, status: true, horizonMonths: true,
+        lines: { select: { y1Total: true, y2Total: true, y3Total: true, y4Total: true, y5Total: true } },
+      },
+    }),
+  ]);
 
   const stats: Record<string, { count: number; approved: number; approvedCount: number }> = {};
-  for (const c of CITIES) stats[c] = { count: 0, approved: 0, approvedCount: 0 };
+  for (const u of units) stats[u.name] = { count: 0, approved: 0, approvedCount: 0 };
   for (const b of budgets) {
     const bucket = stats[b.city] ?? (stats[b.city] = { count: 0, approved: 0, approvedCount: 0 });
     bucket.count += 1;
@@ -74,11 +76,12 @@ export default async function BudgetCityLandingPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
-        {CITIES.map((c) => {
+        {units.map((u) => {
+          const c = u.name;
           const s = stats[c];
           return (
             <Link
-              key={c}
+              key={u.id}
               href={`/budget/city/${encodeURIComponent(c)}`}
               className="block rounded-xl border border-stone-200 bg-white p-5 hover:border-sky-300 hover:shadow-sm transition-all"
             >

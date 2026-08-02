@@ -33,7 +33,6 @@ type CostRow = {
 type ComponentItem = { label: string; spec: string | null; qty: number; unitCost: number };
 type HistoryRow = { id: string; oldCost: number | null; newCost: number | null; source: string | null; reason: string | null; changedBy: string | null; changedAt: string };
 
-const CITIES = ["Bangalore", "Chennai", "Others"] as const;
 const SECTIONS: BudgetSection[] = ["salary", "capex", "travel", "programme", "admin_salary", "admin_other", "additional"];
 const INFLATION_TYPES: InflationType[] = ["Salary", "Other", "Nil"];
 const INPUT_VARS = [
@@ -2639,11 +2638,12 @@ type CompareBudget = {
 };
 
 export default function AdminClient({
-  costs, isSeeded, city, templates, domains, zones, needsDomains, cityBudgets = [], budgetAdminOnly = false, componentsByKey = {},
+  costs, isSeeded, city, units, templates, domains, zones, needsDomains, cityBudgets = [], budgetAdminOnly = false, componentsByKey = {},
 }: {
   costs: CostRow[];
   isSeeded: boolean;
   city: string;
+  units: { id: string; name: string }[];
   templates: LineTemplate[];
   domains: BudgetDomainConfig[];
   zones: GeoItem[];
@@ -2667,12 +2667,12 @@ export default function AdminClient({
         </div>
       </div>
 
-      {/* City tabs */}
-      <div className="flex gap-1 mb-5 border-b border-stone-200 pb-3">
-        {CITIES.map(c => (
-          <a key={c} href={`/admin?city=${c}`}
-            className={`text-sm px-4 py-1.5 rounded-lg transition-all ${city === c ? "bg-stone-800 text-white" : "text-stone-600 hover:bg-stone-100"}`}>
-            {c}
+      {/* Granting unit tabs */}
+      <div className="flex gap-1 mb-5 border-b border-stone-200 pb-3 overflow-x-auto">
+        {units.map(u => (
+          <a key={u.id} href={`/admin?city=${encodeURIComponent(u.name)}`}
+            className={`text-sm px-4 py-1.5 rounded-lg transition-all whitespace-nowrap ${city === u.name ? "bg-stone-800 text-white" : "text-stone-600 hover:bg-stone-100"}`}>
+            {u.name}
           </a>
         ))}
       </div>

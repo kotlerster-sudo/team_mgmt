@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { isBudgetAdmin } from "@/lib/roleGuard";
 import prisma from "@/lib/prisma";
 import { getDefaultsForCity } from "@/lib/budget-costs";
+import { listGrantingUnits, resolveRegistryCity } from "@/lib/budget/grantingUnits";
 import AdminClient from "./AdminClient";
 
 export default async function AdminPage({ searchParams }: { searchParams: Promise<{ city?: string }> }) {
@@ -10,12 +11,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
 
   const { city = "Bangalore" } = await searchParams;
 
-  // "Others" is a placeholder city with no CostRegistry / LineTemplate /
-  // BudgetDomainConfig / component rows of its own — Others budgets are
-  // generated from Bangalore's standard set (see budget/actions.ts createBudget).
-  // Mirror that here so Cost Analysis has a standard to compare Others budgets
-  // against. cityBudgets stays on the real city so the dropdown still lists them.
-  const sourceCity = city === "Others" ? "Bangalore" : city;
+  // A unit like "Others" has no CostRegistry / LineTemplate / BudgetDomainConfig
+  // rows of its own — it generates from whichever standard set its `registryCity`
+  // points at. Mirror that here so Cost Analysis has a standard to compare those
+  // budgets against. cityBudgets stays on the unit so the dropdown still lists them.
+  const sourceCity = await resolveRegistryCity(city);
 
   const [registry, templates, domains, cityRecords, needsDomains, cityBudgets, components] = await Promise.all([
     prisma.costRegistry.findMany({
@@ -110,5 +110,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     domains: b.domains, horizonMonths: b.horizonMonths,
   }));
 
-  return <AdminClient costs={merged} isSeeded={isSeeded} city={city} templates={templates} domains={domains} zones={zones} needsDomains={needsDomains} cityBudgets={cityBudgetsSerialized} budgetAdminOnly={budgetAdminOnly} componentsByKey={componentsByKey} />;
+  const units = await listGrantingUnits();
+
+  return <AdminClient costs={merged} isSeeded={isSeeded} city={city} units={units} templates={templates} domains={domains} zones={zones} needsDomains={needsDomains} cityBudgets={cityBudgetsSerialized} budgetAdminOnly={budgetAdminOnly} componentsByKey={componentsByKey} />;
 }

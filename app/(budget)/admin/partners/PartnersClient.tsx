@@ -6,21 +6,23 @@ import { createGrantPartner, renameGrantPartner, toggleGrantPartner, importGrant
 
 type Partner = { id: string; name: string; city: string; isActive: boolean; budgetCount: number; loginEmail: string | null };
 type Candidate = { email: string; name: string | null };
-const CITIES = ["Bangalore", "Chennai", "Others"] as const;
+type Unit = { id: string; name: string };
 
-export default function PartnersClient({ partners, candidates = [] }: { partners: Partner[]; candidates?: Candidate[] }) {
+export default function PartnersClient({ partners, units, candidates = [] }: { partners: Partner[]; units: Unit[]; candidates?: Candidate[] }) {
+  const unitNames = units.map((u) => u.name);
+  const firstUnit = unitNames[0] ?? "Bangalore";
   const [pending, start] = useTransition();
-  const [addCity, setAddCity] = useState<string>("Bangalore");
+  const [addCity, setAddCity] = useState<string>(firstUnit);
   const [addName, setAddName] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [linking, setLinking] = useState<string | null>(null);
   const [linkEmail, setLinkEmail] = useState("");
   const [moving, setMoving] = useState<string | null>(null);
-  const [moveCity, setMoveCity] = useState<string>("Bangalore");
+  const [moveCity, setMoveCity] = useState<string>(firstUnit);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [importCity, setImportCity] = useState<string>("Bangalore");
+  const [importCity, setImportCity] = useState<string>(firstUnit);
 
   const run = (fn: () => Promise<void>) => start(async () => { setErr(null); try { await fn(); } catch (e) { setErr(e instanceof Error ? e.message : "Failed"); } });
 
@@ -42,7 +44,7 @@ export default function PartnersClient({ partners, candidates = [] }: { partners
       <div className="rounded-xl border border-stone-200 bg-white p-4 flex flex-wrap items-end gap-3">
         <label className="text-xs text-stone-500">City
           <select value={addCity} onChange={(e) => setAddCity(e.target.value)} className="mt-1 block rounded border border-stone-300 px-2 py-1.5 text-sm">
-            {CITIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            {unitNames.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </label>
         <label className="text-xs text-stone-500 flex-1 min-w-[12rem]">Name
@@ -60,7 +62,7 @@ export default function PartnersClient({ partners, candidates = [] }: { partners
         </div>
         <label className="text-xs text-stone-500">City
           <select value={importCity} onChange={(e) => setImportCity(e.target.value)} className="mt-1 block rounded border border-stone-300 px-2 py-1.5 text-sm">
-            {CITIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            {unitNames.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </label>
         <button disabled={pending} onClick={() => run(async () => { setNote(null); const r = await importGrantPartnersFromOrgs(importCity); setNote(`${r.added} added to ${importCity} (${r.total} settings partners checked).`); })}
@@ -69,8 +71,8 @@ export default function PartnersClient({ partners, candidates = [] }: { partners
       {note && <div className="text-xs text-emerald-700">{note}</div>}
       {err && <div className="text-xs text-red-600">{err}</div>}
 
-      {/* List by city */}
-      {CITIES.map((city) => {
+      {/* List by granting unit */}
+      {unitNames.map((city) => {
         const rows = partners.filter((p) => p.city === city);
         if (rows.length === 0) return null;
         return (
@@ -91,7 +93,7 @@ export default function PartnersClient({ partners, candidates = [] }: { partners
                         <span className={`flex-1 text-sm ${p.isActive ? "text-stone-900" : "text-stone-400 line-through"}`}>{p.name}</span>
                         <span className="text-xs text-stone-400">{p.budgetCount} budget{p.budgetCount === 1 ? "" : "s"}</span>
                         <button onClick={() => { setEditing(p.id); setEditName(p.name); }} className="text-xs text-stone-500 hover:text-stone-800">Rename</button>
-                        <button onClick={() => { setMoving(p.id); setMoveCity(CITIES.find((c) => c !== p.city) ?? "Bangalore"); }} className="text-xs text-stone-500 hover:text-stone-800">Move</button>
+                        <button onClick={() => { setMoving(p.id); setMoveCity(unitNames.find((c) => c !== p.city) ?? firstUnit); }} className="text-xs text-stone-500 hover:text-stone-800">Move</button>
                         <button disabled={pending} onClick={() => run(async () => { await toggleGrantPartner(p.id, !p.isActive); })} className="text-xs text-stone-400 hover:text-stone-700">
                           {p.isActive ? "Deactivate" : "Reactivate"}
                         </button>
@@ -121,7 +123,7 @@ export default function PartnersClient({ partners, candidates = [] }: { partners
                     <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
                       <span className="text-stone-400">Move to</span>
                       <select value={moveCity} onChange={(e) => setMoveCity(e.target.value)} className="rounded border border-stone-300 px-2 py-1 text-xs">
-                        {CITIES.filter((c) => c !== p.city).map((c) => <option key={c} value={c}>{c}</option>)}
+                        {unitNames.filter((c) => c !== p.city).map((c) => <option key={c} value={c}>{c}</option>)}
                       </select>
                       {p.budgetCount > 0 && <span className="text-stone-400">— moves {p.budgetCount} budget{p.budgetCount === 1 ? "" : "s"} too</span>}
                       <button disabled={pending} onClick={() => run(async () => { await reassignGrantPartnerCity(p.id, moveCity); setMoving(null); })} className="text-sky-600 hover:underline">Confirm</button>

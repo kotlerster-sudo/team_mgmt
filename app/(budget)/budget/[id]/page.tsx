@@ -2,6 +2,8 @@ import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import BudgetEditor from "./BudgetEditor";
+import { canAccessBudget } from "@/lib/budget/budgetAccess";
+import { resolveRegistryCity } from "@/lib/budget/grantingUnits";
 
 export default async function BudgetPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -16,13 +18,14 @@ export default async function BudgetPage({ params }: { params: Promise<{ id: str
     },
   });
 
-  if (!budget || budget.partnerId !== session!.user!.id!) notFound();
+  if (!(await canAccessBudget(session, budget, "read"))) notFound();
+  if (!budget) notFound();
 
   // Per-line "working": the line's own components once authored, else a fallback
-  // to the standard registry breakup (via the template's costKey). "Others" has
-  // no registry/templates of its own — it's generated from Bangalore's, so the
-  // working must resolve against the same source city (matches createBudget).
-  const registryCity = budget.city === "Others" ? "Bangalore" : budget.city;
+  // to the standard registry breakup (via the template's costKey). A unit with
+  // no registry/templates of its own generates from its registryCity, so the
+  // working must resolve against the same source (matches createBudget).
+  const registryCity = await resolveRegistryCity(budget.city);
   const [tmpls, regComps, regItems] = await Promise.all([
     prisma.lineTemplate.findMany({ where: { city: registryCity }, select: { templateKey: true, costKey: true } }),
     prisma.costRegistryComponent.findMany({ where: { city: registryCity }, orderBy: { position: "asc" }, select: { parentItemKey: true, label: true, spec: true, qty: true, unitCost: true } }),

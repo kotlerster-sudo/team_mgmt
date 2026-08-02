@@ -6,30 +6,29 @@ import type { ParsedBudget } from "@/lib/budget/importTemplate";
 
 const fmtINR = (n: number) => "₹" + Math.round(n).toLocaleString("en-IN");
 
-const CITY_NAMES = ["Bangalore", "Chennai", "Others"] as const;
 
 export default function ImportBudgetClient({
   initialCity,
+  units = [],
   partners = [],
 }: {
   initialCity?: string;
+  units?: { id: string; name: string }[];
   partners?: { id: string; name: string; city: string }[];
 }) {
+  const unitNames = units.map((u) => u.name);
+  const defaultUnit = unitNames.includes(initialCity ?? "") ? initialCity! : (unitNames[0] ?? "Bangalore");
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<ParsedBudget | null>(null);
   const [busy, setBusy] = useState<"parse" | "commit" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [city, setCity] = useState<string>(
-    (CITY_NAMES as readonly string[]).includes(initialCity ?? "") ? initialCity! : "Bangalore",
-  );
+  const [city, setCity] = useState<string>(defaultUnit);
   const [grantPartnerId, setGrantPartnerId] = useState<string>("");
 
   // Blank-template download (fill by hand, then import above).
   const [blankName, setBlankName] = useState("");
-  const [blankCity, setBlankCity] = useState<string>(
-    (CITY_NAMES as readonly string[]).includes(initialCity ?? "") ? initialCity! : "Bangalore",
-  );
+  const [blankCity, setBlankCity] = useState<string>(defaultUnit);
   const [blankHorizon, setBlankHorizon] = useState(12);
   const [blankInflation, setBlankInflation] = useState(false);
 
@@ -64,7 +63,7 @@ export default function ImportBudgetClient({
       const p = json.preview as ParsedBudget;
       setPreview(p);
       // Default the city to the query param, else the parsed file's city.
-      if (!(CITY_NAMES as readonly string[]).includes(initialCity ?? "") && p.city) setCity(p.city);
+      if (!unitNames.includes(initialCity ?? "") && p.city) setCity(p.city);
     } catch { setError("Upload failed — please try again."); }
     finally { setBusy(null); }
   }
@@ -101,7 +100,7 @@ export default function ImportBudgetClient({
           </label>
           <label className="text-xs text-stone-500">City
             <select value={blankCity} onChange={e => setBlankCity(e.target.value)} className="mt-1 block rounded border border-stone-300 px-2 py-1.5 text-sm">
-              {CITY_NAMES.map(c => <option key={c} value={c}>{c}</option>)}
+              {unitNames.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </label>
           <label className="text-xs text-stone-500">Horizon (months)
@@ -204,7 +203,7 @@ export default function ImportBudgetClient({
             <div className="flex flex-wrap items-end gap-3">
               <label className="text-xs text-stone-500">City
                 <select value={city} onChange={e => { setCity(e.target.value); setGrantPartnerId(""); }} className="mt-1 block rounded border border-stone-300 px-2 py-1.5 text-sm">
-                  {CITY_NAMES.map(c => <option key={c} value={c}>{c}</option>)}
+                  {unitNames.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </label>
               <label className="text-xs text-stone-500">Partner

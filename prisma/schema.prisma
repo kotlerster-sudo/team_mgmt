@@ -227,35 +227,35 @@ model Goal {
   needsZoneId       String?
   needsCityId       String?
 
-  owner           User                    @relation(fields: [ownerId], references: [id])
-  pitstops        Pitstop[]
-  threads         Thread[]
-  attachments     Attachment[]
-  followers       GoalFollow[]
-  programs        ProgramGoal[]
+  owner            User                    @relation(fields: [ownerId], references: [id])
+  pitstops         Pitstop[]
+  threads          Thread[]
+  attachments      Attachment[]
+  followers        GoalFollow[]
+  programs         ProgramGoal[]
   // Co-ownership
-  coOwners        GoalCoOwner[]
+  coOwners         GoalCoOwner[]
   // Decisions, risks, broadcasts
-  decisions       Decision[]
-  risks           Risk[]
-  broadcasts      GoalBroadcast[]
+  decisions        Decision[]
+  risks            Risk[]
+  broadcasts       GoalBroadcast[]
   // Metrics/KPIs
-  metrics         GoalMetric[]
+  metrics          GoalMetric[]
   // Strategic tags
-  themes          GoalTheme[]
-  quarters        GoalQuarter[]
+  themes           GoalTheme[]
+  quarters         GoalQuarter[]
   // Needs geography
-  needsSettlement Settlement?             @relation("GoalNeedsSettlement", fields: [needsSettlementId], references: [id])
-  needsCluster    Cluster?                @relation("GoalNeedsCluster", fields: [needsClusterId], references: [id])
-  needsZone       Zone?                   @relation("GoalNeedsZone", fields: [needsZoneId], references: [id])
-  needsCity       City?                   @relation("GoalNeedsCity", fields: [needsCityId], references: [id])
-  linkedFacility  LayerFeature?           @relation("GoalLinkedFacility", fields: [linkedFacilityId], references: [id], onDelete: SetNull)
+  needsSettlement  Settlement?             @relation("GoalNeedsSettlement", fields: [needsSettlementId], references: [id])
+  needsCluster     Cluster?                @relation("GoalNeedsCluster", fields: [needsClusterId], references: [id])
+  needsZone        Zone?                   @relation("GoalNeedsZone", fields: [needsZoneId], references: [id])
+  needsCity        City?                   @relation("GoalNeedsCity", fields: [needsCityId], references: [id])
+  linkedFacility   LayerFeature?           @relation("GoalLinkedFacility", fields: [linkedFacilityId], references: [id], onDelete: SetNull)
   // Settlement-level outcome attribution on completion
-  outcomes        GoalOutcome[]
+  outcomes         GoalOutcome[]
   // Layer 3 programme journey phase (this goal fulfilling a phase)
-  journeyPhases   ProgrammeJourneyPhase[]
+  journeyPhases    ProgrammeJourneyPhase[]
   // Action points (denormalized — always nested under a PitstopEvent under this Goal)
-  actionPoints    ActionPoint[]
+  actionPoints     ActionPoint[]
   // Live-centre visit catalog (present once Goal.mode = "live")
   centreCatalog    CentreCatalog?
   catalogApprovals CatalogItemApproval[]
@@ -1076,10 +1076,11 @@ model City {
   deletedAt        DateTime?
   createdAt        DateTime  @default(now())
 
-  zones       Zone[]
-  settlements Settlement[]
-  needsGoals  Goal[]       @relation("GoalNeedsCity")
-  users       User[]       @relation("UserCity")
+  zones         Zone[]
+  settlements   Settlement[]
+  needsGoals    Goal[]         @relation("GoalNeedsCity")
+  users         User[]         @relation("UserCity")
+  grantingUnits GrantingUnit[]
 }
 
 // Polygon for this zone is derived live by the `zone_geometry` view
@@ -1872,17 +1873,17 @@ model GoalTemplateDef {
 //   [{ key, label, items: [{ key, text, completionType, blocksSignoff }] }]
 // Frozen into CentreCatalog.snapshot when a centre goes live (Budget cost snapshot/override pattern).
 model CatalogTemplateDef {
-  id                  String   @id @default(cuid())
-  slug                String   @unique
-  name                String
-  needsDomain         String? // matches Goal.needsDomain — the domain this catalog is the default for
-  categories          Json     @default("[]")
+  id                   String   @id @default(cuid())
+  slug                 String   @unique
+  name                 String
+  needsDomain          String? // matches Goal.needsDomain — the domain this catalog is the default for
+  categories           Json     @default("[]")
   // Default visit cadence seeded onto a centre at go-live. period ∈ {"week","month"}.
   defaultCadenceCount  Int?
   defaultCadencePeriod String?
-  isActive            Boolean  @default(true)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 }
 
 // Per-centre live catalog: a frozen snapshot of the domain default + sparse per-centre overrides,
@@ -2026,7 +2027,10 @@ model Budget {
   grantPartnerId     String?
   grantPartner       GrantPartner?           @relation(fields: [grantPartnerId], references: [id], onDelete: SetNull)
   domains            String[]
-  city               String                  @default("Bangalore")
+  city               String                  @default("Bangalore") // legacy label; grantingUnit is authoritative
+  // Which office / thematic team / ops team makes and manages this grant.
+  grantingUnitId     String?
+  grantingUnit       GrantingUnit?           @relation(fields: [grantingUnitId], references: [id], onDelete: SetNull)
   // years is kept for backward compat; horizonMonths is the source of truth.
   // years = ceil(horizonMonths / 12) is maintained at write time so list/select
   // queries that read `years` keep working without a sweep.
@@ -2072,15 +2076,48 @@ model Budget {
 
   @@index([partnerId])
   @@index([grantPartnerId])
+  @@index([grantingUnitId])
+}
+
+/// Who makes and manages a grant: a focus-geography office, a travelling thematic
+/// team, or an operational team running programmes directly. Deliberately distinct
+/// from `City`, which is the operational geography owning zones and settlements —
+/// thematic teams have no polygon and must not be forced into one.
+///
+/// `registryCity` is which city's CostRegistry / LineTemplate / BudgetDomainConfig
+/// rows this unit generates budgets from. It turns the hardcoded
+/// `city === "Others" ? "Bangalore"` fallback, repeated across the portal, into
+/// data — so a new unit can be added without touching code.
+model GrantingUnit {
+  id           String         @id @default(cuid())
+  name         String         @unique
+  kind         String         @default("geo") // geo | thematic | operational
+  registryCity String         @default("Bangalore")
+  /// Optional link to the operational geography, where one exists.
+  cityId       String?
+  city         City?          @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  parentId     String?
+  parent       GrantingUnit?  @relation("GrantingUnitParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children     GrantingUnit[] @relation("GrantingUnitParent")
+  isActive     Boolean        @default(true)
+  sortOrder    Int            @default(0)
+  createdAt    DateTime       @default(now())
+
+  budgets  Budget[]
+  partners GrantPartner[]
+
+  @@index([isActive, sortOrder])
 }
 
 // A grantee organisation (e.g. "CFAR", "Sampark"). Spans many budgets/grants so
-// the dashboard can aggregate approved amounts + utilisation per partner. City-
-// scoped so the same name can exist independently under Bangalore/Chennai/Others.
+// the dashboard can aggregate approved amounts + utilisation per partner. Scoped
+// to a GrantingUnit so the same name can exist independently under each unit.
 model GrantPartner {
   id                   String                  @id @default(cuid())
   name                 String
-  city                 String                  @default("Bangalore") // Bangalore | Chennai | Others
+  city                 String                  @default("Bangalore") // legacy label; grantingUnit is authoritative
+  grantingUnitId       String?
+  grantingUnit         GrantingUnit?           @relation(fields: [grantingUnitId], references: [id], onDelete: SetNull)
   notes                String?
   isActive             Boolean                 @default(true)
   // Optional login account for this grantee (a User with role "partner"). Lets
@@ -2092,8 +2129,9 @@ model GrantPartner {
   schoolPlansAsAnchor  SchoolPlan[]            @relation("SchoolPlanAnchorPartner")
   deliveryPartnerRoles BudgetDeliveryPartner[]
 
-  @@unique([city, name])
+  @@unique([grantingUnitId, name])
   @@index([city])
+  @@index([grantingUnitId])
 }
 
 enum GrantBorrowingStatus {

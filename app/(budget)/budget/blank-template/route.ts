@@ -1,8 +1,7 @@
 import { auth } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import { buildBlankBudgetWorkbook } from "@/lib/budget/blankTemplate";
-
-const CITIES = ["Bangalore", "Chennai", "Others"];
+import { grantingUnitNames } from "@/lib/budget/grantingUnits";
 
 // GET a blank APF template (empty green rows per section) to fill and re-import.
 //   ?name= &city= &horizon= &inflation=1
@@ -13,7 +12,7 @@ export async function GET(req: NextRequest) {
   const q = req.nextUrl.searchParams;
   const name = (q.get("name") ?? "").trim() || "Untitled budget";
   const cityRaw = (q.get("city") ?? "").trim();
-  const city = CITIES.includes(cityRaw) ? cityRaw : "Bangalore";
+  const city = (await grantingUnitNames()).includes(cityRaw) ? cityRaw : "Bangalore";
   const horizonMonths = Math.min(60, Math.max(1, Math.round(Number(q.get("horizon")) || 12)));
   const applyInflation = q.get("inflation") === "1";
 
