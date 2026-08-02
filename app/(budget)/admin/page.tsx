@@ -18,7 +18,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   // budgets against. cityBudgets stays on the unit so the dropdown still lists them.
   const sourceCity = await resolveRegistryCity(city);
 
-  const [registry, templates, domains, cityRecords, needsDomains, cityBudgets, componentsByKey, sharedCosts] = await Promise.all([
+  const [registry, templates, domains, cityRecords, needsDomains, cityBudgets, componentsByKey, sharedCosts, versionRows] = await Promise.all([
     resolveRegistryRows(sourceCity),
     prisma.lineTemplate.findMany({
       where: { city: sourceCity },
@@ -44,6 +44,12 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     // Component breakup (the "working") grouped by the aggregate item it derives.
     resolveRegistryComponents(sourceCity),
     globalRegistryMap(),
+    prisma.costRegistryVersion.findMany({
+      where: { city },
+      orderBy: { publishedAt: "desc" },
+      take: 20,
+      select: { id: true, label: true, notes: true, effectiveFrom: true, publishedAt: true, snapshot: true },
+    }),
   ]);
 
   const cityIds = cityRecords.map(c => c.id);
@@ -104,7 +110,15 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     domains: b.domains, horizonMonths: b.horizonMonths,
   }));
 
+  // The snapshot is a few hundred rows; only its size crosses to the client.
+  const versions = versionRows.map(v => ({
+    id: v.id, label: v.label, notes: v.notes,
+    effectiveFrom: v.effectiveFrom.toISOString(),
+    publishedAt: v.publishedAt.toISOString(),
+    itemCount: ((v.snapshot as { items?: unknown[] } | null)?.items ?? []).length,
+  }));
+
   const units = await listGrantingUnits();
 
-  return <AdminClient costs={merged} isSeeded={isSeeded} city={city} units={units} templates={templates} domains={domains} zones={zones} needsDomains={needsDomains} cityBudgets={cityBudgetsSerialized} budgetAdminOnly={budgetAdminOnly} componentsByKey={componentsByKey} />;
+  return <AdminClient costs={merged} isSeeded={isSeeded} city={city} units={units} templates={templates} domains={domains} zones={zones} needsDomains={needsDomains} cityBudgets={cityBudgetsSerialized} budgetAdminOnly={budgetAdminOnly} componentsByKey={componentsByKey} versions={versions} />;
 }

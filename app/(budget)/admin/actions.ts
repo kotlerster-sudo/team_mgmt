@@ -6,6 +6,7 @@ import { getDefaultsForCity } from "@/lib/budget-costs";
 import { getTemplatesForCity } from "@/lib/line-template-seeds";
 import { logCostChange } from "@/lib/budget/costHistory";
 import { GLOBAL_SCOPE } from "@/lib/budget/costRegistry";
+import { publishRegistryVersion, restoreRegistryVersion } from "@/lib/budget/costVersions";
 import type { BudgetSection, InflationType } from "@/app/generated/prisma/client";
 import { revalidatePath } from "next/cache";
 
@@ -259,6 +260,33 @@ export async function backfillDisplayGroups(city: string) {
     )
   );
   revalidatePath("/admin");
+}
+
+/** Publish the scope's registry as a named revision, e.g. "FY27 rates". */
+export async function publishCostVersion(city: string, label: string, effectiveFrom: string, notes?: string) {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error("Not authenticated");
+  const clean = label.trim();
+  if (!clean) throw new Error("A version needs a label");
+
+  await publishRegistryVersion(city, {
+    label: clean,
+    effectiveFrom: new Date(effectiveFrom),
+    notes: notes?.trim() || null,
+    publishedById: session.user.id,
+  });
+  revalidatePath("/admin");
+  revalidatePath("/budget/admin");
+}
+
+/** Put the scope's registry back to a published revision. Generated budgets are unaffected. */
+export async function restoreCostVersion(versionId: string) {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error("Not authenticated");
+  const result = await restoreRegistryVersion(versionId, session.user.id);
+  revalidatePath("/admin");
+  revalidatePath("/budget/admin");
+  return result;
 }
 
 /**

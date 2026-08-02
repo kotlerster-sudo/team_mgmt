@@ -4,6 +4,7 @@ import { useState, useMemo, useTransition, Fragment } from "react";
 import {
   seedCostRegistry, resetCostRegistry, deleteCostItem, addCostItem, saveCostComponents,
   overrideCostItem, revertToSharedCost, promoteCostToShared,
+  publishCostVersion, restoreCostVersion,
   seedProgrammeInputs, backfillDisplayGroups,
   toggleLineTemplate, addLineTemplate, updateLineTemplate, deleteLineTemplate,
   reorderLineTemplates, seedLineTemplates,
@@ -36,6 +37,7 @@ type CostRow = {
 };
 
 type ComponentItem = { label: string; spec: string | null; qty: number; unitCost: number };
+type VersionRow = { id: string; label: string; notes: string | null; effectiveFrom: string; publishedAt: string; itemCount: number };
 type HistoryRow = { id: string; oldCost: number | null; newCost: number | null; source: string | null; reason: string | null; changedBy: string | null; changedAt: string };
 
 const SECTIONS: BudgetSection[] = ["salary", "capex", "travel", "programme", "admin_salary", "admin_other", "additional"];
@@ -99,13 +101,89 @@ function makeDefaultInputs(costs: { itemKey: string; currentCost: number }[]): B
   );
 }
 
+// ─── Registry versions ────────────────────────────────────────────────────────
+
+// A rate cycle moves hundreds of keys at once. The per-item history covers
+// "what changed"; this covers "put it all back".
+function VersionsPanel({ city, versions }: { city: string; versions: VersionRow[] }) {
+  const [pending, startTransition] = useTransition();
+  const [open, setOpen] = useState(false);
+  const [label, setLabel] = useState("");
+  const [effectiveFrom, setEffectiveFrom] = useState(() => new Date().toISOString().slice(0, 10));
+  const [notes, setNotes] = useState("");
+
+  const publish = () => {
+    if (!label.trim()) return;
+    startTransition(async () => {
+      await publishCostVersion(city, label, effectiveFrom, notes || undefined);
+      setLabel(""); setNotes(""); setOpen(false);
+    });
+  };
+
+  const restore = (v: VersionRow) => {
+    if (!confirm(`Put ${city}'s registry back to "${v.label}"? Budgets already generated keep their own frozen costs.`)) return;
+    startTransition(() => restoreCostVersion(v.id).then(() => undefined));
+  };
+
+  return (
+    <div className="mb-4 bg-white border border-stone-200 rounded-xl">
+      <div className="flex items-center justify-between px-4 py-2.5">
+        <button onClick={() => setOpen(!open)} className="text-sm text-stone-600 hover:text-stone-900">
+          <span className="text-stone-300 mr-1.5">{open ? "▾" : "▸"}</span>
+          Published rate versions
+          <span className="ml-2 text-xs text-stone-400">{versions.length}</span>
+        </button>
+        {versions[0] && <span className="text-xs text-stone-400 truncate max-w-[45%]">latest · {versions[0].label}</span>}
+      </div>
+
+      {open && (
+        <div className="border-t border-stone-100 px-4 py-3 space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <input value={label} onChange={e => setLabel(e.target.value)} placeholder="FY27 rates"
+              className="flex-1 min-w-[140px] text-sm border border-stone-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-sky-500" />
+            <input type="date" value={effectiveFrom} onChange={e => setEffectiveFrom(e.target.value)}
+              className="text-sm border border-stone-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-sky-500" />
+            <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes (optional)"
+              className="flex-1 min-w-[140px] text-sm border border-stone-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-sky-500" />
+            <button onClick={publish} disabled={pending || !label.trim()}
+              className="text-sm bg-sky-600 text-white px-3 py-1.5 rounded-lg hover:bg-sky-700 disabled:opacity-50">
+              {pending ? "Working…" : "Publish current rates"}
+            </button>
+          </div>
+
+          {versions.length === 0 ? (
+            <p className="text-xs text-stone-400">Nothing published yet. Publishing freezes every rate in this unit so you can come back to it.</p>
+          ) : (
+            <ul className="divide-y divide-stone-50">
+              {versions.map(v => (
+                <li key={v.id} className="flex items-center justify-between gap-3 py-2">
+                  <div className="min-w-0">
+                    <div className="text-sm text-stone-800 truncate">{v.label}</div>
+                    <div className="text-xs text-stone-400">
+                      {v.itemCount} items · effective {v.effectiveFrom.slice(0, 10)} · published {v.publishedAt.slice(0, 10)}
+                      {v.notes && ` · ${v.notes}`}
+                    </div>
+                  </div>
+                  <button onClick={() => restore(v)} disabled={pending}
+                    className="text-xs text-stone-400 hover:text-sky-700 whitespace-nowrap disabled:opacity-50">Restore</button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Cost Registry tab ────────────────────────────────────────────────────────
 
-function CostRegistryTab({ costs, isSeeded, city, domainOrder, domainLabels, needsDomains, componentsByKey }: {
+function CostRegistryTab({ costs, isSeeded, city, domainOrder, domainLabels, needsDomains, componentsByKey, versions }: {
   costs: CostRow[]; isSeeded: boolean; city: string;
   domainOrder: (string | null)[]; domainLabels: Record<string, string>;
   needsDomains: { domain: string; label: string | null }[];
   componentsByKey: Record<string, ComponentItem[]>;
+  versions: VersionRow[];
 }) {
   const [pending, startTransition] = useTransition();
   const [editing, setEditing] = useState<string | null>(null);
@@ -497,6 +575,8 @@ function CostRegistryTab({ costs, isSeeded, city, domainOrder, domainLabels, nee
           </button>
         </div>
       </div>
+
+      <VersionsPanel city={city} versions={versions} />
 
       {/* Domain tabs */}
       <div className="flex gap-1 mb-4 overflow-x-auto pb-1">
@@ -2663,7 +2743,7 @@ type CompareBudget = {
 };
 
 export default function AdminClient({
-  costs, isSeeded, city, units, templates, domains, zones, needsDomains, cityBudgets = [], budgetAdminOnly = false, componentsByKey = {},
+  costs, isSeeded, city, units, templates, domains, zones, needsDomains, cityBudgets = [], budgetAdminOnly = false, componentsByKey = {}, versions = [],
 }: {
   costs: CostRow[];
   isSeeded: boolean;
@@ -2676,6 +2756,7 @@ export default function AdminClient({
   cityBudgets?: CompareBudget[];
   budgetAdminOnly?: boolean;
   componentsByKey?: Record<string, ComponentItem[]>;
+  versions?: VersionRow[];
 }) {
   const [activeTab, setActiveTab] = useState<"registry" | "templates" | "analysis" | "domains">(budgetAdminOnly ? "analysis" : "registry");
 
@@ -2732,7 +2813,7 @@ export default function AdminClient({
         </div>
       </div>
 
-      {activeTab === "registry"  && <CostRegistryTab costs={costs} isSeeded={isSeeded} city={city} domainOrder={domainOrder} domainLabels={domainLabels} needsDomains={needsDomains} componentsByKey={componentsByKey} />}
+      {activeTab === "registry"  && <CostRegistryTab costs={costs} isSeeded={isSeeded} city={city} domainOrder={domainOrder} domainLabels={domainLabels} needsDomains={needsDomains} componentsByKey={componentsByKey} versions={versions} />}
       {activeTab === "templates" && <LineTemplatesTab templates={templates} city={city} registryKeys={costs.map(c => c.itemKey)} costs={costs} domains={domains} />}
       {activeTab === "analysis"  && <CostAnalysisTab templates={templates} costs={costs} domains={domains} city={city} zones={zones} cityBudgets={cityBudgets} />}
       {activeTab === "domains"   && <DomainsTab domains={domains} city={city} progInputKeys={costs.filter(c => c.itemKey.startsWith("inp.")).map(c => c.itemKey)} />}

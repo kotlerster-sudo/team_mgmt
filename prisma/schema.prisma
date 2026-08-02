@@ -2538,6 +2538,30 @@ model CostRegistryHistory {
   @@index([city, itemKey, changedAt])
 }
 
+// A named, frozen copy of one scope's registry — "FY27 rates" — so a unit can
+// publish a whole rate revision at once and roll the whole thing back.
+//
+// CostRegistryHistory already records every individual change, but a rate cycle
+// touches hundreds of keys and unwinding it row by row is not something anyone
+// will actually do. This is the atomic unit.
+//
+// Restoring never disturbs an existing budget: a budget freezes its own
+// costSnapshot and line components at generation, so a version only ever
+// governs what gets generated next.
+model CostRegistryVersion {
+  id            String   @id @default(cuid())
+  city          String // the scope this belongs to; "Global" for the shared layer
+  label         String // "FY27 rates"
+  notes         String?
+  effectiveFrom DateTime // when these rates are meant to apply from
+  publishedAt   DateTime @default(now())
+  publishedById String?
+  /// { items: [...CostRegistry fields], components: { parentItemKey: [...] } }
+  snapshot      Json
+
+  @@index([city, publishedAt])
+}
+
 // Structured breakup of an aggregate CostRegistry item (e.g. an asset bundle
 // that sums many sub-items). Optional & additive: items with no components keep
 // their flat hand-entered unitCost. Where components exist, the parent's
