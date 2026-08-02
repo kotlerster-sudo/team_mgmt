@@ -19,6 +19,39 @@ export type WikiNotificationKind =
 
 export type ChannelName = "push" | "inApp" | "email";
 
+/**
+ * The wording an email is dressed in. Split out because the adapters are now
+ * shared with the grant portal, whose recipients are external grantee
+ * organisations — "you're in the wiki rhythm" would be nonsense in their inbox,
+ * and they have no access to /settings/notifications to act on it.
+ */
+export interface NotifyBrand {
+  /** Small uppercase eyebrow above the title. */
+  eyebrow: string;
+  /** Label on the call-to-action button. */
+  cta: string;
+  /** One line saying why this landed in their inbox. Plain text. */
+  footer: string;
+  /** Overrides RESEND_FROM_EMAIL for this message. */
+  from?: string;
+}
+
+export const WIKI_BRAND: NotifyBrand = {
+  eyebrow: "Pitstops Wiki",
+  cta: "Open in Pitstops",
+  footer: "You're getting this because you're in the wiki rhythm. Adjust delivery in your notification settings.",
+};
+
+/** What a channel adapter needs. Deliberately free of wiki concepts. */
+export interface ChannelInput {
+  userId: string;
+  notificationType: NotificationType;
+  title: string;
+  body?: string;
+  link?: string;
+  brand?: NotifyBrand;
+}
+
 export interface DispatchInput {
   userId: string;
   kind: WikiNotificationKind;

@@ -541,6 +541,8 @@ enum NotificationType {
   WikiGapPublished
   WikiShadowRecorded
   ActivityRescheduled
+  BudgetReportDue
+  BudgetReportOverdue
 }
 
 model Notification {
@@ -2355,8 +2357,30 @@ model BudgetReportSlot {
   report     BudgetReport?
   createdAt  DateTime         @default(now())
 
+  reminderLogs BudgetReportReminderLog[]
+
   @@unique([budgetId, slotNumber])
   @@index([budgetId, grantYear])
+  @@index([status, dueDate])
+}
+
+/// One row per (slot, recipient, threshold, channel) the reminder cron has
+/// already fired, so a re-run on the same day is a no-op. Mirrors
+/// PitstopReminderLog, but keyed by recipient too: a slot reminds both the
+/// grantee organisation and the internal grant lead.
+model BudgetReportReminderLog {
+  id      String           @id @default(cuid())
+  slotId  String
+  slot    BudgetReportSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  userId  String
+  type    String // "10d" | "3d" | "due" | "overdue7"
+  channel String // "inApp" | "push" | "email"
+  status  String // "sent" | "skipped" | "failed"
+  error   String?
+  sentAt  DateTime         @default(now())
+
+  @@unique([slotId, userId, type, channel])
+  @@index([slotId])
 }
 
 model BudgetReport {

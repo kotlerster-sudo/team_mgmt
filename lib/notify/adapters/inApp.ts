@@ -1,16 +1,12 @@
 import prisma from "@/lib/prisma";
-import {
-  type AdapterResult,
-  type DispatchInput,
-  WIKI_KIND_TO_NOTIFICATION_TYPE,
-} from "../types";
+import { type AdapterResult, type ChannelInput } from "../types";
 
-export async function sendInApp(input: DispatchInput): Promise<AdapterResult> {
+export async function sendInApp(input: ChannelInput): Promise<AdapterResult> {
   try {
     await prisma.notification.create({
       data: {
         userId: input.userId,
-        type: WIKI_KIND_TO_NOTIFICATION_TYPE[input.kind],
+        type: input.notificationType,
         title: input.title,
         body: input.body ?? null,
         link: input.link ?? null,

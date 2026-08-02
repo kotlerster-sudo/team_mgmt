@@ -2,16 +2,34 @@ import prisma from "@/lib/prisma";
 import { sendInApp } from "./adapters/inApp";
 import { sendPush } from "./adapters/push";
 import { sendEmail } from "./adapters/email";
-import type { AdapterResult, DispatchInput } from "./types";
+import {
+  type AdapterResult,
+  type ChannelInput,
+  type DispatchInput,
+  WIKI_BRAND,
+  WIKI_KIND_TO_NOTIFICATION_TYPE,
+} from "./types";
 
 const ADAPTERS = [sendInApp, sendPush, sendEmail] as const;
+
+/** Fan one message out across every channel. Callers own their own logging. */
+export async function dispatchToChannels(input: ChannelInput): Promise<AdapterResult[]> {
+  return Promise.all(ADAPTERS.map((adapter) => adapter(input)));
+}
 
 /**
  * Dispatch a wiki-related notification through every available channel.
  * Writes one WikiNotificationLog row per channel result.
  */
 export async function dispatchWikiNotification(input: DispatchInput): Promise<AdapterResult[]> {
-  const results = await Promise.all(ADAPTERS.map((adapter) => adapter(input)));
+  const results = await dispatchToChannels({
+    userId: input.userId,
+    notificationType: WIKI_KIND_TO_NOTIFICATION_TYPE[input.kind],
+    title: input.title,
+    body: input.body,
+    link: input.link,
+    brand: WIKI_BRAND,
+  });
 
   await prisma.wikiNotificationLog.createMany({
     data: results.map((r) => ({

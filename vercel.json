@@ -60,6 +60,10 @@
     {
       "path": "/api/cron/materialize-next-month",
       "schedule": "0 1 25 * *"
+    },
+    {
+      "path": "/api/cron/budget-report-reminders",
+      "schedule": "0 5 * * *"
     }
   ],
   "framework": "nextjs"

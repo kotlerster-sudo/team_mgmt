@@ -1,8 +1,8 @@
 import prisma from "@/lib/prisma";
 import { sendPushToUser } from "@/lib/push";
-import type { AdapterResult, DispatchInput } from "../types";
+import type { AdapterResult, ChannelInput } from "../types";
 
-export async function sendPush(input: DispatchInput): Promise<AdapterResult> {
+export async function sendPush(input: ChannelInput): Promise<AdapterResult> {
   if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
     return { channel: "push", status: "skipped", error: "VAPID keys not configured" };
   }
