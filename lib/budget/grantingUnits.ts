@@ -60,3 +60,13 @@ export async function resolveRegistryCity(unitName: string): Promise<string> {
   const unit = (await allGrantingUnits()).find((u) => u.name === unitName);
   return unit?.registryCity ?? unitName;
 }
+
+/**
+ * The inverse: every `Budget.city` value that generates from this registry.
+ * Includes the city's own name, which covers legacy budgets filed before any
+ * unit row existed.
+ */
+export async function unitNamesForRegistryCity(city: string): Promise<string[]> {
+  const names = (await allGrantingUnits()).filter((u) => u.registryCity === city).map((u) => u.name);
+  return [...new Set([city, ...names])];
+}

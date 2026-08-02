@@ -7,6 +7,7 @@ import { getTemplatesForCity } from "@/lib/line-template-seeds";
 import { logCostChange } from "@/lib/budget/costHistory";
 import { GLOBAL_SCOPE } from "@/lib/budget/costRegistry";
 import { publishRegistryVersion, restoreRegistryVersion } from "@/lib/budget/costVersions";
+import { registryImpact, type RegistryImpact } from "@/lib/budget/registryImpact";
 import type { BudgetSection, InflationType } from "@/app/generated/prisma/client";
 import { revalidatePath } from "next/cache";
 
@@ -331,6 +332,16 @@ export async function overrideCostItem(
   });
   revalidatePath("/admin");
   revalidatePath("/budget/admin");
+}
+
+/**
+ * Which live grants were built on this standard cost. Read-only; called before
+ * an edit is saved so the admin knows what they are moving away from.
+ */
+export async function costItemImpact(city: string, itemKey: string): Promise<RegistryImpact> {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error("Not authenticated");
+  return registryImpact(city, itemKey);
 }
 
 /** Drop a unit's own row so the item falls back to the shared layer again. */

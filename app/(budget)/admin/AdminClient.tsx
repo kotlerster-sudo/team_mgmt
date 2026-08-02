@@ -9,9 +9,10 @@ import {
   toggleLineTemplate, addLineTemplate, updateLineTemplate, deleteLineTemplate,
   reorderLineTemplates, seedLineTemplates,
   addDomain, updateDomain, toggleDomain, reorderDomains, seedDomains,
-  getGeoChildren, loadNeedsScenario, loadBudgetForCompare, getCostHistory,
+  getGeoChildren, loadNeedsScenario, loadBudgetForCompare, getCostHistory, costItemImpact,
   type LineTemplateFields, type DomainConfigFields,
 } from "./actions";
+import type { RegistryImpact } from "@/lib/budget/registryImpact";
 import type { BudgetSection, InflationType, LineTemplate, BudgetDomainConfig } from "@/app/generated/prisma/client";
 import { generateBudgetLines, buildAugmentedRegistry, type BudgetGeneratorInputs } from "@/lib/budget-generator";
 
@@ -176,6 +177,47 @@ function VersionsPanel({ city, versions }: { city: string; versions: VersionRow[
   );
 }
 
+/**
+ * What a rate change reaches. Existing budgets froze their own cost snapshot at
+ * generation, so nothing here will move — this is the list of live grants an
+ * admin should be sure about before the standard rate stops matching them.
+ */
+function ImpactPanel({ impact, loading }: { impact: RegistryImpact | undefined; loading: boolean }) {
+  if (!impact) return <div className="text-xs text-stone-400">{loading ? "Checking which grants use this…" : ""}</div>;
+  if (impact.budgets.length === 0) {
+    return (
+      <div className="text-xs text-stone-400">
+        {impact.templateKeys.length === 0
+          ? "No line template uses this item."
+          : "No budget has been generated from this item yet."}
+      </div>
+    );
+  }
+  const live = impact.budgets.filter(b => b.status === "approved");
+  return (
+    <details className="text-xs">
+      <summary className="cursor-pointer text-stone-500 hover:text-stone-800">
+        <span className="font-medium text-stone-700">{impact.budgets.length} budget{impact.budgets.length === 1 ? "" : "s"}</span>
+        {live.length > 0 && <span className="text-stone-500"> ({live.length} approved)</span>}
+        {" "}built on this rate across {impact.templateKeys.length} line{impact.templateKeys.length === 1 ? "" : "s"}
+        {impact.scopes.length > 1 && <span className="text-stone-500"> in {impact.scopes.length} units inheriting it</span>}
+        <span className="text-stone-400"> — none will change; each froze its own costs.</span>
+      </summary>
+      <ul className="mt-2 space-y-1 max-h-40 overflow-y-auto">
+        {impact.budgets.map(b => (
+          <li key={b.id} className="flex flex-wrap items-baseline gap-x-2">
+            <a href={`/budget/${b.id}`} className="text-sky-600 hover:underline">{b.name}</a>
+            {b.partnerName && <span className="text-stone-400">{b.partnerName}</span>}
+            <span className="text-stone-300">{b.city}</span>
+            <span className={b.status === "approved" ? "text-emerald-600" : "text-stone-400"}>{b.status}</span>
+            <span className="text-stone-300">{b.lineCount} line{b.lineCount === 1 ? "" : "s"}</span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 // ─── Cost Registry tab ────────────────────────────────────────────────────────
 
 function CostRegistryTab({ costs, isSeeded, city, domainOrder, domainLabels, needsDomains, componentsByKey, versions }: {
@@ -193,6 +235,9 @@ function CostRegistryTab({ costs, isSeeded, city, domainOrder, domainLabels, nee
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [historyByKey, setHistoryByKey] = useState<Record<string, HistoryRow[]>>({});
   const [historyLoading, setHistoryLoading] = useState(false);
+  // Which live grants were built on the item being edited — loaded on Edit.
+  const [impactByKey, setImpactByKey] = useState<Record<string, RegistryImpact>>({});
+  const [impactLoading, setImpactLoading] = useState(false);
 
   function toggleExpand(itemKey: string) {
     if (expandedKey === itemKey) { setExpandedKey(null); return; }
@@ -271,6 +316,12 @@ function CostRegistryTab({ costs, isSeeded, city, domainOrder, domainLabels, nee
     setEditNotes(row.notes ?? "");
     setEditDisplayGroup(row.displayGroup);
     setEditNeedsDomain(row.needsDomain);
+    if (!impactByKey[row.itemKey]) {
+      setImpactLoading(true);
+      costItemImpact(city, row.itemKey)
+        .then(r => setImpactByKey(prev => ({ ...prev, [row.itemKey]: r })))
+        .finally(() => setImpactLoading(false));
+    }
   };
 
   // Always writes a row scoped to this unit. An inherited row belongs to the
@@ -333,7 +384,8 @@ function CostRegistryTab({ costs, isSeeded, city, domainOrder, domainLabels, nee
 
   // Shared row renderer used for both cost registry and programme inputs
   const renderRow = (row: CostRow) => editing === row.itemKey ? (
-    <tr key={row.itemKey} className="border-b border-sky-100 bg-sky-50">
+    <Fragment key={row.itemKey}>
+    <tr className="border-b border-sky-100 bg-sky-50">
       <td className="px-4 py-2" colSpan={2}>
         <div className="text-sm font-medium text-stone-800">{formatKey(row.itemKey)}</div>
         <div className="text-xs font-mono text-stone-400 mt-0.5">{row.itemKey}</div>
@@ -370,6 +422,12 @@ function CostRegistryTab({ costs, isSeeded, city, domainOrder, domainLabels, nee
         </div>
       </td>
     </tr>
+    <tr className="border-b border-sky-100 bg-sky-50/60">
+      <td colSpan={5} className="px-4 pb-3 pt-0">
+        <ImpactPanel impact={impactByKey[row.itemKey]} loading={impactLoading} />
+      </td>
+    </tr>
+    </Fragment>
   ) : (() => {
     const comps = componentsByKey[row.itemKey] ?? [];
     const isExpanded = expandedKey === row.itemKey;
