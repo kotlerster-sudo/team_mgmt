@@ -149,13 +149,7 @@ const SUPER_ADMIN_GRANTS: RoleGrant = (() => {
 })();
 
 const ADMIN_EXCLUDED = new Set<string>([
-  "system.agent_use",
-  "system.seed_run",
-  "system.geo_sync_civic",
-  "review_portal.access",
   "invite_code.rotate",
-  "settlement.sync_civic_data",
-  "budget.list", "budget.read", "budget.create", "budget.update", "budget.delete",
   // Role catalog is super-admin-only — admins can't grant themselves more rights.
   "role.list", "role.read", "role.update",
   // Catalog refresh 2026-05-22 — admin still gets these via city/team scope at the
@@ -192,27 +186,41 @@ const MEMBER_GRANTS: RoleGrant = {
   "goal.change_owner": OWN,
 
   "pitstop.list":   TEAM,
-  "pitstop.read":   TEAM,
+  // Readable in context (a goal, a pitstop, the side panel) but not from the
+  // activities list, where the link would just be an accidental click away.
+  "pitstop.read":   { kind: "team", surfaces: ["goal.detail", "pitstop.detail", "pitstop.panel"] },
   "pitstop.create": OWN,
   "pitstop.update": OWN,
 
   "pitstop_event.list":       TEAM,
   "pitstop_event.read":       TEAM,
   "pitstop_event.create":     OWN,
-  "pitstop_event.update":     OWN,
+  // Completion happens from the day-to-day surfaces only; the same grant is not
+  // meant to authorise edits from anywhere else that happens to call the action.
+  "pitstop_event.update":     { kind: "own", surfaces: [
+    "home.today", "home.follow_ups", "home.past_load",
+    "activities.list", "activities.add_modal", "activities.complete_modal",
+    "activities.feed_panel", "activities.filter_sheet", "activities.reschedule_sheet",
+    "operations.theme_portal", "operations.visit", "operations.today",
+  ] },
   "pitstop_event.respond":    SELF,
   "pitstop_event.cancel":     OWN,
   "pitstop_event.reschedule": OWN,
   "pitstop_event.arrive":     OWN,
 
-  // Visit-driven ops. Visit lifecycle is own-scoped; catalog items an RP adds are own-create,
-  // approval is TEAM so a ZL/PM can approve reportees' additions (RPs have no team → can't approve).
-  "visit.create": OWN,
-  "visit.arrive": OWN,
-  "visit.tick":   OWN,
-  "visit.close":  OWN,
-  "catalog_item.create":  OWN,
-  "catalog_item.approve": TEAM,
+  // Visit-driven ops. A centre is visited by whoever is there that day, so the
+  // lifecycle is not owner-scoped — an own-scoped visit.close strands a visit
+  // someone else opened. Catalog approval is likewise open: RPs have no team,
+  // so a TEAM rule left their own additions unapprovable.
+  "visit.create": ALL,
+  "visit.arrive": ALL,
+  "visit.tick":   ALL,
+  "visit.close":  ALL,
+  "catalog.list":   ALL,
+  "catalog.read":   ALL,
+  "catalog.update": ALL,
+  "catalog_item.create":  ALL,
+  "catalog_item.approve": ALL,
   "catalog_item.deploy":  TEAM,
 
   "decision.list":   OWN,
