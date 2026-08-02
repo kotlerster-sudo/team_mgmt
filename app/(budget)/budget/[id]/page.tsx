@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import BudgetEditor from "./BudgetEditor";
 import { canAccessBudget } from "@/lib/budget/budgetAccess";
 import { resolveRegistryCity } from "@/lib/budget/grantingUnits";
+import { resolveRegistryRows, resolveRegistryComponents } from "@/lib/budget/costRegistry";
 
 export default async function BudgetPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -26,14 +27,12 @@ export default async function BudgetPage({ params }: { params: Promise<{ id: str
   // no registry/templates of its own generates from its registryCity, so the
   // working must resolve against the same source (matches createBudget).
   const registryCity = await resolveRegistryCity(budget.city);
-  const [tmpls, regComps, regItems] = await Promise.all([
+  const [tmpls, regCompByKey, regItems] = await Promise.all([
     prisma.lineTemplate.findMany({ where: { city: registryCity }, select: { templateKey: true, costKey: true } }),
-    prisma.costRegistryComponent.findMany({ where: { city: registryCity }, orderBy: { position: "asc" }, select: { parentItemKey: true, label: true, spec: true, qty: true, unitCost: true } }),
-    prisma.costRegistry.findMany({ where: { city: registryCity }, select: { itemKey: true, derivation: true } }),
+    resolveRegistryComponents(registryCity),
+    resolveRegistryRows(registryCity),
   ]);
   const costKeyByTemplate = new Map(tmpls.map(t => [t.templateKey, t.costKey]));
-  const regCompByKey: Record<string, { label: string; spec: string | null; qty: number; unitCost: number }[]> = {};
-  for (const c of regComps) (regCompByKey[c.parentItemKey] ??= []).push({ label: c.label, spec: c.spec, qty: c.qty, unitCost: c.unitCost });
   const regDerivByKey = new Map(regItems.map(r => [r.itemKey, r.derivation]));
 
   // customised = edited on this budget (a budget-specific override).

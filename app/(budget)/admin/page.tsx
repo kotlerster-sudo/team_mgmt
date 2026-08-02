@@ -3,6 +3,7 @@ import { isBudgetAdmin } from "@/lib/roleGuard";
 import prisma from "@/lib/prisma";
 import { getDefaultsForCity } from "@/lib/budget-costs";
 import { listGrantingUnits, resolveRegistryCity } from "@/lib/budget/grantingUnits";
+import { resolveRegistryRows, resolveRegistryComponents, globalRegistryMap } from "@/lib/budget/costRegistry";
 import AdminClient from "./AdminClient";
 
 export default async function AdminPage({ searchParams }: { searchParams: Promise<{ city?: string }> }) {
@@ -17,11 +18,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   // budgets against. cityBudgets stays on the unit so the dropdown still lists them.
   const sourceCity = await resolveRegistryCity(city);
 
-  const [registry, templates, domains, cityRecords, needsDomains, cityBudgets, components] = await Promise.all([
-    prisma.costRegistry.findMany({
-      where: { city: sourceCity },
-      orderBy: [{ domain: "asc" }, { itemKey: "asc" }],
-    }),
+  const [registry, templates, domains, cityRecords, needsDomains, cityBudgets, componentsByKey, sharedCosts] = await Promise.all([
+    resolveRegistryRows(sourceCity),
     prisma.lineTemplate.findMany({
       where: { city: sourceCity },
       orderBy: { position: "asc" },
@@ -43,18 +41,10 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       select: { id: true, name: true, createdAt: true, domains: true, horizonMonths: true },
       orderBy: { createdAt: "desc" },
     }),
-    prisma.costRegistryComponent.findMany({
-      where: { city: sourceCity },
-      orderBy: { position: "asc" },
-      select: { parentItemKey: true, label: true, spec: true, qty: true, unitCost: true },
-    }),
+    // Component breakup (the "working") grouped by the aggregate item it derives.
+    resolveRegistryComponents(sourceCity),
+    globalRegistryMap(),
   ]);
-
-  // Component breakup (the "working") grouped by the aggregate item it derives.
-  const componentsByKey: Record<string, { label: string; spec: string | null; qty: number; unitCost: number }[]> = {};
-  for (const c of components) {
-    (componentsByKey[c.parentItemKey] ??= []).push({ label: c.label, spec: c.spec, qty: c.qty, unitCost: c.unitCost });
-  }
 
   const cityIds = cityRecords.map(c => c.id);
   const zones = await prisma.zone.findMany({
@@ -84,6 +74,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         displayGroup: db?.displayGroup ?? null,
         needsDomain: db?.needsDomain ?? null,
         derivation: db?.derivation ?? null,
+        inherited: db?.inherited ?? false,
+        sharedCost: sharedCosts[def.itemKey] ?? null,
       };
     }),
     // Custom items added via admin (not in defaults)
@@ -101,6 +93,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         displayGroup: r.displayGroup ?? null,
         needsDomain: r.needsDomain ?? null,
         derivation: r.derivation ?? null,
+        inherited: r.inherited,
+        sharedCost: sharedCosts[r.itemKey] ?? null,
       })),
   ];
 

@@ -12,6 +12,7 @@
 // at note-create time so the note doesn't drift if the budget is later edited.
 
 import prisma from "@/lib/prisma";
+import { resolveRegistryMap } from "@/lib/budget/costRegistry";
 import {
   generateBudgetLines,
   activeYearBands,
@@ -185,12 +186,11 @@ export async function loadBudgetSnapshot(
   // Generate "standard" lines from the snapshot+templates using the same
   // inputs the budget was created with. Snapshot wins over the live registry
   // because that's what the partner saw at create time.
-  const [registryRows, templates] = await Promise.all([
-    prisma.costRegistry.findMany({ where: { city: budget.city } }),
+  const [liveRegistry, templates] = await Promise.all([
+    resolveRegistryMap(budget.city),
     prisma.lineTemplate.findMany({ where: { city: budget.city }, orderBy: { position: "asc" } }),
   ]);
   const snapshot = (budget.costSnapshot ?? {}) as Record<string, number>;
-  const liveRegistry = Object.fromEntries(registryRows.map(r => [r.itemKey, r.unitCost]));
   const standardRegistry = { ...liveRegistry, ...snapshot };
   const horizonMonths = 36;
   const stdLines = generateBudgetLines(

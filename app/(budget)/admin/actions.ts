@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma";
 import { getDefaultsForCity } from "@/lib/budget-costs";
 import { getTemplatesForCity } from "@/lib/line-template-seeds";
 import { logCostChange } from "@/lib/budget/costHistory";
+import { GLOBAL_SCOPE } from "@/lib/budget/costRegistry";
 import type { BudgetSection, InflationType } from "@/app/generated/prisma/client";
 import { revalidatePath } from "next/cache";
 
@@ -258,6 +259,124 @@ export async function backfillDisplayGroups(city: string) {
     )
   );
   revalidatePath("/admin");
+}
+
+/**
+ * Set a unit's own cost for an item, forking it off the shared layer if it was
+ * inherited. Always writes to `city` — never to the row the resolver happened to
+ * hand back, which for an inherited item belongs to every other unit too.
+ *
+ * This also covers items that exist only as code defaults: creating the one row
+ * being edited beats seeding all ~400 to change one number.
+ */
+export async function overrideCostItem(
+  city: string,
+  item: { itemKey: string; unit: string; domain?: string | null },
+  unitCost: number,
+  notes?: string,
+  displayGroup?: string | null,
+  needsDomain?: string | null,
+) {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error("Not authenticated");
+
+  const before = await prisma.costRegistry.findUnique({
+    where: { city_itemKey: { city, itemKey: item.itemKey } },
+  });
+  await prisma.costRegistry.upsert({
+    where: { city_itemKey: { city, itemKey: item.itemKey } },
+    create: {
+      city, itemKey: item.itemKey, unit: item.unit, domain: item.domain ?? null,
+      unitCost, effectiveYear: 2025, notes: notes ?? null,
+      displayGroup: displayGroup ?? null, needsDomain: needsDomain ?? null,
+    },
+    update: {
+      unitCost, notes,
+      ...(displayGroup !== undefined ? { displayGroup } : {}),
+      ...(needsDomain  !== undefined ? { needsDomain }  : {}),
+    },
+  });
+  await logCostChange(prisma, {
+    city, domain: item.domain ?? null, itemKey: item.itemKey,
+    oldCost: before?.unitCost ?? null, newCost: unitCost,
+    source: before ? "admin edit" : "unit override", changedById: session.user.id,
+  });
+  revalidatePath("/admin");
+  revalidatePath("/budget/admin");
+}
+
+/** Drop a unit's own row so the item falls back to the shared layer again. */
+export async function revertToSharedCost(city: string, itemKey: string) {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error("Not authenticated");
+
+  const [own, shared] = await Promise.all([
+    prisma.costRegistry.findUnique({ where: { city_itemKey: { city, itemKey } } }),
+    prisma.costRegistry.findUnique({ where: { city_itemKey: { city: GLOBAL_SCOPE, itemKey } } }),
+  ]);
+  // Without a shared row to fall back to, deleting would remove the item outright.
+  if (!own || !shared) return;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.costRegistryComponent.deleteMany({ where: { city, parentItemKey: itemKey } });
+    await tx.costRegistry.delete({ where: { id: own.id } });
+    await logCostChange(tx, {
+      city, domain: own.domain, itemKey,
+      oldCost: own.unitCost, newCost: shared.unitCost,
+      source: "revert to shared", changedById: session.user!.id,
+    });
+  });
+  revalidatePath("/admin");
+  revalidatePath("/budget/admin");
+}
+
+/**
+ * Move a unit's cost into the shared layer, where every other unit inherits it.
+ * The unit's own row (and its working) is removed afterwards, so the item has
+ * exactly one home — a unit that keeps a row identical to the shared one is the
+ * drift this layer exists to remove.
+ */
+export async function promoteCostToShared(city: string, itemKey: string) {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error("Not authenticated");
+  if (city === GLOBAL_SCOPE) return;
+
+  const own = await prisma.costRegistry.findUnique({ where: { city_itemKey: { city, itemKey } } });
+  if (!own) return;
+  const [components, sharedBefore] = await Promise.all([
+    prisma.costRegistryComponent.findMany({ where: { city, parentItemKey: itemKey }, orderBy: { position: "asc" } }),
+    prisma.costRegistry.findUnique({ where: { city_itemKey: { city: GLOBAL_SCOPE, itemKey } } }),
+  ]);
+
+  await prisma.$transaction(async (tx) => {
+    const shape = {
+      unit: own.unit, domain: own.domain, unitCost: own.unitCost, notes: own.notes,
+      derivation: own.derivation, displayGroup: own.displayGroup, needsDomain: own.needsDomain,
+    };
+    await tx.costRegistry.upsert({
+      where: { city_itemKey: { city: GLOBAL_SCOPE, itemKey } },
+      create: { city: GLOBAL_SCOPE, itemKey, effectiveYear: own.effectiveYear, ...shape },
+      update: shape,
+    });
+    await tx.costRegistryComponent.deleteMany({ where: { city: GLOBAL_SCOPE, parentItemKey: itemKey } });
+    if (components.length > 0) {
+      await tx.costRegistryComponent.createMany({
+        data: components.map((c, i) => ({
+          city: GLOBAL_SCOPE, parentItemKey: itemKey, position: i,
+          label: c.label, spec: c.spec, qty: c.qty, unitCost: c.unitCost,
+        })),
+      });
+    }
+    await tx.costRegistryComponent.deleteMany({ where: { city, parentItemKey: itemKey } });
+    await tx.costRegistry.delete({ where: { id: own.id } });
+    await logCostChange(tx, {
+      city: GLOBAL_SCOPE, domain: own.domain, itemKey,
+      oldCost: sharedBefore?.unitCost ?? null, newCost: own.unitCost,
+      source: `promoted from ${city}`, changedById: session.user!.id,
+    });
+  });
+  revalidatePath("/admin");
+  revalidatePath("/budget/admin");
 }
 
 export async function deleteCostItem(id: string) {

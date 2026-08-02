@@ -2,7 +2,8 @@
 
 import { useState, useMemo, useTransition, Fragment } from "react";
 import {
-  seedCostRegistry, updateCostRegistry, resetCostRegistry, deleteCostItem, addCostItem, saveCostComponents,
+  seedCostRegistry, resetCostRegistry, deleteCostItem, addCostItem, saveCostComponents,
+  overrideCostItem, revertToSharedCost, promoteCostToShared,
   seedProgrammeInputs, backfillDisplayGroups,
   toggleLineTemplate, addLineTemplate, updateLineTemplate, deleteLineTemplate,
   reorderLineTemplates, seedLineTemplates,
@@ -28,6 +29,10 @@ type CostRow = {
   displayGroup: string | null;
   needsDomain: string | null;
   derivation: string | null;
+  /** The row came from the shared layer, not this unit. Editing forks it. */
+  inherited: boolean;
+  /** What the shared layer says, when it carries this item at all. */
+  sharedCost: number | null;
 };
 
 type ComponentItem = { label: string; spec: string | null; qty: number; unitCost: number };
@@ -190,20 +195,20 @@ function CostRegistryTab({ costs, isSeeded, city, domainOrder, domainLabels, nee
     setEditNeedsDomain(row.needsDomain);
   };
 
+  // Always writes a row scoped to this unit. An inherited row belongs to the
+  // shared layer and to every other unit through it, so editing forks rather
+  // than mutates.
   const saveEdit = (row: CostRow) => {
     const newVal = parseFloat(editVal);
     if (isNaN(newVal)) return;
+    const isInp = row.itemKey.startsWith("inp.");
     startTransition(async () => {
-      if (row.id) {
-        const isInp = row.itemKey.startsWith("inp.");
-        await updateCostRegistry(
-          row.id, newVal, editNotes || undefined,
-          isInp ? editDisplayGroup : undefined,
-          isInp ? editNeedsDomain  : undefined,
-        );
-      } else {
-        await seedCostRegistry(city);
-      }
+      await overrideCostItem(
+        city, { itemKey: row.itemKey, unit: row.unit, domain: row.domain }, newVal,
+        editNotes || undefined,
+        isInp ? editDisplayGroup : undefined,
+        isInp ? editNeedsDomain  : undefined,
+      );
       setEditing(null);
     });
   };
@@ -211,6 +216,16 @@ function CostRegistryTab({ costs, isSeeded, city, domainOrder, domainLabels, nee
   const handleReset = (row: CostRow) => {
     if (!row.id) return;
     startTransition(() => resetCostRegistry(row.id!));
+  };
+
+  const handleRevertToShared = (row: CostRow) => {
+    if (!confirm(`Drop this unit's own "${row.itemKey}" and inherit the shared ₹${(row.sharedCost ?? 0).toLocaleString("en-IN")}?`)) return;
+    startTransition(() => revertToSharedCost(city, row.itemKey));
+  };
+
+  const handlePromoteToShared = (row: CostRow) => {
+    if (!confirm(`Move "${row.itemKey}" into the shared layer? Every unit without its own rate will inherit ₹${row.currentCost.toLocaleString("en-IN")}.`)) return;
+    startTransition(() => promoteCostToShared(city, row.itemKey));
   };
 
   const handleDeleteItem = (row: CostRow) => {
@@ -313,12 +328,22 @@ function CostRegistryTab({ costs, isSeeded, city, domainOrder, domainLabels, nee
           <td className="text-right px-3 py-2.5">
             <span className={`font-medium ${row.isEdited ? "text-amber-700" : "text-stone-800"}`}>{row.currentCost.toLocaleString("en-IN")}</span>
             {row.isEdited && <span className="ml-1 text-xs text-amber-500">edited</span>}
+            {row.inherited
+              ? <div className="text-xs sm:text-[10px] text-stone-400 mt-0.5">shared</div>
+              : row.sharedCost !== null && row.sharedCost !== row.currentCost
+                ? <div className="text-xs sm:text-[10px] text-violet-500 mt-0.5">overrides {row.sharedCost.toLocaleString("en-IN")}</div>
+                : null}
           </td>
           <td className="px-3 py-2.5">
             <div className="flex gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
               <button onClick={() => startEdit(row)} className="text-xs text-sky-600 hover:text-sky-800">Edit</button>
-              {row.isEdited && row.id && <button onClick={() => handleReset(row)} className="text-xs text-stone-400 hover:text-stone-600">Reset</button>}
-              {row.id && <button onClick={() => handleDeleteItem(row)} className="text-xs text-stone-300 hover:text-red-500">Delete</button>}
+              {row.inherited
+                ? null
+                : row.sharedCost !== null
+                  ? <button onClick={() => handleRevertToShared(row)} className="text-xs text-stone-400 hover:text-stone-600">Inherit</button>
+                  : row.id && <button onClick={() => handlePromoteToShared(row)} className="text-xs text-violet-500 hover:text-violet-700">Share</button>}
+              {row.isEdited && row.id && !row.inherited && <button onClick={() => handleReset(row)} className="text-xs text-stone-400 hover:text-stone-600">Reset</button>}
+              {row.id && !row.inherited && <button onClick={() => handleDeleteItem(row)} className="text-xs text-stone-300 hover:text-red-500">Delete</button>}
             </div>
           </td>
         </tr>

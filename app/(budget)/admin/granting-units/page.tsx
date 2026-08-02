@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { isBudgetAdminOrSuperAdmin } from "@/lib/roleGuard";
 import { redirect } from "next/navigation";
 import prisma from "@/lib/prisma";
+import { GLOBAL_SCOPE } from "@/lib/budget/costRegistry";
 import GrantingUnitsClient from "./GrantingUnitsClient";
 
 export default async function GrantingUnitsPage() {
@@ -16,8 +17,13 @@ export default async function GrantingUnitsPage() {
         _count: { select: { budgets: true, partners: true } },
       },
     }),
-    // Only cities that actually carry standard cost data can back a unit.
-    prisma.costRegistry.findMany({ distinct: ["city"], select: { city: true }, orderBy: { city: "asc" } }),
+    // Only cities that actually carry standard cost data can back a unit. The
+    // shared layer is excluded: it is what every unit already falls back to, so
+    // pointing a unit at it would say nothing.
+    prisma.costRegistry.findMany({
+      where: { city: { not: GLOBAL_SCOPE } },
+      distinct: ["city"], select: { city: true }, orderBy: { city: "asc" },
+    }),
   ]);
 
   return (

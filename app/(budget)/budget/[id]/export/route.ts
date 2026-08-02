@@ -6,6 +6,7 @@ import { extractCostComponents, type RegistryItem, type TemplateLike } from "@/l
 import { activeYearBands } from "@/lib/budget-generator";
 import { canAccessBudget } from "@/lib/budget/budgetAccess";
 import { resolveRegistryCity } from "@/lib/budget/grantingUnits";
+import { resolveRegistryRows, resolveRegistryComponents } from "@/lib/budget/costRegistry";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -38,10 +39,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         workerRatioKey: true, bufferKey: true, costPctOf: true, costPct: true,
       },
     }),
-    prisma.costRegistry.findMany({
-      where: { city: sourceCity },
-      select: { itemKey: true, unitCost: true, unit: true },
-    }),
+    resolveRegistryRows(sourceCity),
   ]);
 
   const registry: RegistryItem[] = registryRows;
@@ -79,24 +77,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   // Attach each line's "working" breakup, rendered inline on 04.Working: the
   // line's OWN components once authored, else the standard registry bundle
   // (via the template's costKey).
-  const componentRows = await prisma.costRegistryComponent.findMany({
-    where: { city: sourceCity },
-    orderBy: { position: "asc" },
-    select: { parentItemKey: true, label: true, spec: true, qty: true, unitCost: true },
-  });
-  const compByParent = new Map<string, typeof componentRows>();
-  for (const c of componentRows) {
-    const arr = compByParent.get(c.parentItemKey) ?? [];
-    arr.push(c);
-    compByParent.set(c.parentItemKey, arr);
-  }
+  const compByParent = await resolveRegistryComponents(sourceCity);
   budget.lines.forEach((l, i) => {
     if (l.components && l.components.length > 0) {
       lines[i].breakup = l.components.map(c => ({ label: c.label, spec: c.spec, qty: c.qty, unitCost: c.unitCost }));
       return;
     }
     const parentKey = l.templateKey ? templateByKey.get(l.templateKey)?.costKey ?? null : null;
-    const comps = parentKey ? compByParent.get(parentKey) : null;
+    const comps = parentKey ? compByParent[parentKey] : null;
     if (comps && comps.length > 0) {
       lines[i].breakup = comps.map(c => ({ label: c.label, spec: c.spec, qty: c.qty, unitCost: c.unitCost }));
     }

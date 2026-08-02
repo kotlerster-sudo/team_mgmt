@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { isBudgetAdminOrSuperAdmin } from "@/lib/roleGuard";
 import { requireBudgetAccess } from "@/lib/budget/budgetAccess";
 import { requireGrantingUnit } from "@/lib/budget/grantingUnits";
+import { resolveRegistryRows, resolveRegistryComponents } from "@/lib/budget/costRegistry";
 import prisma from "@/lib/prisma";
 import { generateBudgetLines, DEFAULT_INFLATION_RATES, activeYearBands } from "@/lib/budget-generator";
 import type { BudgetSection, BudgetLineCadence, InflationType } from "@/app/generated/prisma/client";
@@ -292,13 +293,11 @@ async function snapshotLineWorking(
   templates: { templateKey: string; costKey: string | null }[],
   changedById: string,
 ) {
-  const [comps, regItems, lines] = await Promise.all([
-    prisma.costRegistryComponent.findMany({ where: { city: sourceCity }, orderBy: { position: "asc" }, select: { parentItemKey: true, label: true, spec: true, qty: true, unitCost: true } }),
-    prisma.costRegistry.findMany({ where: { city: sourceCity }, select: { itemKey: true, derivation: true } }),
+  const [compByKey, regItems, lines] = await Promise.all([
+    resolveRegistryComponents(sourceCity),
+    resolveRegistryRows(sourceCity),
     prisma.budgetLine.findMany({ where: { budgetId }, select: { id: true, templateKey: true, y1UnitCost: true } }),
   ]);
-  const compByKey = new Map<string, typeof comps>();
-  for (const c of comps) { const a = compByKey.get(c.parentItemKey) ?? []; a.push(c); compByKey.set(c.parentItemKey, a); }
   const derivByKey = new Map(regItems.map(r => [r.itemKey, r.derivation]));
   const costKeyByTemplate = new Map(templates.map(t => [t.templateKey, t.costKey]));
 
@@ -310,7 +309,7 @@ async function snapshotLineWorking(
     if (l.y1UnitCost > 0) historyRows.push({ budgetLineId: l.id, oldCost: null, newCost: l.y1UnitCost, source: "generated", changedById });
     const costKey = l.templateKey ? costKeyByTemplate.get(l.templateKey) ?? null : null;
     if (!costKey) continue;
-    const cs = compByKey.get(costKey);
+    const cs = compByKey[costKey];
     if (!cs || cs.length === 0) continue;
     cs.forEach((c, i) => componentRows.push({ budgetLineId: l.id, position: i, label: c.label, spec: c.spec, qty: c.qty, unitCost: c.unitCost }));
     const d = derivByKey.get(costKey);
@@ -339,7 +338,7 @@ export async function createBudget(payload: CreateBudgetPayload) {
   const unit = await requireGrantingUnit(payload.city);
   const sourceCity = unit.registryCity;
   const [registryRows, templates] = await Promise.all([
-    prisma.costRegistry.findMany({ where: { city: sourceCity } }),
+    resolveRegistryRows(sourceCity),
     prisma.lineTemplate.findMany({ where: { city: sourceCity }, orderBy: { position: "asc" } }),
   ]);
   // Snapshot the full registry at create time. Stored on Budget.costSnapshot
