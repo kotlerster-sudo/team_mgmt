@@ -28,6 +28,7 @@ type ReallocationRequest = {
   toLine: { id: string; description: string; section: string } | null;
   toDescription: string | null; toSection: string | null;
   requestedAmount: number; durationType: string; durationMonths: number | null;
+  targetGrantYear: number | null;
   rationale: string; sourceUnspent: number; willSustain: boolean; sustainNote: string | null;
   approvedAmount: number | null; reviewerComment: string | null;
 };
@@ -129,7 +130,7 @@ const BLANK_REALLOC = {
   fromLineId: "", toLineId: "" as string | "new",
   toDescription: "", toSection: "programme" as BudgetSection,
   requestedAmount: "", durationType: "remaining_year" as ReallocationDuration,
-  durationMonths: "", rationale: "",
+  durationMonths: "", targetGrantYear: "", rationale: "",
 };
 
 export default function ReportForm({
@@ -347,6 +348,7 @@ export default function ReportForm({
         requestedAmount: nv(realloc.requestedAmount),
         durationType: realloc.durationType,
         durationMonths: realloc.durationType === "custom" ? (parseInt(realloc.durationMonths) || undefined) : undefined,
+        targetGrantYear: realloc.targetGrantYear ? parseInt(realloc.targetGrantYear) : null,
         rationale: realloc.rationale.trim(),
       });
       setRealloc(BLANK_REALLOC);
@@ -914,6 +916,11 @@ export default function ReportForm({
                           : req.status === "rejected" ? "bg-red-100 text-red-700"
                           : "bg-amber-100 text-amber-700"
                         }`}>{req.status}</span>
+                        {req.targetGrantYear != null && (
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-violet-100 text-violet-700">
+                            carry forward to Year {req.targetGrantYear}
+                          </span>
+                        )}
                       </div>
                       <p className="text-xs text-stone-500">
                         {fmt(Math.round(req.requestedAmount))} · {DURATION_LABELS[req.durationType] ?? req.durationType}
@@ -1024,6 +1031,23 @@ export default function ReportForm({
                       onChange={e => setRealloc(p => ({ ...p, durationMonths: e.target.value }))}
                       placeholder="e.g. 3"
                       className="w-full text-sm border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-sky-400" />
+                  </div>
+                )}
+
+                {slot.grantYear < budget.years && (
+                  <div className="sm:col-span-2">
+                    <label className="text-xs text-stone-500 block mb-1">When is this money needed?</label>
+                    <select value={realloc.targetGrantYear}
+                      onChange={e => setRealloc(p => ({ ...p, targetGrantYear: e.target.value }))}
+                      className="w-full text-sm border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-sky-400">
+                      <option value="">Within Year {slot.grantYear}</option>
+                      {Array.from({ length: budget.years - slot.grantYear }, (_, i) => slot.grantYear + 1 + i).map(y => (
+                        <option key={y} value={y}>Carry forward to Year {y}</option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-stone-400 mt-1">
+                      Unspent amounts lapse at the end of the grant year unless you ask for them to carry forward here and the request is approved.
+                    </p>
                   </div>
                 )}
               </div>

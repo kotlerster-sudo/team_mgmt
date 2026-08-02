@@ -158,6 +158,32 @@ const SUBMIT_SLOT_SELECT = {
   report: { select: { id: true, lines: { select: { budgetLineId: true, actualAmount: true } } } },
 } as const;
 
+type YearTotals = { y1Total: number; y2Total: number; y3Total: number; y4Total: number; y5Total: number };
+
+const yearTotalOf = (line: YearTotals, grantYear: number) =>
+  grantYear === 1 ? line.y1Total
+  : grantYear === 2 ? line.y2Total
+  : grantYear === 3 ? line.y3Total
+  : grantYear === 4 ? line.y4Total
+  : line.y5Total;
+
+// Actuals spent against a line earlier in the same grant year. Scoped to the
+// year because it is compared with one year's budget, and slotNumber runs across
+// the whole grant — an unscoped sum would charge earlier years' spending here.
+async function priorActualsInYear(budgetId: string, grantYear: number, beforeSlotNumber: number) {
+  const priorSlots = await prisma.budgetReportSlot.findMany({
+    where: { budgetId, grantYear, slotNumber: { lt: beforeSlotNumber }, status: { in: ["approved", "submitted"] } },
+    select: { report: { select: { lines: { select: { budgetLineId: true, actualAmount: true } } } } },
+  });
+  const totals: Record<string, number> = {};
+  for (const ps of priorSlots) {
+    for (const l of ps.report?.lines ?? []) {
+      totals[l.budgetLineId] = (totals[l.budgetLineId] ?? 0) + l.actualAmount;
+    }
+  }
+  return totals;
+}
+
 // Recompute sustain checks on all pending reallocation requests for this report.
 async function recomputeSustainForSubmit(slot: SubmitSlot) {
   if (!slot.report) return;
@@ -166,16 +192,7 @@ async function recomputeSustainForSubmit(slot: SubmitSlot) {
   });
   if (requests.length === 0) return;
 
-  const priorSlots = await prisma.budgetReportSlot.findMany({
-    where: { budgetId: slot.budgetId, slotNumber: { lt: slot.slotNumber }, status: { in: ["approved", "submitted"] } },
-    include: { report: { include: { lines: { select: { budgetLineId: true, actualAmount: true } } } } },
-  });
-  const priorActuals: Record<string, number> = {};
-  for (const ps of priorSlots) {
-    for (const l of ps.report?.lines ?? []) {
-      priorActuals[l.budgetLineId] = (priorActuals[l.budgetLineId] ?? 0) + l.actualAmount;
-    }
-  }
+  const priorActuals = await priorActualsInYear(slot.budgetId, slot.grantYear, slot.slotNumber);
   const currentActuals: Record<string, number> = Object.fromEntries(
     (slot.report.lines ?? []).map(l => [l.budgetLineId, l.actualAmount])
   );
@@ -183,17 +200,14 @@ async function recomputeSustainForSubmit(slot: SubmitSlot) {
   await Promise.all(requests.map(async req => {
     const fromLine = await prisma.budgetLine.findUnique({ where: { id: req.fromLineId } });
     if (!fromLine) return;
-    const yearTotal =
-      slot.grantYear === 1 ? fromLine.y1Total
-      : slot.grantYear === 2 ? fromLine.y2Total
-      : slot.grantYear === 3 ? fromLine.y3Total
-      : slot.grantYear === 4 ? fromLine.y4Total
-      : fromLine.y5Total;
+    // Money always comes out of the year it went unspent in, even when the
+    // partner is asking to carry it into a later one.
+    const yearTotal = yearTotalOf(fromLine, slot.grantYear);
     const ytdActual = (priorActuals[req.fromLineId] ?? 0) + (currentActuals[req.fromLineId] ?? 0);
     const sourceUnspent = Math.max(0, yearTotal - ytdActual);
     const willSustain = sourceUnspent >= req.requestedAmount;
     const sustainNote = willSustain ? null
-      : `Source line has only ₹${Math.round(sourceUnspent).toLocaleString("en-IN")} unspent vs requested ₹${Math.round(req.requestedAmount).toLocaleString("en-IN")}`;
+      : `Source line has only ₹${Math.round(sourceUnspent).toLocaleString("en-IN")} unspent in Year ${slot.grantYear} vs requested ₹${Math.round(req.requestedAmount).toLocaleString("en-IN")}`;
     await prisma.budgetReallocationRequest.update({
       where: { id: req.id },
       data: { sourceUnspent, willSustain, sustainNote },
@@ -437,16 +451,25 @@ export async function addReallocationRequest(
     requestedAmount: number;
     durationType: ReallocationDuration;
     durationMonths?: number;
+    targetGrantYear?: number | null;
     rationale: string;
   }
 ) {
   const slot = await prisma.budgetReportSlot.findUnique({
     where: { id: slotId },
-    select: { budgetId: true, status: true, grantYear: true, slotNumber: true },
+    select: { budgetId: true, status: true, grantYear: true, slotNumber: true, budget: { select: { years: true } } },
   });
   if (!slot) throw new Error("Slot not found");
   if (!["pending", "sent_back"].includes(slot.status)) throw new Error("Cannot add requests in current status");
   await assertCanEditReport(slot.budgetId);
+
+  // Carrying money backwards is not a reallocation — an earlier year is already
+  // reported and its declaration signed.
+  const targetGrantYear = req.targetGrantYear ?? null;
+  if (targetGrantYear !== null) {
+    if (targetGrantYear <= slot.grantYear) throw new Error("Carry-forward must target a later grant year.");
+    if (targetGrantYear > slot.budget.years) throw new Error(`This grant ends at Year ${slot.budget.years}.`);
+  }
 
   // Ensure report exists
   const report = await prisma.budgetReport.upsert({
@@ -457,30 +480,16 @@ export async function addReallocationRequest(
   });
 
   // Compute sustain check
-  const priorSlots = await prisma.budgetReportSlot.findMany({
-    where: { budgetId: slot.budgetId, slotNumber: { lt: slot.slotNumber }, status: { in: ["approved", "submitted"] } },
-    include: { report: { include: { lines: { select: { budgetLineId: true, actualAmount: true } } } } },
-  });
-  const priorActuals: Record<string, number> = {};
-  for (const ps of priorSlots) {
-    for (const l of ps.report?.lines ?? []) {
-      priorActuals[l.budgetLineId] = (priorActuals[l.budgetLineId] ?? 0) + l.actualAmount;
-    }
-  }
+  const priorActuals = await priorActualsInYear(slot.budgetId, slot.grantYear, slot.slotNumber);
   const currentActuals: Record<string, number> = Object.fromEntries(report.lines.map(l => [l.budgetLineId, l.actualAmount]));
   const fromLine = await prisma.budgetLine.findUnique({ where: { id: req.fromLineId } });
   if (!fromLine) throw new Error("Source line not found");
-  const yearTotal =
-    slot.grantYear === 1 ? fromLine.y1Total
-    : slot.grantYear === 2 ? fromLine.y2Total
-    : slot.grantYear === 3 ? fromLine.y3Total
-    : slot.grantYear === 4 ? fromLine.y4Total
-    : fromLine.y5Total;
+  const yearTotal = yearTotalOf(fromLine, slot.grantYear);
   const ytdActual = (priorActuals[req.fromLineId] ?? 0) + (currentActuals[req.fromLineId] ?? 0);
   const sourceUnspent = Math.max(0, yearTotal - ytdActual);
   const willSustain = sourceUnspent >= req.requestedAmount;
   const sustainNote = willSustain ? null
-    : `Source line has only ₹${Math.round(sourceUnspent).toLocaleString("en-IN")} unspent vs requested ₹${Math.round(req.requestedAmount).toLocaleString("en-IN")}`;
+    : `Source line has only ₹${Math.round(sourceUnspent).toLocaleString("en-IN")} unspent in Year ${slot.grantYear} vs requested ₹${Math.round(req.requestedAmount).toLocaleString("en-IN")}`;
 
   const isRecurring = req.durationType !== "one_time";
   const durationMonths = req.durationMonths ?? null;
@@ -498,6 +507,7 @@ export async function addReallocationRequest(
       monthlyAmount,
       durationType: req.durationType,
       durationMonths,
+      targetGrantYear,
       rationale: req.rationale,
       sourceUnspent,
       willSustain,

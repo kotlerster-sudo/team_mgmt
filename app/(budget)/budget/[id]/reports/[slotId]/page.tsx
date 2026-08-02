@@ -72,20 +72,26 @@ export default async function ReportSlotPage({ params }: { params: Promise<{ id:
         include: {
           reallocationRequests: {
             where: { status: "approved" },
-            select: { fromLineId: true, toLineId: true, approvedAmount: true },
+            select: { fromLineId: true, toLineId: true, approvedAmount: true, targetGrantYear: true },
           },
         },
       },
     },
   });
 
-  // revisedYearTotals[lineId] = original yearTotal ± approved reallocations
+  // revisedYearTotals[lineId] = original yearTotal ± approved reallocations,
+  // for this grant year only. Within a year the money leaves the source line and
+  // lands on the destination; carried forward it only lands, because the source
+  // year is already reported and its unspent amount lapsed there.
   const revisedAdjustments: Record<string, number> = {};
   for (const ps of priorApprovedSlots) {
     for (const r of ps.report?.reallocationRequests ?? []) {
       if (r.approvedAmount == null) continue;
-      revisedAdjustments[r.fromLineId] = (revisedAdjustments[r.fromLineId] ?? 0) - r.approvedAmount;
-      if (r.toLineId) {
+      const targetYear = r.targetGrantYear ?? ps.grantYear;
+      if (r.targetGrantYear == null && ps.grantYear === slot.grantYear) {
+        revisedAdjustments[r.fromLineId] = (revisedAdjustments[r.fromLineId] ?? 0) - r.approvedAmount;
+      }
+      if (targetYear === slot.grantYear && r.toLineId) {
         revisedAdjustments[r.toLineId] = (revisedAdjustments[r.toLineId] ?? 0) + r.approvedAmount;
       }
     }

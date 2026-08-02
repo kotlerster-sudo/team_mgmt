@@ -2484,6 +2484,10 @@ model BudgetReallocationRequest {
   monthlyAmount   Float                @default(0)
   durationType    ReallocationDuration
   durationMonths  Int?
+  // null = the money moves within the reporting slot's own grant year. A later
+  // year means the partner is asking for this year's unspent amount to carry
+  // forward: nothing carries unless it is asked for and approved here.
+  targetGrantYear Int?
   rationale       String
   sourceUnspent   Float                @default(0)
   willSustain     Boolean              @default(true)

@@ -14,9 +14,19 @@ type ReallocationRequest = {
   toLine: { id: string; description: string } | null;
   toDescription: string | null;
   requestedAmount: number; durationType: string; durationMonths: number | null;
+  targetGrantYear: number | null;
   rationale: string; sourceUnspent: number; willSustain: boolean; sustainNote: string | null;
   approvedAmount: number | null; reviewerComment: string | null;
 };
+
+function CarryForwardChip({ year }: { year: number | null }) {
+  if (year == null) return null;
+  return (
+    <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-violet-100 text-violet-700">
+      carry forward to Year {year}
+    </span>
+  );
+}
 
 const DURATION_LABELS: Record<string, string> = {
   remaining_year: "Rest of grant year",
@@ -45,6 +55,7 @@ function ReallocationReviewCard({
           <span className={`text-xs px-2 py-0.5 rounded-full font-medium capitalize ${req.status === "approved" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
             {req.status}
           </span>
+          <CarryForwardChip year={req.targetGrantYear} />
         </div>
         <p className="text-xs text-stone-500">{fmt(Math.round(req.requestedAmount))} · {DURATION_LABELS[req.durationType] ?? req.durationType}</p>
         {req.status === "approved" && req.approvedAmount != null && req.approvedAmount !== req.requestedAmount && (
@@ -63,6 +74,7 @@ function ReallocationReviewCard({
             {req.fromLine.description} → {req.toLine?.description ?? req.toDescription ?? "New line"}
           </span>
           <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">Pending</span>
+          <CarryForwardChip year={req.targetGrantYear} />
           {!req.willSustain && (
             <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">Sustain concern</span>
           )}
