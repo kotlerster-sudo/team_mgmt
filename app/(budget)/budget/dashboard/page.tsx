@@ -17,6 +17,8 @@ export default async function GrantDashboardPage() {
         id: true, name: true, city: true, status: true, horizonMonths: true, domains: true,
         grantPartnerId: true,
         grantPartner: { select: { id: true, name: true } },
+        grantLeadId: true,
+        grantLead: { select: { id: true, name: true, email: true } },
         reportConfig: { select: { grantStartDate: true, grantEndDate: true } },
         lines: { select: { id: true, domain: true, y1Total: true, y2Total: true, y3Total: true, y4Total: true, y5Total: true } },
         reportSlots: { select: { status: true, report: { select: { lines: { select: { budgetLineId: true, actualAmount: true } } } } } },
@@ -44,6 +46,7 @@ export default async function GrantDashboardPage() {
       domainLabels={domainLabels}
       borrowings={JSON.parse(JSON.stringify(borrowings))}
       units={units.map((u) => ({ id: u.id, name: u.name }))}
+      currentUserId={session.user.id}
     />
   );
 }

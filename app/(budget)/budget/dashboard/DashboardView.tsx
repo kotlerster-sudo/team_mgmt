@@ -3,7 +3,7 @@
 import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  rollup, byPartner, rollupByDomain, borrowingPositions, borrowingStatus, pct,
+  rollup, byPartner, byGrantLead, rollupByDomain, borrowingPositions, borrowingStatus, pct,
   type GrantRow,
 } from "@/lib/budget/grantAggregation";
 
@@ -38,20 +38,28 @@ function UtilBar({ u, a }: { u: number; a: number }) {
 }
 
 export default function DashboardView({
-  grants, domainLabels, borrowings, units,
+  grants, domainLabels, borrowings, units, currentUserId,
 }: {
   grants: GrantRow[];
   domainLabels: Record<string, string>;
   borrowings: Borrowing[];
   units: { id: string; name: string }[];
+  currentUserId: string;
 }) {
   const tabs = ["All", ...units.map((u) => u.name)];
   const [city, setCity] = useState<string>("All");
+  const [mineOnly, setMineOnly] = useState(false);
   const [openPartner, setOpenPartner] = useState<string | null>(null);
   const [asOf, setAsOf] = useState<string>(new Date().toISOString().slice(0, 10));
 
-  const rows = useMemo(() => (city === "All" ? grants : grants.filter((g) => g.city === city)), [grants, city]);
+  const myGrantCount = useMemo(() => grants.filter((g) => g.grantLeadId === currentUserId).length, [grants, currentUserId]);
+  const rows = useMemo(() => {
+    let r = city === "All" ? grants : grants.filter((g) => g.city === city);
+    if (mineOnly) r = r.filter((g) => g.grantLeadId === currentUserId);
+    return r;
+  }, [grants, city, mineOnly, currentUserId]);
   const partners = useMemo(() => rollup(rows, byPartner), [rows]);
+  const leads = useMemo(() => rollup(rows, byGrantLead), [rows]);
   const domains = useMemo(() => rollupByDomain(rows), [rows]);
   const totApproved = rows.reduce((s, g) => s + g.approved, 0);
   const totUtilised = rows.reduce((s, g) => s + g.utilised, 0);
@@ -78,13 +86,18 @@ export default function DashboardView({
       </div>
 
       {/* Granting unit tabs */}
-      <div className="flex gap-1 border-b border-stone-200 overflow-x-auto">
+      <div className="flex items-center gap-1 border-b border-stone-200 overflow-x-auto">
         {tabs.map((c) => (
           <button key={c} onClick={() => setCity(c)}
             className={`whitespace-nowrap px-4 py-2 text-sm font-medium border-b-2 -mb-px ${city === c ? "border-sky-600 text-sky-700" : "border-transparent text-stone-500 hover:text-stone-800"}`}>
             {c}
           </button>
         ))}
+        <button onClick={() => setMineOnly((v) => !v)} disabled={myGrantCount === 0}
+          title={myGrantCount === 0 ? "No grants list you as grant lead yet." : undefined}
+          className={`ml-auto shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium ${mineOnly ? "bg-sky-600 text-white" : "text-stone-500 hover:bg-stone-100"} disabled:opacity-40 disabled:hover:bg-transparent`}>
+          My portfolio ({myGrantCount})
+        </button>
       </div>
 
       {/* Summary */}
@@ -162,6 +175,36 @@ export default function DashboardView({
                 </tr>
               </tfoot>
             )}
+          </table>
+        </div>
+      </section>
+
+      {/* Grant-lead-wise */}
+      <section>
+        <h2 className="text-sm font-semibold text-stone-700 mb-2">By grant lead</h2>
+        <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
+          <table className="w-full min-w-[600px] text-sm">
+            <thead className="bg-stone-50 text-xs text-stone-500">
+              <tr>
+                <th className="px-4 py-2 text-left font-medium">Grant lead</th>
+                <th className="px-4 py-2 text-right font-medium">Grants</th>
+                <th className="px-4 py-2 text-right font-medium">Approved</th>
+                <th className="px-4 py-2 text-right font-medium">Utilised</th>
+                <th className="px-4 py-2 text-left font-medium w-40">Utilisation</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-stone-100">
+              {leads.map((l) => (
+                <tr key={l.key}>
+                  <td className={`px-4 py-2 font-medium ${l.key === "unassigned" ? "text-stone-400" : "text-stone-900"}`}>{l.label}</td>
+                  <td className="px-4 py-2 text-right text-stone-600">{l.grantCount}</td>
+                  <td className="px-4 py-2 text-right font-semibold">{money(l.approved)}</td>
+                  <td className="px-4 py-2 text-right">{money(l.utilised)}</td>
+                  <td className="px-4 py-2"><UtilBar u={l.utilised} a={l.approved} /><div className="text-[10px] text-stone-400 mt-0.5">{pctStr(l.utilised, l.approved)}</div></td>
+                </tr>
+              ))}
+              {leads.length === 0 && <tr><td colSpan={5} className="px-4 py-8 text-center text-stone-400">—</td></tr>}
+            </tbody>
           </table>
         </div>
       </section>

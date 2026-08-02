@@ -62,13 +62,21 @@ export default async function BudgetPage({ params }: { params: Promise<{ id: str
   });
   const domainLabels = Object.fromEntries(domainConfigs.map(d => [d.key, d.label]));
 
-  // Grantee orgs in this budget's city, for the assign-partner control.
-  const grantPartners = await prisma.grantPartner.findMany({
-    where: { city: budget.city, isActive: true },
-    orderBy: { name: "asc" },
-    select: { id: true, name: true },
-  });
+  const [grantPartners, grantLeads] = await Promise.all([
+    // Grantee orgs in this budget's granting unit, for the assign-partner control.
+    prisma.grantPartner.findMany({
+      where: { city: budget.city, isActive: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    // Internal colleagues only — a grantee login must never be the grant lead.
+    prisma.user.findMany({
+      where: { role: { not: "partner" } },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, email: true },
+    }),
+  ]);
 
   const serialized = JSON.parse(JSON.stringify(budget));
-  return <BudgetEditor budget={{ ...serialized, domainLabels, grantPartners, workingByLineId }} />;
+  return <BudgetEditor budget={{ ...serialized, domainLabels, grantPartners, grantLeads, workingByLineId }} />;
 }

@@ -33,6 +33,8 @@ export type BudgetForAgg = {
   domains: string[];
   grantPartnerId: string | null;
   grantPartner: { id: string; name: string } | null;
+  grantLeadId: string | null;
+  grantLead: { id: string; name: string | null; email: string } | null;
   reportConfig: { grantStartDate: Date | string; grantEndDate: Date | string } | null;
   lines: LineForAgg[];
   reportSlots: ReportSlotForAgg[];
@@ -58,6 +60,8 @@ export type GrantRow = {
   domains: string[];
   partnerId: string | null;      // grantPartnerId
   partnerName: string;           // "Unassigned" when null
+  grantLeadId: string | null;
+  grantLeadName: string;         // "Unassigned" when null
   approved: number;
   utilised: number;
   periodFrom: string | null;     // ISO
@@ -96,6 +100,8 @@ export function buildGrantRow(b: BudgetForAgg): GrantRow {
     domains: b.domains,
     partnerId: b.grantPartnerId,
     partnerName: b.grantPartner?.name ?? "Unassigned",
+    grantLeadId: b.grantLeadId,
+    grantLeadName: b.grantLead?.name ?? b.grantLead?.email ?? "Unassigned",
     approved,
     utilised,
     periodFrom: b.reportConfig ? new Date(b.reportConfig.grantStartDate).toISOString() : null,
@@ -145,7 +151,9 @@ export function rollup(
 }
 
 export const byPartner = (g: GrantRow) => ({ key: g.partnerId ?? "unassigned", label: g.partnerName });
-export const byCity = (g: GrantRow) => ({ key: g.city, label: g.city });
+/** `city` holds the granting unit's name — see lib/budget/grantingUnits.ts. */
+export const byGrantingUnit = (g: GrantRow) => ({ key: g.city, label: g.city });
+export const byGrantLead = (g: GrantRow) => ({ key: g.grantLeadId ?? "unassigned", label: g.grantLeadName });
 
 /** Domain rollup needs per-domain splitting (a grant spans domains), so it can't
  *  use `rollup` directly. Returns per-domain approved + utilised across grants. */

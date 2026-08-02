@@ -104,6 +104,7 @@ model User {
   completedChecklistItems   ChecklistItem[]                @relation("ChecklistItemCompleter")
   loginEvents               UserLoginEvent[]
   budgets                   Budget[]                       @relation("BudgetPartner")
+  ledBudgets                Budget[]                       @relation("BudgetGrantLead")
   // Tenancy
   org                       Org?                           @relation(fields: [orgId], references: [id], onDelete: SetNull)
   // Wiki module
@@ -2031,6 +2032,11 @@ model Budget {
   // Which office / thematic team / ops team makes and manages this grant.
   grantingUnitId     String?
   grantingUnit       GrantingUnit?           @relation(fields: [grantingUnitId], references: [id], onDelete: SetNull)
+  // The colleague accountable for this grant — who chases the partner, reviews
+  // the reports, gets the reminders. Distinct from `partnerId` (whoever happened
+  // to click create) and from `grantingUnitId` (the team, not the person).
+  grantLeadId        String?
+  grantLead          User?                   @relation("BudgetGrantLead", fields: [grantLeadId], references: [id], onDelete: SetNull)
   // years is kept for backward compat; horizonMonths is the source of truth.
   // years = ceil(horizonMonths / 12) is maintained at write time so list/select
   // queries that read `years` keep working without a sweep.
@@ -2077,6 +2083,7 @@ model Budget {
   @@index([partnerId])
   @@index([grantPartnerId])
   @@index([grantingUnitId])
+  @@index([grantLeadId])
 }
 
 /// Who makes and manages a grant: a focus-geography office, a travelling thematic

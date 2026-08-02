@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useState, useTransition, useRef } from "react";
-import { updateLine, addLine, deleteLine, finalizeBudget, deleteBudget, updateBudgetGrantPartner, saveBudgetLineComponents, getBudgetLineHistory } from "../actions";
+import { updateLine, addLine, deleteLine, finalizeBudget, deleteBudget, updateBudgetGrantPartner, updateBudgetGrantLead, saveBudgetLineComponents, getBudgetLineHistory } from "../actions";
 import type { BudgetSection, BudgetLineCadence, InflationType } from "@/app/generated/prisma/client";
 
 type WorkingComp = { label: string; spec: string | null; qty: number; unitCost: number };
@@ -44,6 +44,8 @@ type Budget = {
   importedAt?: string | null;
   grantPartnerId?: string | null;
   grantPartners?: { id: string; name: string }[];
+  grantLeadId?: string | null;
+  grantLeads?: { id: string; name: string | null; email: string }[];
   isMultiPartner?: boolean;
   deliveryPartners?: { id: string; name: string; sortOrder: number; sharedPct: number }[];
   lines: Line[];
@@ -430,21 +432,38 @@ export default function BudgetEditor({ budget }: { budget: Budget }) {
           <div className="mt-1 flex flex-wrap gap-1">
             {budget.domains.map(d => <span key={d} className="text-xs bg-stone-100 text-stone-600 px-2 py-0.5 rounded">{domainLabels[d] ?? d}</span>)}
           </div>
-          <label className="mt-2 flex items-center gap-1.5 text-xs text-stone-500">
-            Partner
-            <select
-              value={budget.grantPartnerId ?? ""}
-              disabled={pending}
-              onChange={e => {
-                const v = e.target.value || null;
-                startTransition(() => updateBudgetGrantPartner(budget.id, v));
-              }}
-              className="rounded border border-stone-300 px-2 py-1 text-sm text-stone-700 disabled:opacity-60"
-            >
-              <option value="">Unassigned</option>
-              {(budget.grantPartners ?? []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </label>
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <label className="flex items-center gap-1.5 text-xs text-stone-500">
+              Partner
+              <select
+                value={budget.grantPartnerId ?? ""}
+                disabled={pending}
+                onChange={e => {
+                  const v = e.target.value || null;
+                  startTransition(() => updateBudgetGrantPartner(budget.id, v));
+                }}
+                className="rounded border border-stone-300 px-2 py-1 text-sm text-stone-700 disabled:opacity-60"
+              >
+                <option value="">Unassigned</option>
+                {(budget.grantPartners ?? []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-stone-500" title="Who is accountable for this grant — reviews the reports and gets the reminders.">
+              Grant lead
+              <select
+                value={budget.grantLeadId ?? ""}
+                disabled={pending}
+                onChange={e => {
+                  const v = e.target.value || null;
+                  startTransition(() => updateBudgetGrantLead(budget.id, v));
+                }}
+                className="rounded border border-stone-300 px-2 py-1 text-sm text-stone-700 disabled:opacity-60"
+              >
+                <option value="">Unassigned</option>
+                {(budget.grantLeads ?? []).map(u => <option key={u.id} value={u.id}>{u.name ?? u.email}</option>)}
+              </select>
+            </label>
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           {budget.status === "approved" && (

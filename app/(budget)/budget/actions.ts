@@ -257,6 +257,26 @@ export async function updateBudgetGrantPartner(budgetId: string, grantPartnerId:
   revalidatePath("/budget/dashboard");
 }
 
+/** (Re)assign the accountable grant lead, or clear it (null). */
+export async function updateBudgetGrantLead(budgetId: string, grantLeadId: string | null) {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error("Not authenticated");
+
+  const budget = await prisma.budget.findUnique({ where: { id: budgetId }, select: { partnerId: true, grantPartnerId: true } });
+  await requireBudgetAccess(session, budget, "update");
+
+  if (grantLeadId) {
+    // A grantee's own login must never become the internal lead — they'd start
+    // receiving the chase-the-partner side of the reminder flow.
+    const u = await prisma.user.findUnique({ where: { id: grantLeadId }, select: { role: true } });
+    if (!u || u.role === "partner") throw new Error("Not a valid grant lead");
+  }
+
+  await prisma.budget.update({ where: { id: budgetId }, data: { grantLeadId } });
+  revalidatePath(`/budget/${budgetId}`);
+  revalidatePath("/budget/dashboard");
+}
+
 /**
  * Freeze each generated line's "working": snapshot the standard registry
  * component breakup (+ derivation) onto the line so the budget carries a
