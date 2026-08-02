@@ -421,6 +421,64 @@ export async function approveReport(slotId: string) {
   revalidatePath("/admin");
 }
 
+// ── Line-level queries ────────────────────────────────────────────────────────
+
+// A query thread runs across the send-back: the reviewer raises it on a
+// submitted report, the partner answers it on the returned one.
+const NOTE_OPEN_STATUSES = ["submitted", "sent_back"];
+
+export async function addReportLineNote(slotId: string, budgetLineId: string, body: string) {
+  const text = body.trim();
+  if (!text) throw new Error("Write something first.");
+
+  const slot = await prisma.budgetReportSlot.findUnique({
+    where: { id: slotId },
+    select: { budgetId: true, status: true },
+  });
+  if (!slot) throw new Error("Slot not found");
+  if (!NOTE_OPEN_STATUSES.includes(slot.status)) throw new Error("This report is closed for comments.");
+
+  const session = await auth();
+  if (!session?.user) throw new Error("Unauthorized");
+  // Either side of the conversation may post; the reviewer is not necessarily
+  // able to edit the report, and the partner is not an admin.
+  if (!isBudgetAdminOrSuperAdmin(session)) await assertCanEditReport(slot.budgetId);
+
+  const report = await prisma.budgetReport.upsert({
+    where: { slotId },
+    create: { slotId, budgetId: slot.budgetId },
+    update: {},
+    select: { id: true },
+  });
+
+  await prisma.budgetReportLineNote.create({
+    data: { reportId: report.id, budgetLineId, body: text, authorId: session.user.id! },
+  });
+
+  revalidatePath(`/budget/${slot.budgetId}/reports/${slotId}`);
+}
+
+export async function setReportLineNoteResolved(noteId: string, resolved: boolean) {
+  const session = await auth();
+  if (!session?.user || !isBudgetAdminOrSuperAdmin(session)) throw new Error("Unauthorized");
+
+  const note = await prisma.budgetReportLineNote.findUnique({
+    where: { id: noteId },
+    select: { report: { select: { slotId: true, budgetId: true } } },
+  });
+  if (!note) throw new Error("Not found");
+
+  await prisma.budgetReportLineNote.update({
+    where: { id: noteId },
+    data: {
+      resolvedAt: resolved ? new Date() : null,
+      resolvedById: resolved ? session.user.id! : null,
+    },
+  });
+
+  revalidatePath(`/budget/${note.report.budgetId}/reports/${note.report.slotId}`);
+}
+
 export async function sendBackReport(slotId: string, reviewerNotes: string) {
   const session = await auth();
   if (!session?.user || !isBudgetAdminOrSuperAdmin(session)) throw new Error("Unauthorized");

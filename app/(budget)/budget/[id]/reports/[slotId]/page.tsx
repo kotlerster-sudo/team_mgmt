@@ -28,6 +28,10 @@ export default async function ReportSlotPage({ params }: { params: Promise<{ id:
               },
               orderBy: { createdAt: "asc" },
             },
+            lineNotes: {
+              include: { author: { select: { id: true, name: true, email: true } } },
+              orderBy: { createdAt: "asc" },
+            },
           },
         },
       },
@@ -100,12 +104,15 @@ export default async function ReportSlotPage({ params }: { params: Promise<{ id:
   const serialized = JSON.parse(JSON.stringify({ slot, budget, cumulativePrior, revisedAdjustments }));
   const canEdit = isPartner && ["pending", "sent_back"].includes(slot.status);
   const isReview = canReview && slot.status === "submitted";
+  // Both sides can post while the report is in play: the reviewer raises a query
+  // on the submission, the partner answers it once the report comes back.
+  const canComment = ["submitted", "sent_back"].includes(slot.status) && (canReview || isPartner);
 
   return (
     <div>
       {isReview
-        ? <ReviewPanel {...serialized} />
-        : <ReportForm {...serialized} canEdit={canEdit} isSuperAdmin={canReview} />
+        ? <ReviewPanel {...serialized} canComment={canComment} canResolveNotes={canReview} />
+        : <ReportForm {...serialized} canEdit={canEdit} isSuperAdmin={canReview} canComment={canComment} canResolveNotes={canReview} />
       }
     </div>
   );

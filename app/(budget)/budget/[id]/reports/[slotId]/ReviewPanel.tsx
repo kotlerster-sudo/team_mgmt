@@ -144,8 +144,12 @@ function ReallocationReviewCard({
 }
 
 export default function ReviewPanel({
-  slot, budget, cumulativePrior, revisedAdjustments,
-}: { slot: Slot; budget: Budget; cumulativePrior: Record<string, number>; revisedAdjustments: Record<string, number> }) {
+  slot, budget, cumulativePrior, revisedAdjustments, canComment = false, canResolveNotes = false,
+}: {
+  slot: Slot; budget: Budget; cumulativePrior: Record<string, number>;
+  revisedAdjustments: Record<string, number>;
+  canComment?: boolean; canResolveNotes?: boolean;
+}) {
   const [sendBackNotes, setSendBackNotes] = useState("");
   const [showSendBack, setShowSendBack] = useState(false);
   const [approveError, setApproveError] = useState<string | null>(null);
@@ -154,6 +158,7 @@ export default function ReviewPanel({
 
   const reallocRequests: ReallocationRequest[] = slot.report?.reallocationRequests ?? [];
   const pendingCount = reallocRequests.filter(r => r.status === "pending").length;
+  const openQueries: number = (slot.report?.lineNotes ?? []).filter((n: { resolvedAt: string | null }) => !n.resolvedAt).length;
 
   function handleApprove() {
     setApproveError(null);
@@ -167,9 +172,10 @@ export default function ReviewPanel({
   }
 
   function handleSendBack() {
-    if (!sendBackNotes.trim()) return;
+    const notes = sendBackNotes.trim();
+    if (!notes && openQueries === 0) return;
     startSendBack(async () => {
-      await sendBackReport(slot.id, sendBackNotes.trim());
+      await sendBackReport(slot.id, notes || `See the ${openQueries} line quer${openQueries === 1 ? "y" : "ies"} raised on this report.`);
       setShowSendBack(false);
     });
   }
@@ -228,11 +234,16 @@ export default function ReviewPanel({
       {showSendBack && (
         <div className="bg-white border border-red-200 rounded-xl px-5 py-4 space-y-3">
           <p className="text-sm font-semibold text-stone-700">Send back with notes</p>
+          <p className="text-xs text-stone-500">
+            {openQueries > 0
+              ? `${openQueries} line quer${openQueries === 1 ? "y" : "ies"} will go back with this — the partner sees them against the lines you raised them on.`
+              : "Raise a query on the specific lines below to tell the partner exactly what to fix."}
+          </p>
           <textarea value={sendBackNotes} onChange={e => setSendBackNotes(e.target.value)}
             rows={3} placeholder="Explain what needs to be corrected…"
             className="w-full text-sm border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-red-400" />
           <div className="flex gap-3">
-            <button onClick={handleSendBack} disabled={sendingBack || !sendBackNotes.trim()}
+            <button onClick={handleSendBack} disabled={sendingBack || (!sendBackNotes.trim() && openQueries === 0)}
               className="bg-red-600 hover:bg-red-700 text-white text-sm font-medium px-4 py-2 rounded-lg disabled:opacity-50">
               {sendingBack ? "Sending…" : "Confirm send back"}
             </button>
@@ -254,7 +265,8 @@ export default function ReviewPanel({
       )}
 
       {/* Read-only report view */}
-      <ReportForm slot={slot} budget={budget} cumulativePrior={cumulativePrior} revisedAdjustments={revisedAdjustments} canEdit={false} isSuperAdmin={true} />
+      <ReportForm slot={slot} budget={budget} cumulativePrior={cumulativePrior} revisedAdjustments={revisedAdjustments}
+        canEdit={false} isSuperAdmin={true} canComment={canComment} canResolveNotes={canResolveNotes} />
     </div>
   );
 }

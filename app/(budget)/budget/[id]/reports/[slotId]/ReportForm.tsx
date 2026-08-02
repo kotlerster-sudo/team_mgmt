@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useTransition, useRef } from "react";
+import { Fragment, useState, useTransition, useRef } from "react";
 import Link from "next/link";
 import {
   saveReport, saveReportLines, saveReportFds, submitReportWithDeclaration,
   addReallocationRequest, deleteReallocationRequest,
+  addReportLineNote, setReportLineNoteResolved,
 } from "../../../../budget/report-actions";
 import {
   SECTION_TO_HEAD, BUDGET_HEAD_ORDER,
@@ -37,6 +38,11 @@ type FdDetail = {
   doi: string | null; dom: string | null; roi: number; openingBalance: number; interestAccrued: number;
   tds: number; interestReceived: number; maturedAmount: number; maturityDate: string | null; closingBalance: number;
 };
+export type LineNote = {
+  id: string; budgetLineId: string; body: string; createdAt: string;
+  resolvedAt: string | null;
+  author: { id: string; name: string | null; email: string | null };
+};
 type Report = {
   id: string; openingBalance: number; tranchesReceived: number; interestEarned: number;
   bankBalance: number; fdBalance: number; cashInHand: number; advances: number;
@@ -44,6 +50,7 @@ type Report = {
   lines: ReportLine[];
   fdDetails: FdDetail[];
   reallocationRequests: ReallocationRequest[];
+  lineNotes: LineNote[];
   declarationAcceptedAt: string | null;
   declarationAcceptedById: string | null;
   declarationIp: string | null;
@@ -126,6 +133,53 @@ function FlagChip({ flag }: { flag: "over" | "under" | null }) {
   );
 }
 
+function LineNoteThread({
+  slotId, budgetLineId, notes, canComment, canResolve,
+}: {
+  slotId: string; budgetLineId: string; notes: LineNote[];
+  canComment: boolean; canResolve: boolean;
+}) {
+  const [body, setBody] = useState("");
+  const [saving, start] = useTransition();
+
+  return (
+    <div className="space-y-2">
+      {notes.map(nt => (
+        <div key={nt.id} className={`text-xs rounded-lg px-3 py-2 ${nt.resolvedAt ? "bg-stone-100 text-stone-400" : "bg-white border border-stone-200"}`}>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-medium text-stone-600">{nt.author.name ?? nt.author.email ?? "Someone"}</span>
+            <span className="text-stone-400">
+              {new Date(nt.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
+            </span>
+            {nt.resolvedAt && <span className="text-emerald-600">resolved</span>}
+            {canResolve && (
+              <button disabled={saving}
+                onClick={() => start(async () => { await setReportLineNoteResolved(nt.id, !nt.resolvedAt); })}
+                className="text-stone-400 hover:text-stone-700 ml-auto">
+                {nt.resolvedAt ? "Reopen" : "Mark resolved"}
+              </button>
+            )}
+          </div>
+          <p className="mt-1 whitespace-pre-wrap text-stone-700">{nt.body}</p>
+        </div>
+      ))}
+
+      {canComment && (
+        <div className="flex flex-col sm:flex-row gap-2">
+          <textarea value={body} onChange={e => setBody(e.target.value)} rows={2}
+            placeholder={notes.length ? "Reply…" : "What needs correcting on this line?"}
+            className="flex-1 text-xs border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-sky-400" />
+          <button disabled={saving || !body.trim()}
+            onClick={() => start(async () => { await addReportLineNote(slotId, budgetLineId, body); setBody(""); })}
+            className="self-start bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium px-3 py-2 rounded-lg disabled:opacity-50">
+            {saving ? "Posting…" : "Post"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const BLANK_REALLOC = {
   fromLineId: "", toLineId: "" as string | "new",
   toDescription: "", toSection: "programme" as BudgetSection,
@@ -135,12 +189,20 @@ const BLANK_REALLOC = {
 
 export default function ReportForm({
   slot, budget, cumulativePrior, revisedAdjustments, canEdit, isSuperAdmin,
+  canComment = false, canResolveNotes = false,
 }: {
   slot: Slot; budget: Budget; cumulativePrior: Record<string, number>;
   revisedAdjustments: Record<string, number>;
   canEdit: boolean; isSuperAdmin: boolean;
+  canComment?: boolean; canResolveNotes?: boolean;
 }) {
   const report = slot.report;
+  const [openThread, setOpenThread] = useState<string | null>(null);
+  const notesByLine = (report?.lineNotes ?? []).reduce<Record<string, LineNote[]>>((acc, nt) => {
+    (acc[nt.budgetLineId] ??= []).push(nt);
+    return acc;
+  }, {});
+  const totalOpenQueries = (report?.lineNotes ?? []).filter(nt => !nt.resolvedAt).length;
   const existingLines: Record<string, ReportLine> = Object.fromEntries(
     (report?.lines ?? []).map(l => [l.budgetLineId, l])
   );
@@ -394,6 +456,14 @@ export default function ReportForm({
         </div>
       </div>
 
+      {totalOpenQueries > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-3">
+          <p className="text-sm text-amber-800">
+            {totalOpenQueries} open quer{totalOpenQueries === 1 ? "y" : "ies"} on individual lines — look for the amber chip beside the line item below.
+          </p>
+        </div>
+      )}
+
       {/* Line-item actuals */}
       <section>
         <h2 className="text-base font-semibold text-stone-800 mb-4">Line-item actuals</h2>
@@ -441,9 +511,12 @@ export default function ReportForm({
                         const varPct = dueThisPeriod && ytdBudget > 0
                           ? ((ytdActual - ytdBudget) / ytdBudget * 100).toFixed(1) : null;
                         const isRevised = (revisedAdjustments[line.id] ?? 0) !== 0;
+                        const threadNotes = notesByLine[line.id] ?? [];
+                        const openQueries = threadNotes.filter(nt => !nt.resolvedAt).length;
 
                         return (
-                          <tr key={line.id} className="hover:bg-stone-50">
+                          <Fragment key={line.id}>
+                          <tr className="hover:bg-stone-50">
                             <td className="px-4 py-2.5 text-stone-700">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span>{line.description}</span>
@@ -451,6 +524,21 @@ export default function ReportForm({
                                   <span className="text-[10px] uppercase tracking-wide text-stone-400 bg-stone-100 px-1.5 py-0.5 rounded">
                                     Planned: {line.plannedMonths.map(m => `M${m}`).join(", ")}
                                   </span>
+                                )}
+                                {(canComment || threadNotes.length > 0) && (
+                                  <button
+                                    onClick={() => setOpenThread(t => (t === line.id ? null : line.id))}
+                                    className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${
+                                      openQueries > 0
+                                        ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                                        : threadNotes.length > 0
+                                          ? "bg-stone-100 text-stone-500 hover:bg-stone-200"
+                                          : "text-stone-300 hover:text-stone-600"
+                                    }`}>
+                                    {openQueries > 0 ? `${openQueries} open`
+                                      : threadNotes.length > 0 ? `${threadNotes.length} resolved`
+                                      : "+ Query"}
+                                  </button>
                                 )}
                               </div>
                             </td>
@@ -503,6 +591,16 @@ export default function ReportForm({
                               </td>
                             )}
                           </tr>
+                          {openThread === line.id && (
+                            <tr className="bg-stone-50">
+                              <td colSpan={7 + (hasRevisions ? 1 : 0) + (canEdit ? 1 : 0)} className="px-4 py-3">
+                                <LineNoteThread
+                                  slotId={slot.id} budgetLineId={line.id} notes={threadNotes}
+                                  canComment={canComment} canResolve={canResolveNotes} />
+                              </td>
+                            </tr>
+                          )}
+                          </Fragment>
                         );
                       })}
                     </tbody>
