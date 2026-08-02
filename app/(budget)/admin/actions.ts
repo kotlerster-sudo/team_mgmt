@@ -9,6 +9,8 @@ import { GLOBAL_SCOPE } from "@/lib/budget/costRegistry";
 import { publishRegistryVersion, restoreRegistryVersion } from "@/lib/budget/costVersions";
 import { registryImpact, type RegistryImpact } from "@/lib/budget/registryImpact";
 import { costOutliers, type CostOutlier } from "@/lib/budget/costOutliers";
+import { lapseSuggestions, type LapseSuggestion } from "@/lib/budget/lapseFeedback";
+import { resolveRegistryCity } from "@/lib/budget/grantingUnits";
 import type { BudgetSection, InflationType } from "@/app/generated/prisma/client";
 import { revalidatePath } from "next/cache";
 
@@ -343,6 +345,54 @@ export async function costItemImpact(city: string, itemKey: string): Promise<Reg
   const session = await auth();
   if (!session?.user?.id) throw new Error("Not authenticated");
   return registryImpact(city, itemKey);
+}
+
+/** Standard lines that consistently underspend, and the rate that would imply. */
+export async function listLapseSuggestions(city: string): Promise<LapseSuggestion[]> {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error("Not authenticated");
+  return lapseSuggestions(city);
+}
+
+/**
+ * Take a lapse suggestion. Deliberately a thin wrapper over the ordinary edit
+ * so the change is an ordinary registry edit in every respect — same upsert,
+ * same history row — distinguished only by where the number came from.
+ */
+export async function applyLapseSuggestion(unitName: string, itemKey: string, newCost: number, reason: string) {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error("Not authenticated");
+
+  // The suggestion was read off the standard set this unit generates from, so
+  // the correction belongs there too.
+  const city = await resolveRegistryCity(unitName);
+
+  // Same forking rule as a hand edit: an inherited rate belongs to every other
+  // unit too, so taking the suggestion writes this unit its own row.
+  const [own, shared] = await Promise.all([
+    prisma.costRegistry.findUnique({ where: { city_itemKey: { city, itemKey } } }),
+    prisma.costRegistry.findUnique({ where: { city_itemKey: { city: GLOBAL_SCOPE, itemKey } } }),
+  ]);
+  const before = own ?? shared;
+  if (!before) throw new Error("This item has no registry row to change.");
+
+  await prisma.costRegistry.upsert({
+    where: { city_itemKey: { city, itemKey } },
+    create: {
+      city, itemKey, unit: before.unit, domain: before.domain,
+      unitCost: newCost, effectiveYear: before.effectiveYear, notes: before.notes,
+      displayGroup: before.displayGroup, needsDomain: before.needsDomain,
+    },
+    update: { unitCost: newCost },
+  });
+  await logCostChange(prisma, {
+    city, domain: before.domain, itemKey,
+    oldCost: before.unitCost, newCost,
+    source: "lapse feedback", reason,
+    changedById: session.user.id,
+  });
+  revalidatePath("/admin");
+  revalidatePath("/budget/admin");
 }
 
 /** Rates where one unit sits far from the shared layer or from its peers. */

@@ -10,11 +10,12 @@ import {
   reorderLineTemplates, seedLineTemplates,
   addDomain, updateDomain, toggleDomain, reorderDomains, seedDomains,
   getGeoChildren, loadNeedsScenario, loadBudgetForCompare, getCostHistory, costItemImpact,
-  listCostOutliers,
+  listCostOutliers, listLapseSuggestions, applyLapseSuggestion,
   type LineTemplateFields, type DomainConfigFields,
 } from "./actions";
 import type { RegistryImpact } from "@/lib/budget/registryImpact";
 import type { CostOutlier } from "@/lib/budget/costOutliers";
+import type { LapseSuggestion } from "@/lib/budget/lapseFeedback";
 import type { BudgetSection, InflationType, LineTemplate, BudgetDomainConfig } from "@/app/generated/prisma/client";
 import { generateBudgetLines, buildAugmentedRegistry, type BudgetGeneratorInputs } from "@/lib/budget-generator";
 
@@ -2806,7 +2807,91 @@ type CompareBudget = {
 
 const THRESHOLDS = [10, 20, 50];
 
-function OutliersTab({ domainLabels }: { domainLabels: Record<string, string> }) {
+/**
+ * Standard rates that real spending disagrees with. Suggestions only — the
+ * arithmetic cannot tell a rate that was too high from scale that never
+ * happened, so nothing moves until an admin says it should.
+ */
+function LapseFeedback({ city }: { city: string }) {
+  const [rows, setRows] = useState<LapseSuggestion[] | null>(null);
+  const [applied, setApplied] = useState<Set<string>>(new Set());
+  const [pending, startTransition] = useTransition();
+
+  useEffect(() => {
+    let live = true;
+    listLapseSuggestions(city).then(r => { if (live) setRows(r); });
+    return () => { live = false; };
+  }, [city]);
+
+  const apply = (s: LapseSuggestion) => {
+    if (!confirm(`Move "${s.itemKey}" from ₹${s.currentCost.toLocaleString("en-IN")} to ₹${s.suggestedCost.toLocaleString("en-IN")}? Existing budgets keep their own frozen costs; this changes what the next one generates.`)) return;
+    startTransition(async () => {
+      await applyLapseSuggestion(
+        city, s.itemKey, s.suggestedCost,
+        `${s.lapsePct.toFixed(0)}% of this line lapsed across ${s.budgetCount} grants`,
+      );
+      setApplied(prev => new Set(prev).add(s.itemKey));
+    });
+  };
+
+  if (rows === null) return null;
+
+  return (
+    <div className="mt-10">
+      <h2 className="text-sm font-semibold text-stone-800">What spending says about these rates</h2>
+      <p className="text-xs text-stone-500 mt-0.5 mb-4 max-w-3xl">
+        Standard lines that closed grant years underspent, across more than one grant. The suggested rate is the
+        current one scaled by what was actually spent. It can equally mean the scale never materialised — read the
+        grants before taking it.
+      </p>
+      {rows.length === 0 ? (
+        <p className="rounded-xl border border-stone-200 bg-white p-5 text-sm text-stone-400">
+          No standard line underspends consistently enough to question its rate.
+        </p>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
+          <table className="w-full min-w-[720px] text-sm">
+            <thead>
+              <tr className="text-xs text-stone-400 border-b border-stone-100">
+                <th className="text-left font-medium px-4 py-2">Line</th>
+                <th className="text-right font-medium px-3 py-2 w-28">Lapsed</th>
+                <th className="text-right font-medium px-3 py-2 w-28">Now ₹</th>
+                <th className="text-right font-medium px-3 py-2 w-28">Suggested ₹</th>
+                <th className="px-3 py-2 w-24" />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(s => (
+                <tr key={s.templateKey} className="border-b border-stone-50">
+                  <td className="px-4 py-2.5">
+                    <div className="text-stone-800">{s.description}</div>
+                    <div className="text-xs font-mono text-stone-400 mt-0.5">{s.itemKey}</div>
+                    <div className="text-xs text-stone-400 mt-0.5">
+                      {s.budgetCount} grant{s.budgetCount === 1 ? "" : "s"} · {s.partnerCount} partner{s.partnerCount === 1 ? "" : "s"}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2.5 text-right text-amber-700">{s.lapsePct.toFixed(0)}%</td>
+                  <td className="px-3 py-2.5 text-right text-stone-600">{s.currentCost.toLocaleString("en-IN")}</td>
+                  <td className="px-3 py-2.5 text-right font-medium text-stone-900">{s.suggestedCost.toLocaleString("en-IN")}</td>
+                  <td className="px-3 py-2.5 text-right">
+                    {applied.has(s.itemKey)
+                      ? <span className="text-xs text-emerald-600">Applied</span>
+                      : <button onClick={() => apply(s)} disabled={pending}
+                          className="text-xs bg-stone-800 text-white px-2.5 py-1 rounded hover:bg-stone-700 disabled:opacity-50">
+                          Apply
+                        </button>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OutliersTab({ city, domainLabels }: { city: string; domainLabels: Record<string, string> }) {
   const [threshold, setThreshold] = useState(20);
   const [rows, setRows] = useState<CostOutlier[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -2888,6 +2973,8 @@ function OutliersTab({ domainLabels }: { domainLabels: Record<string, string> })
           </table>
         </div>
       )}
+
+      <LapseFeedback city={city} />
     </div>
   );
 }
@@ -2956,7 +3043,7 @@ export default function AdminClient({
           {!budgetAdminOnly && (
             <button onClick={() => setActiveTab("outliers")}
               className={`text-sm px-4 py-1.5 rounded-md transition-all whitespace-nowrap ${activeTab === "outliers" ? "bg-white shadow-sm text-stone-900 font-medium" : "text-stone-500 hover:text-stone-800"}`}>
-              Outliers
+              Rate signals
             </button>
           )}
           {!budgetAdminOnly && (
@@ -2972,7 +3059,7 @@ export default function AdminClient({
       {activeTab === "registry"  && <CostRegistryTab costs={costs} isSeeded={isSeeded} city={city} domainOrder={domainOrder} domainLabels={domainLabels} needsDomains={needsDomains} componentsByKey={componentsByKey} versions={versions} />}
       {activeTab === "templates" && <LineTemplatesTab templates={templates} city={city} registryKeys={costs.map(c => c.itemKey)} costs={costs} domains={domains} />}
       {activeTab === "analysis"  && <CostAnalysisTab templates={templates} costs={costs} domains={domains} city={city} zones={zones} cityBudgets={cityBudgets} />}
-      {activeTab === "outliers"  && <OutliersTab domainLabels={domainLabels} />}
+      {activeTab === "outliers"  && <OutliersTab city={city} domainLabels={domainLabels} />}
       {activeTab === "domains"   && <DomainsTab domains={domains} city={city} progInputKeys={costs.filter(c => c.itemKey.startsWith("inp.")).map(c => c.itemKey)} />}
     </div>
   );
