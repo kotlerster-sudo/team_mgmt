@@ -86,8 +86,9 @@ export default function DashboardView({
           <Link href="/budget" className="text-xs text-stone-400 hover:text-stone-600">← Budgets</Link>
           <h1 className="text-xl font-semibold text-stone-900">Grant dashboard</h1>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           <Link href="/budget/reports" className="text-sm text-sky-600 hover:underline">Report queue →</Link>
+          <Link href="/budget/lapse" className="text-sm text-sky-600 hover:underline">Lapse record →</Link>
           <Link href="/budget/borrowings" className="text-sm text-sky-600 hover:underline">Manage borrowings →</Link>
         </div>
       </div>
