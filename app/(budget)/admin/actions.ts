@@ -8,6 +8,7 @@ import { logCostChange } from "@/lib/budget/costHistory";
 import { GLOBAL_SCOPE } from "@/lib/budget/costRegistry";
 import { publishRegistryVersion, restoreRegistryVersion } from "@/lib/budget/costVersions";
 import { registryImpact, type RegistryImpact } from "@/lib/budget/registryImpact";
+import { costOutliers, type CostOutlier } from "@/lib/budget/costOutliers";
 import type { BudgetSection, InflationType } from "@/app/generated/prisma/client";
 import { revalidatePath } from "next/cache";
 
@@ -342,6 +343,13 @@ export async function costItemImpact(city: string, itemKey: string): Promise<Reg
   const session = await auth();
   if (!session?.user?.id) throw new Error("Not authenticated");
   return registryImpact(city, itemKey);
+}
+
+/** Rates where one unit sits far from the shared layer or from its peers. */
+export async function listCostOutliers(thresholdPct: number): Promise<CostOutlier[]> {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error("Not authenticated");
+  return costOutliers(thresholdPct);
 }
 
 /** Drop a unit's own row so the item falls back to the shared layer again. */

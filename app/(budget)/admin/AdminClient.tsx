@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useTransition, Fragment } from "react";
+import { useState, useMemo, useEffect, useTransition, Fragment } from "react";
 import {
   seedCostRegistry, resetCostRegistry, deleteCostItem, addCostItem, saveCostComponents,
   overrideCostItem, revertToSharedCost, promoteCostToShared,
@@ -10,9 +10,11 @@ import {
   reorderLineTemplates, seedLineTemplates,
   addDomain, updateDomain, toggleDomain, reorderDomains, seedDomains,
   getGeoChildren, loadNeedsScenario, loadBudgetForCompare, getCostHistory, costItemImpact,
+  listCostOutliers,
   type LineTemplateFields, type DomainConfigFields,
 } from "./actions";
 import type { RegistryImpact } from "@/lib/budget/registryImpact";
+import type { CostOutlier } from "@/lib/budget/costOutliers";
 import type { BudgetSection, InflationType, LineTemplate, BudgetDomainConfig } from "@/app/generated/prisma/client";
 import { generateBudgetLines, buildAugmentedRegistry, type BudgetGeneratorInputs } from "@/lib/budget-generator";
 
@@ -2800,6 +2802,96 @@ type CompareBudget = {
   horizonMonths: number;
 };
 
+// ─── Outliers tab ─────────────────────────────────────────────────────────────
+
+const THRESHOLDS = [10, 20, 50];
+
+function OutliersTab({ domainLabels }: { domainLabels: Record<string, string> }) {
+  const [threshold, setThreshold] = useState(20);
+  const [rows, setRows] = useState<CostOutlier[] | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    listCostOutliers(threshold)
+      .then(r => { if (live) setRows(r); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [threshold]);
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-end justify-between gap-3 mb-4">
+        <div>
+          <h2 className="text-sm font-semibold text-stone-800">Rates that are unlike their peers</h2>
+          <p className="text-xs text-stone-500 mt-0.5">
+            Each unit&rsquo;s own rate against the shared one — or, where nothing is shared, against the middle of the field.
+            A gap is not an error; rents and wages differ by place. It is a number worth being able to explain.
+          </p>
+        </div>
+        <div className="flex gap-1 bg-stone-100 rounded-lg p-1">
+          {THRESHOLDS.map(t => (
+            <button key={t} onClick={() => setThreshold(t)}
+              className={`text-xs px-3 py-1 rounded-md ${threshold === t ? "bg-white shadow-sm text-stone-900 font-medium" : "text-stone-500 hover:text-stone-800"}`}>
+              ±{t}%
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {rows === null || (loading && rows.length === 0) ? (
+        <p className="text-sm text-stone-400">Comparing units…</p>
+      ) : rows.length === 0 ? (
+        <p className="rounded-xl border border-stone-200 bg-white p-5 text-sm text-stone-400">
+          No rate deviates by more than {threshold}%.
+        </p>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
+          <table className="w-full min-w-[640px] text-sm">
+            <thead>
+              <tr className="text-xs text-stone-400 border-b border-stone-100">
+                <th className="text-left font-medium px-4 py-2">Item</th>
+                <th className="text-right font-medium px-3 py-2 w-32">Baseline ₹</th>
+                <th className="text-left font-medium px-3 py-2">Units</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(o => (
+                <tr key={o.itemKey} className="border-b border-stone-50 align-top">
+                  <td className="px-4 py-2.5">
+                    <div className="text-stone-800">{formatKey(o.itemKey)}</div>
+                    <div className="text-xs font-mono text-stone-400 mt-0.5">{o.itemKey}</div>
+                    {o.domain && <div className="text-xs text-stone-400 mt-0.5">{domainLabels[o.domain] ?? o.domain}</div>}
+                  </td>
+                  <td className="px-3 py-2.5 text-right">
+                    <div className="text-stone-700">{o.baseline.toLocaleString("en-IN")}</div>
+                    <div className="text-xs text-stone-400 mt-0.5">{o.baselineSource === "shared" ? "shared" : "median"}</div>
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <div className="flex flex-wrap gap-x-4 gap-y-1">
+                      {o.scopes.map(s => (
+                        <a key={s.city} href={`/admin?city=${encodeURIComponent(s.city)}`}
+                          className="text-xs whitespace-nowrap hover:underline">
+                          <span className="text-stone-500">{s.city}</span>{" "}
+                          <span className="text-stone-700">₹{s.unitCost.toLocaleString("en-IN")}</span>{" "}
+                          <span className={Math.abs(s.deviationPct) >= threshold ? (s.deviationPct > 0 ? "text-red-600" : "text-violet-600") : "text-stone-300"}>
+                            {s.deviationPct > 0 ? "+" : ""}{s.deviationPct}%
+                          </span>
+                        </a>
+                      ))}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminClient({
   costs, isSeeded, city, units, templates, domains, zones, needsDomains, cityBudgets = [], budgetAdminOnly = false, componentsByKey = {}, versions = [],
 }: {
@@ -2816,7 +2908,7 @@ export default function AdminClient({
   componentsByKey?: Record<string, ComponentItem[]>;
   versions?: VersionRow[];
 }) {
-  const [activeTab, setActiveTab] = useState<"registry" | "templates" | "analysis" | "domains">(budgetAdminOnly ? "analysis" : "registry");
+  const [activeTab, setActiveTab] = useState<"registry" | "templates" | "analysis" | "outliers" | "domains">(budgetAdminOnly ? "analysis" : "registry");
 
   // Build lookup maps from domain configs
   const domainOrder: (string | null)[] = [...domains.map(d => d.key), null];
@@ -2862,6 +2954,12 @@ export default function AdminClient({
             Cost Analysis
           </button>
           {!budgetAdminOnly && (
+            <button onClick={() => setActiveTab("outliers")}
+              className={`text-sm px-4 py-1.5 rounded-md transition-all whitespace-nowrap ${activeTab === "outliers" ? "bg-white shadow-sm text-stone-900 font-medium" : "text-stone-500 hover:text-stone-800"}`}>
+              Outliers
+            </button>
+          )}
+          {!budgetAdminOnly && (
             <button onClick={() => setActiveTab("domains")}
               className={`text-sm px-4 py-1.5 rounded-md transition-all whitespace-nowrap ${activeTab === "domains" ? "bg-white shadow-sm text-stone-900 font-medium" : "text-stone-500 hover:text-stone-800"}`}>
               Domains
@@ -2874,6 +2972,7 @@ export default function AdminClient({
       {activeTab === "registry"  && <CostRegistryTab costs={costs} isSeeded={isSeeded} city={city} domainOrder={domainOrder} domainLabels={domainLabels} needsDomains={needsDomains} componentsByKey={componentsByKey} versions={versions} />}
       {activeTab === "templates" && <LineTemplatesTab templates={templates} city={city} registryKeys={costs.map(c => c.itemKey)} costs={costs} domains={domains} />}
       {activeTab === "analysis"  && <CostAnalysisTab templates={templates} costs={costs} domains={domains} city={city} zones={zones} cityBudgets={cityBudgets} />}
+      {activeTab === "outliers"  && <OutliersTab domainLabels={domainLabels} />}
       {activeTab === "domains"   && <DomainsTab domains={domains} city={city} progInputKeys={costs.filter(c => c.itemKey.startsWith("inp.")).map(c => c.itemKey)} />}
     </div>
   );
