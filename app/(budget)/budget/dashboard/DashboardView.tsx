@@ -4,6 +4,7 @@ import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   rollup, byPartner, byGrantLead, rollupByDomain, borrowingPositions, borrowingStatus, pct,
+  openReportSlots,
   type GrantRow,
 } from "@/lib/budget/grantAggregation";
 
@@ -60,6 +61,9 @@ export default function DashboardView({
   }, [grants, city, mineOnly, currentUserId]);
   const partners = useMemo(() => rollup(rows, byPartner), [rows]);
   const leads = useMemo(() => rollup(rows, byGrantLead), [rows]);
+  const openSlots = useMemo(() => openReportSlots(rows, new Date()), [rows]);
+  const overdueSlots = openSlots.filter((s) => s.daysLeft < 0);
+  const dueSoonSlots = openSlots.filter((s) => s.daysLeft >= 0 && s.daysLeft <= 30);
   const domains = useMemo(() => rollupByDomain(rows), [rows]);
   const totApproved = rows.reduce((s, g) => s + g.approved, 0);
   const totUtilised = rows.reduce((s, g) => s + g.utilised, 0);
@@ -119,6 +123,44 @@ export default function DashboardView({
           <div className="text-xs text-stone-400">as of {asOf}</div>
         </div>
       </div>
+
+      {/* Reporting — what is waiting on a partner right now */}
+      <section>
+        <h2 className="text-sm font-semibold text-stone-700 mb-2">Reporting</h2>
+        {openSlots.length === 0 ? (
+          <p className="rounded-xl border border-stone-200 bg-white p-5 text-sm text-stone-400">No reports outstanding.</p>
+        ) : (
+          <div className="rounded-xl border border-stone-200 bg-white">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-1 border-b border-stone-100 px-4 py-3">
+              <span className="text-sm"><span className={`font-bold ${overdueSlots.length ? "text-red-600" : "text-stone-900"}`}>{overdueSlots.length}</span> <span className="text-stone-500">overdue</span></span>
+              <span className="text-sm"><span className="font-bold text-stone-900">{dueSoonSlots.length}</span> <span className="text-stone-500">due in 30 days</span></span>
+              <span className="text-sm"><span className="font-bold text-stone-900">{openSlots.length}</span> <span className="text-stone-500">outstanding</span></span>
+            </div>
+            <ul className="divide-y divide-stone-100">
+              {[...overdueSlots, ...dueSoonSlots].slice(0, 12).map((s) => (
+                <li key={s.slotId}>
+                  <Link href={`/budget/${s.budgetId}/reports/${s.slotId}`}
+                    className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-2.5 hover:bg-stone-50">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium text-stone-900">{s.partnerName}</div>
+                      <div className="truncate text-xs text-stone-400">{s.budgetName} · {s.grantLeadName}</div>
+                    </div>
+                    <div className="flex items-center gap-2 whitespace-nowrap">
+                      {s.status === "sent_back" && <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs text-red-600">Sent back</span>}
+                      <span className={`text-xs ${s.daysLeft < 0 ? "font-medium text-red-600" : "text-stone-500"}`}>
+                        {s.daysLeft < 0 ? `${-s.daysLeft}d overdue` : s.daysLeft === 0 ? "due today" : `in ${s.daysLeft}d`}
+                      </span>
+                    </div>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            {overdueSlots.length + dueSoonSlots.length > 12 && (
+              <div className="px-4 py-2 text-xs text-stone-400">+{overdueSlots.length + dueSoonSlots.length - 12} more</div>
+            )}
+          </div>
+        )}
+      </section>
 
       {/* Partner-wise */}
       <section>

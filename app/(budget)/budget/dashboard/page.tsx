@@ -21,7 +21,7 @@ export default async function GrantDashboardPage() {
         grantLead: { select: { id: true, name: true, email: true } },
         reportConfig: { select: { grantStartDate: true, grantEndDate: true } },
         lines: { select: { id: true, domain: true, y1Total: true, y2Total: true, y3Total: true, y4Total: true, y5Total: true } },
-        reportSlots: { select: { status: true, report: { select: { lines: { select: { budgetLineId: true, actualAmount: true } } } } } },
+        reportSlots: { select: { id: true, status: true, dueDate: true, report: { select: { lines: { select: { budgetLineId: true, actualAmount: true } } } } } },
       },
     }),
     prisma.budgetDomainConfig.findMany({ select: { key: true, label: true } }),

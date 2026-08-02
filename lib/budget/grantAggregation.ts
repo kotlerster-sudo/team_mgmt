@@ -12,6 +12,8 @@ import { activeYearBands } from "@/lib/budget-generator";
 
 export const CROSS_CUTTING = "Cross-cutting";
 const REPORTED_STATUSES = new Set(["submitted", "under_review", "sent_back", "approved"]);
+/** Slots the partner still has to act on. `sent_back` counts — the ball is theirs. */
+const OPEN_STATUSES = new Set(["pending", "sent_back"]);
 
 export type LineForAgg = {
   id: string;
@@ -20,7 +22,9 @@ export type LineForAgg = {
 };
 
 export type ReportSlotForAgg = {
+  id: string;
   status: string;
+  dueDate: Date | string;
   report: { lines: { budgetLineId: string; actualAmount: number }[] } | null;
 };
 
@@ -67,6 +71,7 @@ export type GrantRow = {
   periodFrom: string | null;     // ISO
   periodTo: string | null;
   perDomain: Record<string, DomainSlice>;
+  openSlots: { slotId: string; dueDate: string; status: string }[];
 };
 
 /** Collapse one budget into a grant row with per-domain approved + utilised. */
@@ -107,7 +112,46 @@ export function buildGrantRow(b: BudgetForAgg): GrantRow {
     periodFrom: b.reportConfig ? new Date(b.reportConfig.grantStartDate).toISOString() : null,
     periodTo: b.reportConfig ? new Date(b.reportConfig.grantEndDate).toISOString() : null,
     perDomain,
+    openSlots: b.reportSlots
+      .filter((s) => OPEN_STATUSES.has(s.status))
+      .map((s) => ({ slotId: s.id, dueDate: new Date(s.dueDate).toISOString(), status: s.status })),
   };
+}
+
+export type OpenReportSlot = {
+  slotId: string;
+  budgetId: string;
+  budgetName: string;
+  partnerName: string;
+  grantLeadName: string;
+  dueDate: string;
+  status: string;
+  /** Negative once the due date has passed. */
+  daysLeft: number;
+};
+
+/**
+ * Every report still waiting on a partner, soonest first. Derived from the
+ * already-filtered grant rows so a unit tab or a "my portfolio" toggle narrows
+ * the worklist for free.
+ */
+export function openReportSlots(rows: GrantRow[], now: Date): OpenReportSlot[] {
+  // Slot dates are built in UTC (lib/budget-report-slots.ts); compare in UTC so
+  // the IST evening doesn't roll a due date a day early.
+  const day = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  const today = day(now);
+  return rows
+    .flatMap((g) =>
+      g.openSlots.map((s) => ({
+        ...s,
+        budgetId: g.budgetId,
+        budgetName: g.name,
+        partnerName: g.partnerName,
+        grantLeadName: g.grantLeadName,
+        daysLeft: Math.round((day(new Date(s.dueDate)) - today) / 86400000),
+      })),
+    )
+    .sort((a, b) => a.daysLeft - b.daysLeft);
 }
 
 export type Rollup = {

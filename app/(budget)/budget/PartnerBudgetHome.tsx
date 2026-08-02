@@ -14,6 +14,12 @@ const STATUS_COLOR: Record<string, string> = {
 
 const fmtDate = (d: string) => new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 
+// Slot dates are built in UTC (lib/budget-report-slots.ts), so compare whole UTC
+// days — a plain timestamp comparison flips "due today" to "overdue" through the
+// IST evening.
+const utcDay = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+const daysUntil = (due: string) => Math.round((utcDay(new Date(due)) - utcDay(new Date())) / 86400000);
+
 type Slot = { id: string; slotNumber: number; grantYear: number; periodFrom: string; periodTo: string; dueDate: string; status: string; report: { submittedAt: string | null; approvedAt: string | null } | null };
 type Budget = { id: string; name: string; city: string; status: string; reportConfig: { frequency: string } | null; reportSlots: Slot[] };
 
@@ -41,7 +47,9 @@ export default function PartnerBudgetHome({ budgets, linked }: { budgets: Budget
     .filter(g => g.slots.length > 0)
     .sort((a, b) => new Date(a.slots[0].dueDate).getTime() - new Date(b.slots[0].dueDate).getTime());
 
-  const now = Date.now();
+  const allDue = dueByBudget.flatMap(g => g.slots).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  const overdueCount = allDue.filter(s => daysUntil(s.dueDate) < 0).length;
+  const next = allDue.find(s => daysUntil(s.dueDate) >= 0);
 
   return (
     <div className="space-y-8">
@@ -49,6 +57,19 @@ export default function PartnerBudgetHome({ budgets, linked }: { budgets: Budget
         <h1 className="text-xl font-semibold text-stone-900">Grant reporting</h1>
         <p className="text-sm text-stone-500 mt-0.5">Your budgets and the reports due.</p>
       </div>
+
+      {allDue.length > 0 && (
+        <div className={`rounded-xl border px-4 sm:px-5 py-3 text-sm ${overdueCount > 0 ? "border-red-200 bg-red-50 text-red-800" : "border-stone-200 bg-white text-stone-700"}`}>
+          {overdueCount > 0 && (
+            <span className="font-semibold">{overdueCount} report{overdueCount === 1 ? "" : "s"} overdue.</span>
+          )}
+          {next && (
+            <span className={overdueCount > 0 ? "ml-1.5 opacity-90" : ""}>
+              Next due {fmtDate(next.dueDate)} ({daysUntil(next.dueDate) === 0 ? "today" : `in ${daysUntil(next.dueDate)} days`}).
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Reports due */}
       <section>
@@ -65,14 +86,16 @@ export default function PartnerBudgetHome({ budgets, linked }: { budgets: Budget
                   </div>
                   <div className="space-y-2">
                     {g.slots.map(s => {
-                      const overdue = s.status === "pending" && new Date(s.dueDate).getTime() < now;
+                      const left = daysUntil(s.dueDate);
                       return (
                         <div key={s.id} className="bg-white border border-stone-200 rounded-xl px-4 sm:px-5 py-4 flex flex-wrap items-center justify-between gap-3">
                           <div className="min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-sm font-medium text-stone-900">{fmtDate(s.periodFrom)} – {fmtDate(s.periodTo)}</span>
                               <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[s.status]}`}>{STATUS_LABEL[s.status]}</span>
-                              {overdue && <span className="text-xs text-red-500">Overdue</span>}
+                              {left < 0
+                                ? <span className="text-xs font-medium text-red-500">{-left} day{left === -1 ? "" : "s"} overdue</span>
+                                : <span className="text-xs text-stone-500">{left === 0 ? "Due today" : `in ${left} days`}</span>}
                             </div>
                             <p className="text-xs text-stone-400 mt-0.5">Due {fmtDate(s.dueDate)}</p>
                           </div>
