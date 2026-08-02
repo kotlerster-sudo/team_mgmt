@@ -12,7 +12,11 @@ export default async function PartnersAdminPage() {
   const [partners, candidates, units] = await Promise.all([
     prisma.grantPartner.findMany({
       orderBy: [{ city: "asc" }, { name: "asc" }],
-      select: { id: true, name: true, city: true, isActive: true, user: { select: { email: true } }, _count: { select: { budgets: true } } },
+      select: {
+        id: true, name: true, city: true, isActive: true,
+        logins: { select: { userId: true, user: { select: { email: true, name: true } } }, orderBy: { createdAt: "asc" } },
+        _count: { select: { budgets: true } },
+      },
     }),
     // Partner-role accounts not yet linked to any grantee — offered as suggestions.
     prisma.user.findMany({
@@ -25,7 +29,10 @@ export default async function PartnersAdminPage() {
 
   return (
     <PartnersClient
-      partners={partners.map((p) => ({ id: p.id, name: p.name, city: p.city, isActive: p.isActive, budgetCount: p._count.budgets, loginEmail: p.user?.email ?? null }))}
+      partners={partners.map((p) => ({
+        id: p.id, name: p.name, city: p.city, isActive: p.isActive, budgetCount: p._count.budgets,
+        logins: p.logins.map((l) => ({ userId: l.userId, email: l.user.email, name: l.user.name })),
+      }))}
       units={units.map((u) => ({ id: u.id, name: u.name }))}
       candidates={candidates.map((c) => ({ email: c.email, name: c.name }))}
     />

@@ -169,9 +169,10 @@ export async function reassignGrantPartnerCity(partnerId: string, newCity: strin
   return { movedBudgets };
 }
 
-// Link an existing user account as this grantee's login (role "partner"). The
-// account must be created first in Settings → Users. Only promotes a plain
-// member/viewer/partner — never touches an admin/super-admin/budget-admin.
+// Add an existing user account as one of this grantee's logins (role
+// "partner"). The account must be created first in Settings → Users. Only
+// promotes a plain member/viewer/partner — never touches an
+// admin/super-admin/budget-admin.
 export async function linkGrantPartnerLogin(partnerId: string, email: string): Promise<{ email: string }> {
   const session = await auth();
   if (!isBudgetAdminOrSuperAdmin(session)) throw new Error("Forbidden");
@@ -185,9 +186,13 @@ export async function linkGrantPartnerLogin(partnerId: string, email: string): P
 
   const PROMOTABLE = ["member", "viewer", "partner"];
   await prisma.$transaction(async (tx) => {
-    // Enforce one grantee per login: drop any other partner's link to this user.
-    await tx.grantPartner.updateMany({ where: { userId: user.id, NOT: { id: partnerId } }, data: { userId: null } });
-    await tx.grantPartner.update({ where: { id: partnerId }, data: { userId: user.id } });
+    // Still one grantee per login — moving an account re-points it rather than
+    // giving that person sight of two grantees' budgets.
+    await tx.grantPartnerUser.upsert({
+      where: { userId: user.id },
+      create: { userId: user.id, grantPartnerId: partnerId },
+      update: { grantPartnerId: partnerId },
+    });
     if (PROMOTABLE.includes(user.role)) {
       await tx.user.update({ where: { id: user.id }, data: { role: "partner" } });
     }
@@ -196,10 +201,10 @@ export async function linkGrantPartnerLogin(partnerId: string, email: string): P
   return { email: user.email };
 }
 
-export async function unlinkGrantPartnerLogin(partnerId: string) {
+export async function unlinkGrantPartnerLogin(userId: string) {
   const session = await auth();
   if (!isBudgetAdminOrSuperAdmin(session)) throw new Error("Forbidden");
-  await prisma.grantPartner.update({ where: { id: partnerId }, data: { userId: null } });
+  await prisma.grantPartnerUser.deleteMany({ where: { userId } });
   revalidatePath("/budget/admin/partners");
 }
 

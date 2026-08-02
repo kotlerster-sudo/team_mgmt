@@ -1,6 +1,7 @@
 // Access model for external grantee "partner" logins. A partner is a User with
-// role "partner" linked (via GrantPartner.userId) to exactly one grantee org.
-// They may read + report on budgets whose grantPartnerId matches that org.
+// role "partner" linked (via GrantPartnerUser) to exactly one grantee org. They
+// may read + report on budgets whose grantPartnerId matches that org. An org can
+// hold several such logins; a login belongs to one org.
 
 import prisma from "@/lib/prisma";
 
@@ -16,8 +17,8 @@ export async function getPartnerAccess(session: SessionLike): Promise<PartnerAcc
   const userId = session?.user?.id ?? null;
   const isPartner = session?.user?.role === "partner";
   if (!userId || !isPartner) return { userId, isPartner: false, grantPartnerId: null };
-  const gp = await prisma.grantPartner.findUnique({ where: { userId }, select: { id: true } });
-  return { userId, isPartner: true, grantPartnerId: gp?.id ?? null };
+  const link = await prisma.grantPartnerUser.findUnique({ where: { userId }, select: { grantPartnerId: true } });
+  return { userId, isPartner: true, grantPartnerId: link?.grantPartnerId ?? null };
 }
 
 /** True only for a partner whose linked grantee owns this budget. */

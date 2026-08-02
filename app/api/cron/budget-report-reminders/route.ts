@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
           id: true,
           name: true,
           grantLeadId: true,
-          grantPartner: { select: { name: true, userId: true } },
+          grantPartner: { select: { name: true, logins: { select: { userId: true } } } },
         },
       },
       reminderLogs: { select: { userId: true, type: true } },
@@ -87,9 +87,12 @@ export async function GET(req: NextRequest) {
 
     const recipients: { userId: string; title: string; brand: NotifyBrand }[] = [];
 
-    if (budget.grantPartner?.userId) {
+    // Every login the grantee holds: the person who files and the person who
+    // signs are not always the same, and only one of them being told is how a
+    // report goes quietly late.
+    for (const login of budget.grantPartner?.logins ?? []) {
       recipients.push({
-        userId: budget.grantPartner.userId,
+        userId: login.userId,
         brand: PARTNER_BRAND,
         title: overdue
           ? `Report overdue — ${budget.name}`

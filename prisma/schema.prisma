@@ -16,7 +16,7 @@ model User {
   password            String?
   role                String        @default("member")
   // Set when this account is the login for a grantee org (role "partner").
-  granteeLogin        GrantPartner? @relation("PartnerLogin")
+  granteeLogin        GrantPartnerUser? @relation("PartnerLogin")
   // Owner = "primordial" super-admin. Asymmetric protection: only the owner
   // can mint new super-admins, and no other super-admin can demote, delete,
   // or reset the password of the owner. Exactly one user should carry this.
@@ -2129,11 +2129,8 @@ model GrantPartner {
   grantingUnit         GrantingUnit?           @relation(fields: [grantingUnitId], references: [id], onDelete: SetNull)
   notes                String?
   isActive             Boolean                 @default(true)
-  // Optional login account for this grantee (a User with role "partner"). Lets
-  // the grantee sign in and file their own reports. One account per grantee.
-  userId               String?                 @unique
-  user                 User?                   @relation("PartnerLogin", fields: [userId], references: [id], onDelete: SetNull)
   createdAt            DateTime                @default(now())
+  logins               GrantPartnerUser[]
   budgets              Budget[]
   schoolPlansAsAnchor  SchoolPlan[]            @relation("SchoolPlanAnchorPartner")
   deliveryPartnerRoles BudgetDeliveryPartner[]
@@ -2141,6 +2138,25 @@ model GrantPartner {
   @@unique([grantingUnitId, name])
   @@index([city])
   @@index([grantingUnitId])
+}
+
+// Login accounts for a grantee organisation (Users with role "partner"). A
+// grantee is an organisation, not a person: the finance officer who files the
+// report and the director who signs the declaration are two people, and a
+// handover shouldn't need an admin.
+//
+// The reverse stays single: userId is unique, so a login belongs to exactly one
+// grantee. Every access check downstream resolves a session to one
+// grantPartnerId, and a person straddling two grantees would break all of them.
+model GrantPartnerUser {
+  id             String       @id @default(cuid())
+  grantPartnerId String
+  grantPartner   GrantPartner @relation(fields: [grantPartnerId], references: [id], onDelete: Cascade)
+  userId         String       @unique
+  user           User         @relation("PartnerLogin", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+
+  @@index([grantPartnerId])
 }
 
 enum GrantBorrowingStatus {

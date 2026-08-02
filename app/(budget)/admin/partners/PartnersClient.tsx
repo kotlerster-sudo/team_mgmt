@@ -4,7 +4,8 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { createGrantPartner, renameGrantPartner, toggleGrantPartner, importGrantPartnersFromOrgs, linkGrantPartnerLogin, unlinkGrantPartnerLogin, reassignGrantPartnerCity } from "../../budget/actions";
 
-type Partner = { id: string; name: string; city: string; isActive: boolean; budgetCount: number; loginEmail: string | null };
+type Login = { userId: string; email: string; name: string | null };
+type Partner = { id: string; name: string; city: string; isActive: boolean; budgetCount: number; logins: Login[] };
 type Candidate = { email: string; name: string | null };
 type Unit = { id: string; name: string };
 
@@ -100,22 +101,26 @@ export default function PartnersClient({ partners, units, candidates = [] }: { p
                       </>
                     )}
                   </div>
-                  {/* Login link */}
-                  <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
-                    {p.loginEmail ? (
-                      <>
+                  {/* Login accounts — a grantee can hold several */}
+                  <div className="mt-1.5 space-y-1 text-xs">
+                    {p.logins.map((l) => (
+                      <div key={l.userId} className="flex flex-wrap items-center gap-2">
                         <span className="text-stone-400">Login:</span>
-                        <span className="text-stone-600">{p.loginEmail}</span>
-                        <button disabled={pending} onClick={() => run(async () => { await unlinkGrantPartnerLogin(p.id); })} className="text-stone-400 hover:text-red-600">Unlink</button>
-                      </>
-                    ) : linking === p.id ? (
-                      <>
+                        <span className="text-stone-600">{l.email}</span>
+                        {l.name && <span className="text-stone-400">{l.name}</span>}
+                        <button disabled={pending} onClick={() => run(async () => { await unlinkGrantPartnerLogin(l.userId); })} className="text-stone-400 hover:text-red-600">Unlink</button>
+                      </div>
+                    ))}
+                    {linking === p.id ? (
+                      <div className="flex flex-wrap items-center gap-2">
                         <input list="partner-accounts" value={linkEmail} onChange={(e) => setLinkEmail(e.target.value)} placeholder="partner account email" className="rounded border border-stone-300 px-2 py-1 text-xs w-full sm:w-56" />
                         <button disabled={pending || !linkEmail.trim()} onClick={() => run(async () => { await linkGrantPartnerLogin(p.id, linkEmail); setLinking(null); setLinkEmail(""); })} className="text-sky-600 hover:underline">Link</button>
                         <button onClick={() => { setLinking(null); setLinkEmail(""); }} className="text-stone-400">Cancel</button>
-                      </>
+                      </div>
                     ) : (
-                      <button onClick={() => { setLinking(p.id); setLinkEmail(""); }} className="text-stone-400 hover:text-stone-700">+ Link login account</button>
+                      <button onClick={() => { setLinking(p.id); setLinkEmail(""); }} className="text-stone-400 hover:text-stone-700">
+                        {p.logins.length > 0 ? "+ Add another login" : "+ Link login account"}
+                      </button>
                     )}
                   </div>
                   {/* Move to another city */}
