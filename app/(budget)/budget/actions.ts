@@ -2,6 +2,7 @@
 
 import { auth } from "@/lib/auth";
 import { isBudgetAdminOrSuperAdmin } from "@/lib/roleGuard";
+import { requireBudgetAccess } from "@/lib/budget/budgetAccess";
 import prisma from "@/lib/prisma";
 import { generateBudgetLines, DEFAULT_INFLATION_RATES, activeYearBands } from "@/lib/budget-generator";
 import type { BudgetSection, BudgetLineCadence, InflationType } from "@/app/generated/prisma/client";
@@ -241,8 +242,9 @@ export async function updateBudgetGrantPartner(budgetId: string, grantPartnerId:
   const session = await auth();
   if (!session?.user?.id) throw new Error("Not authenticated");
 
-  const budget = await prisma.budget.findUnique({ where: { id: budgetId }, select: { partnerId: true, city: true } });
-  if (!budget || budget.partnerId !== session.user.id) throw new Error("Not found");
+  const budget = await prisma.budget.findUnique({ where: { id: budgetId }, select: { partnerId: true, grantPartnerId: true, city: true } });
+  await requireBudgetAccess(session, budget, "update");
+  if (!budget) throw new Error("Not found");
 
   if (grantPartnerId) {
     const gp = await prisma.grantPartner.findUnique({ where: { id: grantPartnerId }, select: { city: true } });
@@ -606,8 +608,9 @@ export async function updateLine(
   const session = await auth();
   if (!session?.user?.id) throw new Error("Not authenticated");
 
-  const line = await prisma.budgetLine.findUnique({ where: { id: lineId }, select: { budgetId: true, budget: { select: { partnerId: true } }, costCategory: true, y1UnitCost: true } });
-  if (!line || line.budget.partnerId !== session.user.id) throw new Error("Not found");
+  const line = await prisma.budgetLine.findUnique({ where: { id: lineId }, select: { budgetId: true, budget: { select: { partnerId: true, grantPartnerId: true } }, costCategory: true, y1UnitCost: true } });
+  await requireBudgetAccess(session, line?.budget ?? null, "update");
+  if (!line) throw new Error("Not found");
 
   const total = (u?: number, c?: number, a?: number) => Math.round((u ?? 0) * (c ?? 0) * (a ?? 1));
   const y1Total = total(updates.y1Units, updates.y1UnitCost, updates.y1AllocPct);
@@ -640,8 +643,8 @@ export async function updateLine(
 export async function getBudgetLineHistory(lineId: string) {
   const session = await auth();
   if (!session?.user?.id) throw new Error("Not authenticated");
-  const line = await prisma.budgetLine.findUnique({ where: { id: lineId }, select: { budget: { select: { partnerId: true } } } });
-  if (!line || line.budget.partnerId !== session.user.id) throw new Error("Not found");
+  const line = await prisma.budgetLine.findUnique({ where: { id: lineId }, select: { budget: { select: { partnerId: true, grantPartnerId: true } } } });
+  await requireBudgetAccess(session, line?.budget ?? null, "read");
   const rows = await prisma.budgetLineCostHistory.findMany({ where: { budgetLineId: lineId }, orderBy: { changedAt: "desc" }, take: 50 });
   const byId = new Map(
     (await prisma.user.findMany({
@@ -672,7 +675,7 @@ export async function saveBudgetLineComponents(
   const line = await prisma.budgetLine.findUnique({
     where: { id: lineId },
     select: {
-      budgetId: true, budget: { select: { partnerId: true } },
+      budgetId: true, budget: { select: { partnerId: true, grantPartnerId: true } },
       y1Units: true, y1UnitCost: true, y1AllocPct: true,
       y2Units: true, y2UnitCost: true, y2AllocPct: true,
       y3Units: true, y3UnitCost: true, y3AllocPct: true,
@@ -680,7 +683,8 @@ export async function saveBudgetLineComponents(
       y5Units: true, y5UnitCost: true, y5AllocPct: true,
     },
   });
-  if (!line || line.budget.partnerId !== session.user.id) throw new Error("Not found");
+  await requireBudgetAccess(session, line?.budget ?? null, "update");
+  if (!line) throw new Error("Not found");
 
   const clean = rows
     .map(r => ({ label: (r.label ?? "").trim(), spec: (r.spec ?? "")?.toString().trim() || null, qty: Number(r.qty) || 0, unitCost: Number(r.unitCost) || 0 }))
@@ -751,6 +755,7 @@ export async function addLine(
     where: { id: budgetId },
     select: {
       partnerId: true,
+      grantPartnerId: true,
       horizonMonths: true,
       applyInflation: true,
       inflationSalaryPct: true,
@@ -759,7 +764,8 @@ export async function addLine(
       lines: { select: { position: true }, orderBy: { position: "desc" }, take: 1 },
     },
   });
-  if (!budget || budget.partnerId !== session.user.id) throw new Error("Not found");
+  await requireBudgetAccess(session, budget, "update");
+  if (!budget) throw new Error("Not found");
 
   const ratePct =
     data.costCategory === "Salary" ? budget.inflationSalaryPct
@@ -827,8 +833,9 @@ export async function deleteLine(lineId: string) {
   const session = await auth();
   if (!session?.user?.id) throw new Error("Not authenticated");
 
-  const line = await prisma.budgetLine.findUnique({ where: { id: lineId }, select: { budgetId: true, budget: { select: { partnerId: true } } } });
-  if (!line || line.budget.partnerId !== session.user.id) throw new Error("Not found");
+  const line = await prisma.budgetLine.findUnique({ where: { id: lineId }, select: { budgetId: true, budget: { select: { partnerId: true, grantPartnerId: true } } } });
+  await requireBudgetAccess(session, line?.budget ?? null, "update");
+  if (!line) throw new Error("Not found");
 
   await prisma.budgetLine.delete({ where: { id: lineId } });
   revalidatePath(`/budget/${line.budgetId}`);
@@ -847,9 +854,10 @@ export async function updateDeliveryPartner(
 
   const dp = await prisma.budgetDeliveryPartner.findUnique({
     where: { id: partnerId },
-    select: { budgetId: true, budget: { select: { partnerId: true, city: true } } },
+    select: { budgetId: true, budget: { select: { partnerId: true, grantPartnerId: true, city: true } } },
   });
-  if (!dp || dp.budget.partnerId !== session.user.id) throw new Error("Not found");
+  await requireBudgetAccess(session, dp?.budget ?? null, "update");
+  if (!dp) throw new Error("Not found");
 
   if (updates.grantPartnerId) {
     const gp = await prisma.grantPartner.findUnique({
@@ -874,8 +882,8 @@ export async function finalizeBudget(budgetId: string) {
   const session = await auth();
   if (!session?.user?.id) throw new Error("Not authenticated");
 
-  const budget = await prisma.budget.findUnique({ where: { id: budgetId }, select: { partnerId: true } });
-  if (!budget || budget.partnerId !== session.user.id) throw new Error("Not found");
+  const budget = await prisma.budget.findUnique({ where: { id: budgetId }, select: { partnerId: true, grantPartnerId: true } });
+  await requireBudgetAccess(session, budget, "update");
 
   await prisma.budget.update({ where: { id: budgetId }, data: { status: "final" } });
   revalidatePath(`/budget/${budgetId}`);
@@ -885,14 +893,8 @@ export async function deleteBudget(budgetId: string) {
   const session = await auth();
   if (!session?.user?.id) throw new Error("Not authenticated");
 
-  const budget = await prisma.budget.findUnique({ where: { id: budgetId }, select: { partnerId: true } });
-  if (!budget) throw new Error("Not found");
-  // The city list page (where this button lives) is already gated on
-  // budget-admin/super-admin, so admins manage everyone's budgets from there.
-  // Owners can still delete their own budgets anywhere the button appears.
-  if (budget.partnerId !== session.user.id && !isBudgetAdminOrSuperAdmin(session)) {
-    throw new Error("Forbidden");
-  }
+  const budget = await prisma.budget.findUnique({ where: { id: budgetId }, select: { partnerId: true, grantPartnerId: true } });
+  await requireBudgetAccess(session, budget, "delete");
 
   await prisma.budget.delete({ where: { id: budgetId } });
   // Refresh the city list (where the delete button lives) in place instead of
