@@ -5,6 +5,10 @@ import type { NextRequest } from "next/server";
 const PUBLIC_PREFIXES = [
   "/login",
   "/register",
+  // Both are reached while signed out — by someone who has lost their password,
+  // and by an invited grantee who has never had one.
+  "/forgot-password",
+  "/reset-password",
   "/api/auth/",
   "/api/register",
   "/api/cron/",
@@ -84,7 +88,7 @@ export default async function middleware(req: NextRequest) {
   // partner (external grantee): confined to their budget home + their reports
   // subtree and the account/notification APIs. Everything else → /budget. This
   // is the coarse choke point; per-budget ownership is enforced in the pages
-  // and server actions via GrantPartner.userId.
+  // and server actions via GrantPartnerUser.
   if (role === "partner") {
     if (!partnerAllowedPath(pathname)) {
       if (isApiRoute) return NextResponse.json({ error: "Forbidden" }, { status: 403 });

@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { createGrantPartner, renameGrantPartner, toggleGrantPartner, importGrantPartnersFromOrgs, linkGrantPartnerLogin, unlinkGrantPartnerLogin, reassignGrantPartnerCity } from "../../budget/actions";
+import { createGrantPartner, renameGrantPartner, toggleGrantPartner, importGrantPartnersFromOrgs, linkGrantPartnerLogin, unlinkGrantPartnerLogin, inviteGrantPartnerLogin, reassignGrantPartnerCity } from "../../budget/actions";
 
 type Login = { userId: string; email: string; name: string | null };
 type Partner = { id: string; name: string; city: string; isActive: boolean; budgetCount: number; logins: Login[] };
@@ -19,6 +19,9 @@ export default function PartnersClient({ partners, units, candidates = [] }: { p
   const [editName, setEditName] = useState("");
   const [linking, setLinking] = useState<string | null>(null);
   const [linkEmail, setLinkEmail] = useState("");
+  const [inviting, setInviting] = useState<string | null>(null);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteName, setInviteName] = useState("");
   const [moving, setMoving] = useState<string | null>(null);
   const [moveCity, setMoveCity] = useState<string>(firstUnit);
   const [err, setErr] = useState<string | null>(null);
@@ -113,14 +116,27 @@ export default function PartnersClient({ partners, units, candidates = [] }: { p
                     ))}
                     {linking === p.id ? (
                       <div className="flex flex-wrap items-center gap-2">
-                        <input list="partner-accounts" value={linkEmail} onChange={(e) => setLinkEmail(e.target.value)} placeholder="partner account email" className="rounded border border-stone-300 px-2 py-1 text-xs w-full sm:w-56" />
+                        <input list="partner-accounts" value={linkEmail} onChange={(e) => setLinkEmail(e.target.value)} placeholder="existing account email" className="rounded border border-stone-300 px-2 py-1 text-xs w-full sm:w-56" />
                         <button disabled={pending || !linkEmail.trim()} onClick={() => run(async () => { await linkGrantPartnerLogin(p.id, linkEmail); setLinking(null); setLinkEmail(""); })} className="text-sky-600 hover:underline">Link</button>
                         <button onClick={() => { setLinking(null); setLinkEmail(""); }} className="text-stone-400">Cancel</button>
                       </div>
+                    ) : inviting === p.id ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="their email" className="rounded border border-stone-300 px-2 py-1 text-xs w-full sm:w-52" />
+                        <input value={inviteName} onChange={(e) => setInviteName(e.target.value)} placeholder="their name (optional)" className="rounded border border-stone-300 px-2 py-1 text-xs w-full sm:w-44" />
+                        <button disabled={pending || !inviteEmail.trim()} onClick={() => run(async () => {
+                          const r = await inviteGrantPartnerLogin(p.id, inviteEmail, inviteName);
+                          setNote(`Invite sent to ${r.email}`); setInviting(null); setInviteEmail(""); setInviteName("");
+                        })} className="text-sky-600 hover:underline">Send invite</button>
+                        <button onClick={() => { setInviting(null); setInviteEmail(""); setInviteName(""); }} className="text-stone-400">Cancel</button>
+                      </div>
                     ) : (
-                      <button onClick={() => { setLinking(p.id); setLinkEmail(""); }} className="text-stone-400 hover:text-stone-700">
-                        {p.logins.length > 0 ? "+ Add another login" : "+ Link login account"}
-                      </button>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <button onClick={() => { setInviting(p.id); setInviteEmail(""); setInviteName(""); }} className="text-sky-600 hover:underline">
+                          {p.logins.length > 0 ? "+ Invite another person" : "+ Invite by email"}
+                        </button>
+                        <button onClick={() => { setLinking(p.id); setLinkEmail(""); }} className="text-stone-400 hover:text-stone-700">Link an existing account</button>
+                      </div>
                     )}
                   </div>
                   {/* Move to another city */}

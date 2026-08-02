@@ -8,6 +8,8 @@ import { Target } from "lucide-react";
 function ResetPasswordForm() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token") ?? "";
+  // Arrived from an invite, so there is no old password being replaced.
+  const isInvite = searchParams.get("invite") === "1";
 
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -81,8 +83,13 @@ function ResetPasswordForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {isInvite && (
+        <p className="text-sm text-stone-500">
+          Choose a password for your grant reporting account. You&apos;ll sign in with this email from now on.
+        </p>
+      )}
       <div>
-        <label className="block text-xs font-medium text-stone-600 mb-1">New Password</label>
+        <label className="block text-xs font-medium text-stone-600 mb-1">{isInvite ? "Password" : "New Password"}</label>
         <input
           type="password"
           autoComplete="new-password"
@@ -111,7 +118,7 @@ function ResetPasswordForm() {
         disabled={loading || !password || !confirm}
         className="w-full py-2 bg-sky-500 hover:bg-sky-600 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
       >
-        {loading ? "Updating..." : "Update Password"}
+        {loading ? "Saving..." : isInvite ? "Set password" : "Update Password"}
       </button>
     </form>
   );

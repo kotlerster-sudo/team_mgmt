@@ -6,6 +6,9 @@ import { requireBudgetAccess } from "@/lib/budget/budgetAccess";
 import { requireGrantingUnit } from "@/lib/budget/grantingUnits";
 import { resolveRegistryRows, resolveRegistryComponents } from "@/lib/budget/costRegistry";
 import prisma from "@/lib/prisma";
+import bcrypt from "bcryptjs";
+import { randomBytes } from "crypto";
+import { sendPartnerInviteEmail } from "@/lib/email";
 import { generateBudgetLines, DEFAULT_INFLATION_RATES, activeYearBands } from "@/lib/budget-generator";
 import type { BudgetSection, BudgetLineCadence, InflationType } from "@/app/generated/prisma/client";
 import { redirect } from "next/navigation";
@@ -199,6 +202,81 @@ export async function linkGrantPartnerLogin(partnerId: string, email: string): P
   });
   revalidatePath("/budget/admin/partners");
   return { email: user.email };
+}
+
+/**
+ * Create a login for a grantee contact and email them a link to set a password.
+ *
+ * Invite-only, deliberately: this portal holds signed financial declarations, so
+ * an account is never self-created. The token reuses the password-reset table
+ * with a longer window — an NGO's finance contact will not read their inbox
+ * inside the reset flow's hour.
+ */
+export async function inviteGrantPartnerLogin(
+  partnerId: string,
+  email: string,
+  name?: string,
+): Promise<{ email: string }> {
+  const session = await auth();
+  if (!isBudgetAdminOrSuperAdmin(session)) throw new Error("Forbidden");
+
+  const normalized = email.trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(normalized)) throw new Error("Enter a valid email address");
+
+  const partner = await prisma.grantPartner.findUnique({ where: { id: partnerId }, select: { name: true } });
+  if (!partner) throw new Error("Grantee not found");
+
+  const existing = await prisma.user.findFirst({
+    where: { email: { equals: normalized, mode: "insensitive" } },
+    select: { id: true, role: true },
+  });
+  // An internal colleague must never be turned into an external grantee login.
+  if (existing && !["member", "viewer", "partner"].includes(existing.role)) {
+    throw new Error("That account belongs to an internal user. Link a separate address for the grantee.");
+  }
+
+  const INVITE_DAYS = 14;
+  const token = randomBytes(32).toString("hex");
+  // Hashed outside the transaction — bcrypt is deliberately slow and would hold
+  // the connection open for no reason.
+  const placeholderPassword = await bcrypt.hash(randomBytes(32).toString("hex"), 10);
+
+  await prisma.$transaction(async (tx) => {
+    const userId = existing
+      ? (await tx.user.update({ where: { id: existing.id }, data: { role: "partner" }, select: { id: true } })).id
+      : (
+          await tx.user.create({
+            data: {
+              email: normalized,
+              name: name?.trim() || normalized,
+              // Unusable until they set one through the invite link.
+              password: placeholderPassword,
+              role: "partner",
+            },
+            select: { id: true },
+          })
+        ).id;
+
+    await tx.grantPartnerUser.upsert({
+      where: { userId },
+      create: { userId, grantPartnerId: partnerId },
+      update: { grantPartnerId: partnerId },
+    });
+
+    await tx.passwordResetToken.deleteMany({ where: { email: normalized } });
+    await tx.passwordResetToken.create({
+      data: { email: normalized, token, expiresAt: new Date(Date.now() + INVITE_DAYS * 86400000) },
+    });
+  });
+
+  await sendPartnerInviteEmail(normalized, token, {
+    orgName: partner.name,
+    invitedBy: session?.user?.name ?? null,
+    expiresInDays: INVITE_DAYS,
+  });
+
+  revalidatePath("/budget/admin/partners");
+  return { email: normalized };
 }
 
 export async function unlinkGrantPartnerLogin(userId: string) {
