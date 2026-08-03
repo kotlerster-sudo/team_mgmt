@@ -1366,8 +1366,10 @@ function CostAnalysisTab({ templates, costs, domains, city, zones, cityBudgets }
 }) {
   const ALL_DOMAINS = domains.map(d => d.key);
   const [inp, setInp] = useState<BudgetGeneratorInputs>(() => makeDefaultInputs(costs));
-  const setField = (k: string, v: number) =>
+  const setField = (k: string, v: number) => {
     setInp(p => ({ ...p, [k]: isNaN(v) ? 0 : v }));
+    setScaleMatched(false);
+  };
 
   // ── Domain filter — chips at top decide which domains drive the panel
   //    below + which per-domain tables render. Initially all selected so the
@@ -1402,13 +1404,40 @@ function CostAnalysisTab({ templates, costs, domains, city, zones, cityBudgets }
     }>;
   } | null>(null);
   const [comparePending, startCompare] = useTransition();
+  // Scale the Standard was on before a compare budget overwrote it, so clearing
+  // the comparison doesn't strand the panel on someone else's numbers.
+  const [scaleBeforeCompare, setScaleBeforeCompare] = useState<BudgetGeneratorInputs | null>(null);
+  const [scaleMatched, setScaleMatched] = useState(false);
   const onCompareChange = (id: string) => {
     setCompareBudgetId(id);
-    if (!id) { setCompareData(null); return; }
+    if (!id) {
+      setCompareData(null);
+      if (scaleBeforeCompare) setInp(scaleBeforeCompare);
+      setScaleBeforeCompare(null);
+      setScaleMatched(false);
+      return;
+    }
     startCompare(async () => {
-      try { setCompareData(await loadBudgetForCompare(id)); }
-      catch { setCompareData(null); }
+      try {
+        const data = await loadBudgetForCompare(id);
+        setCompareData(data);
+        // The Standard's own scale starts from the registry's inp.* rows, which
+        // are zero for most keys. Comparing totals against a budget built at a
+        // different scale reads as variance when it is only size, so the
+        // Standard is regenerated at the loaded budget's inputs.
+        setScaleBeforeCompare(prev => prev ?? inp);
+        setInp(p => ({ ...p, ...data.programmeInputs }));
+        setScaleMatched(true);
+      } catch { setCompareData(null); }
     });
+  };
+
+  /** Put the Standard back on its own registry-default scale without dropping
+   *  the comparison — the Δ then reads as scale + rates together. */
+  const unmatchScale = () => {
+    if (scaleBeforeCompare) setInp(scaleBeforeCompare);
+    setScaleBeforeCompare(null);
+    setScaleMatched(false);
   };
 
   const [exporting, setExporting] = useState(false);
@@ -2070,6 +2099,30 @@ function CostAnalysisTab({ templates, costs, domains, city, zones, cityBudgets }
               </>
             )}
             <span className="text-[10px] text-stone-400 ml-1">Session only · cost registry untouched</span>
+          </div>
+        )}
+        {compareData && (
+          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-stone-100">
+            <span className="text-xs text-stone-500">Standard scale:</span>
+            {scaleMatched ? (
+              <span className="text-xs px-2 py-1 rounded border border-emerald-200 text-emerald-700 bg-emerald-50">
+                matched to {compareData.name}
+              </span>
+            ) : (
+              <span className="text-xs px-2 py-1 rounded border border-amber-200 text-amber-700 bg-amber-50">
+                on its own scale
+              </span>
+            )}
+            {scaleBeforeCompare && (
+              <button onClick={unmatchScale} className="text-xs text-stone-400 hover:text-stone-700">
+                Use registry defaults
+              </button>
+            )}
+            <span className="text-[10px] text-stone-400">
+              {scaleMatched
+                ? "Totals below compare rates, not size."
+                : "Totals below reflect size differences as well as rates."}
+            </span>
           </div>
         )}
       </div>
