@@ -2,7 +2,7 @@
 
 import { auth } from "@/lib/auth";
 import { isBudgetAdminOrSuperAdmin } from "@/lib/roleGuard";
-import { requireBudgetAccess } from "@/lib/budget/budgetAccess";
+import { requireBudgetAccess, withBudgetLineWrite, type BudgetLineWrite } from "@/lib/budget/budgetAccess";
 import { assertPartnerEditClosed } from "@/lib/budget/partnerDraft";
 import { requireGrantingUnit } from "@/lib/budget/grantingUnits";
 import { resolveRegistryRows, resolveRegistryComponents } from "@/lib/budget/costRegistry";
@@ -692,6 +692,20 @@ function normaliseCadence(
   return { cadence, plannedMonths: cleaned };
 }
 
+const STALE_LINE_MESSAGE = "This line changed elsewhere while you were editing it. Reload the budget and try again.";
+
+/** Compare-and-swap fragment for a line write. Absent token = no check. */
+function staleGuard(expectedUpdatedAt?: string) {
+  return expectedUpdatedAt ? { updatedAt: new Date(expectedUpdatedAt) } : {};
+}
+
+/** Mark a shared draft as touched by the grantee, so a regeneration pass or a
+ *  reclaim can tell whether any of their work is at stake. */
+async function stampPartnerEdit(write: BudgetLineWrite) {
+  if (write.capability !== "propose") return;
+  await prisma.budget.update({ where: { id: write.budgetId }, data: { partnerEditedAt: new Date() } });
+}
+
 export async function updateLine(
   lineId: string,
   updates: {
@@ -710,15 +724,19 @@ export async function updateLine(
     y3Units?: number; y3UnitCost?: number; y3AllocPct?: number;
     y4Units?: number; y4UnitCost?: number; y4AllocPct?: number;
     y5Units?: number; y5UnitCost?: number; y5AllocPct?: number;
-  }
+  },
+  // Optimistic concurrency: the row's `updatedAt` as the caller last saw it.
+  // Omit only from callers that have just read the row themselves.
+  expectedUpdatedAt?: string,
 ) {
   const session = await auth();
   if (!session?.user?.id) throw new Error("Not authenticated");
+  const write = await withBudgetLineWrite(session, { lineId });
 
   const line = await prisma.budgetLine.findUnique({
     where: { id: lineId },
     select: {
-      budgetId: true, budget: { select: { partnerId: true, grantPartnerId: true } },
+      budgetId: true,
       costCategory: true,
       y1Units: true, y1UnitCost: true, y1AllocPct: true,
       y2Units: true, y2UnitCost: true, y2AllocPct: true,
@@ -727,7 +745,6 @@ export async function updateLine(
       y5Units: true, y5UnitCost: true, y5AllocPct: true,
     },
   });
-  await requireBudgetAccess(session, line?.budget ?? null, "update");
   if (!line) throw new Error("Not found");
 
   // Merge the patch over the stored row before computing totals. Treating an
@@ -747,15 +764,17 @@ export async function updateLine(
 
   // A base (Year-1) unit-cost change marks the line as customised on this budget.
   const costChanged = updates.y1UnitCost !== undefined && Math.round(updates.y1UnitCost) !== Math.round(line.y1UnitCost);
-  await prisma.budgetLine.update({
-    where: { id: lineId },
+  const { count } = await prisma.budgetLine.updateMany({
+    where: { id: lineId, ...staleGuard(expectedUpdatedAt) },
     data: { ...rest, ...cadencePatch, y1Total, y2Total, y3Total, y4Total, y5Total, ...(costChanged ? { workingCustomised: true } : {}) },
   });
+  if (count === 0) throw new Error(STALE_LINE_MESSAGE);
   if (costChanged) {
     await prisma.budgetLineCostHistory.create({
       data: { budgetLineId: lineId, oldCost: line.y1UnitCost, newCost: updates.y1UnitCost!, source: "line edit", changedById: session.user.id },
     });
   }
+  await stampPartnerEdit(write);
   revalidatePath(`/budget/${line.budgetId}`);
 }
 
@@ -789,13 +808,15 @@ export async function saveBudgetLineComponents(
   lineId: string,
   rows: { label: string; spec?: string | null; qty: number; unitCost: number }[],
   derivation: string | null,
+  expectedUpdatedAt?: string,
 ) {
   const session = await auth();
   if (!session?.user?.id) throw new Error("Not authenticated");
+  const write = await withBudgetLineWrite(session, { lineId });
   const line = await prisma.budgetLine.findUnique({
     where: { id: lineId },
     select: {
-      budgetId: true, budget: { select: { partnerId: true, grantPartnerId: true } },
+      budgetId: true,
       y1Units: true, y1UnitCost: true, y1AllocPct: true,
       y2Units: true, y2UnitCost: true, y2AllocPct: true,
       y3Units: true, y3UnitCost: true, y3AllocPct: true,
@@ -803,7 +824,6 @@ export async function saveBudgetLineComponents(
       y5Units: true, y5UnitCost: true, y5AllocPct: true,
     },
   });
-  await requireBudgetAccess(session, line?.budget ?? null, "update");
   if (!line) throw new Error("Not found");
 
   const clean = rows
@@ -830,8 +850,8 @@ export async function saveBudgetLineComponents(
         data: clean.map((r, i) => ({ budgetLineId: lineId, position: i, label: r.label, spec: r.spec, qty: r.qty, unitCost: r.unitCost })),
       });
     }
-    await tx.budgetLine.update({
-      where: { id: lineId },
+    const { count } = await tx.budgetLine.updateMany({
+      where: { id: lineId, ...staleGuard(expectedUpdatedAt) },
       data: {
         derivation: deriv,
         workingCustomised: true,
@@ -842,6 +862,7 @@ export async function saveBudgetLineComponents(
         y5UnitCost: y5c, y5Total: total(line.y5Units, y5c, line.y5AllocPct),
       },
     });
+    if (count === 0) throw new Error(STALE_LINE_MESSAGE);
     if (clean.length > 0 && Math.round(line.y1UnitCost) !== rollup) {
       await tx.budgetLineCostHistory.create({
         data: { budgetLineId: lineId, oldCost: line.y1UnitCost, newCost: rollup, source: "working editor", changedById: session.user!.id },
@@ -849,6 +870,7 @@ export async function saveBudgetLineComponents(
     }
   });
 
+  await stampPartnerEdit(write);
   revalidatePath(`/budget/${line.budgetId}`);
 }
 
@@ -870,12 +892,11 @@ export async function addLine(
 ) {
   const session = await auth();
   if (!session?.user?.id) throw new Error("Not authenticated");
+  const write = await withBudgetLineWrite(session, { budgetId });
 
   const budget = await prisma.budget.findUnique({
     where: { id: budgetId },
     select: {
-      partnerId: true,
-      grantPartnerId: true,
       horizonMonths: true,
       applyInflation: true,
       inflationSalaryPct: true,
@@ -884,7 +905,6 @@ export async function addLine(
       lines: { select: { position: true }, orderBy: { position: "desc" }, take: 1 },
     },
   });
-  await requireBudgetAccess(session, budget, "update");
   if (!budget) throw new Error("Not found");
 
   const ratePct =
@@ -945,6 +965,7 @@ export async function addLine(
       y5Units: b5.units, y5UnitCost: b5.cost, y5AllocPct: 1, y5Total: b5.total,
     },
   });
+  await stampPartnerEdit(write);
   revalidatePath(`/budget/${budgetId}`);
   return line;
 }
@@ -952,17 +973,23 @@ export async function addLine(
 export async function deleteLine(lineId: string) {
   const session = await auth();
   if (!session?.user?.id) throw new Error("Not authenticated");
+  const write = await withBudgetLineWrite(session, { lineId });
 
-  const line = await prisma.budgetLine.findUnique({ where: { id: lineId }, select: { budgetId: true, budget: { select: { partnerId: true, grantPartnerId: true, status: true } } } });
-  await requireBudgetAccess(session, line?.budget ?? null, "update");
+  const line = await prisma.budgetLine.findUnique({ where: { id: lineId }, select: { budgetId: true, isAutoGenerated: true } });
   if (!line) throw new Error("Not found");
   // BudgetLine cascades to BudgetReportLine and its notes, so a delete past
   // draft silently destroys filed actuals.
-  if (line.budget.status !== "draft") {
+  if (write.status !== "draft") {
     throw new Error("This budget is no longer a draft — lines can't be deleted once it is finalised or approved.");
+  }
+  // The grantee may remove only lines they added; the generated skeleton is the
+  // lead's, and a query on it belongs in a note, not a deletion.
+  if (write.capability === "propose" && line.isAutoGenerated) {
+    throw new Error("This line came with the draft — leave a note on it instead of deleting it.");
   }
 
   await prisma.budgetLine.delete({ where: { id: lineId } });
+  await stampPartnerEdit(write);
   revalidatePath(`/budget/${line.budgetId}`);
 }
 

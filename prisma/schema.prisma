@@ -2304,6 +2304,10 @@ model BudgetLine {
   reallocationRequestsTo   BudgetReallocationRequest[] @relation("ReallocationTo")
   reportLineNotes          BudgetReportLineNote[]
   lineNotes                BudgetLineNote[]
+  // Optimistic-concurrency token. The editor seeds its rows once and never
+  // re-syncs, so a second writer — the grantee on a shared draft, or another
+  // login from the same org — would otherwise silently overwrite.
+  updatedAt                DateTime                    @default(now()) @updatedAt
 
   @@index([budgetId, position])
   @@index([deliveryPartnerId])

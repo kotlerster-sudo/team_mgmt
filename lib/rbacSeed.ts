@@ -119,7 +119,10 @@ export const RESOURCE_ACTIONS: Record<string, readonly string[]> = {
   // Wiki staff designation (curator/steward). Admin can manage; member just lists.
   wiki_staff: ["list", "manage"],
   review_portal: ["access"],
-  budget: [...STANDARD_ACTIONS],
+  // `propose` = a grantee editing a draft the lead shared with them. It gates
+  // nav and useHasGrant visibility only; the write gate is withBudgetLineWrite
+  // in lib/budget/budgetAccess.ts, which also checks the budget's edit state.
+  budget: [...STANDARD_ACTIONS, "propose"],
   // Catalog refresh 2026-05-22 — new resources.
   team_metrics: ["list", "read"],
   effects_indicator: [...STANDARD_ACTIONS],
@@ -404,8 +407,9 @@ const BUDGET_ADMIN_GRANTS: RoleGrant = {
 // External grantee login. Confined to their own budgets + reports (scoping is
 // enforced via GrantPartner.userId in the pages/actions; grants gate nav/can()).
 const PARTNER_GRANTS: RoleGrant = {
-  "budget.list": OWN,
-  "budget.read": OWN,
+  "budget.list":    OWN,
+  "budget.read":    OWN,
+  "budget.propose": OWN,
   "user.read":                SELF,
   "user.update":              SELF,
   "user.change_own_password": SELF,

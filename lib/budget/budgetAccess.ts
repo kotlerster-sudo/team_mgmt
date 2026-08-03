@@ -7,7 +7,9 @@
 // GrantPartner org the budget was granted to.
 
 import { buildRbacContext, getScopeRule, getTeamIds } from "@/lib/rbac";
+import prisma from "@/lib/prisma";
 import { getPartnerAccess, partnerCanAccessBudget } from "./partnerAccess";
+import type { BudgetStatus, BudgetPartnerEditState } from "@/app/generated/prisma/client";
 
 type SessionLike = { user?: { id?: string; role?: string; email?: string | null } } | null;
 
@@ -75,3 +77,63 @@ export async function requireBudgetAccess(
   if (!budget) throw new Error("Not found");
   if (!(await canAccessBudget(session, budget, action))) throw new Error("Forbidden");
 }
+
+/**
+ * `manage` — an internal user administering the grant. Everything is permitted.
+ * `propose` — the grantee editing a draft the lead shared with them. Line edits
+ * only; no metadata, no finalise, no approve.
+ */
+export type BudgetLineCapability = "manage" | "propose";
+
+export type BudgetLineWrite = {
+  capability: BudgetLineCapability;
+  budgetId: string;
+  status: BudgetStatus;
+  partnerEditState: BudgetPartnerEditState;
+};
+
+/**
+ * The single gate every `prisma.budgetLine.*` write goes through. Resolves the
+ * owning budget from a line id or a budget id and answers what the caller may do.
+ *
+ * Kept separate from `canAccessBudget` rather than added as another OR inside it:
+ * that function's first branch admits the budget's creator for *any* action, so
+ * folding the grantee path in there would widen every existing `budget.update`
+ * call site — metadata edits, finalise, delete — not just the line writes.
+ */
+export async function withBudgetLineWrite(
+  session: SessionLike,
+  target: { lineId: string } | { budgetId: string },
+): Promise<BudgetLineWrite> {
+  const budget = "lineId" in target
+    ? (await prisma.budgetLine.findUnique({
+        where: { id: target.lineId },
+        select: { budget: { select: LINE_WRITE_BUDGET_SELECT } },
+      }))?.budget ?? null
+    : await prisma.budget.findUnique({ where: { id: target.budgetId }, select: LINE_WRITE_BUDGET_SELECT });
+
+  if (!budget) throw new Error("Not found");
+
+  // Grantee logins take the propose path only — never the manage path, whose
+  // creator branch would otherwise admit them if they ever created a budget.
+  if (session?.user?.role !== "partner") {
+    await requireBudgetAccess(session, budget, "update");
+    return { capability: "manage", budgetId: budget.id, status: budget.status, partnerEditState: budget.partnerEditState };
+  }
+
+  const access = await getPartnerAccess(session);
+  if (!partnerCanAccessBudget(access, budget)) throw new Error("Forbidden");
+  if (budget.status !== "draft") throw new Error("This budget is no longer a draft.");
+  if (budget.partnerEditState !== "open") {
+    throw new Error(
+      budget.partnerEditState === "submitted"
+        ? "You've already submitted this budget — it is with the grant lead for review."
+        : "This budget isn't open for your input."
+    );
+  }
+  return { capability: "propose", budgetId: budget.id, status: budget.status, partnerEditState: budget.partnerEditState };
+}
+
+const LINE_WRITE_BUDGET_SELECT = {
+  id: true, partnerId: true, grantPartnerId: true, status: true, partnerEditState: true,
+} as const;
