@@ -21,7 +21,13 @@ const utcDay = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getU
 const daysUntil = (due: string) => Math.round((utcDay(new Date(due)) - utcDay(new Date())) / 86400000);
 
 type Slot = { id: string; slotNumber: number; grantYear: number; periodFrom: string; periodTo: string; dueDate: string; status: string; report: { submittedAt: string | null; approvedAt: string | null } | null };
-type Budget = { id: string; name: string; city: string; status: string; reportConfig: { frequency: string } | null; reportSlots: Slot[] };
+type Budget = {
+  id: string; name: string; city: string; status: string;
+  partnerEditState: "closed" | "open" | "submitted";
+  partnerSubmittedAt: string | null;
+  reportConfig: { frequency: string } | null;
+  reportSlots: Slot[];
+};
 
 export default function PartnerBudgetHome({ budgets, linked }: { budgets: Budget[]; linked: boolean }) {
   if (!linked) {
@@ -47,6 +53,8 @@ export default function PartnerBudgetHome({ budgets, linked }: { budgets: Budget
     .filter(g => g.slots.length > 0)
     .sort((a, b) => new Date(a.slots[0].dueDate).getTime() - new Date(b.slots[0].dueDate).getTime());
 
+  const drafts = budgets.filter(b => b.partnerEditState !== "closed");
+
   const allDue = dueByBudget.flatMap(g => g.slots).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   const overdueCount = allDue.filter(s => daysUntil(s.dueDate) < 0).length;
   const next = allDue.find(s => daysUntil(s.dueDate) >= 0);
@@ -69,6 +77,36 @@ export default function PartnerBudgetHome({ budgets, linked }: { budgets: Budget
             </span>
           )}
         </div>
+      )}
+
+      {/* Draft budgets shared for the grantee's input, and ones they've handed back */}
+      {drafts.length > 0 && (
+        <section>
+          <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wide mb-3">Budget awaiting your input</h2>
+          <div className="space-y-2">
+            {drafts.map(b => (
+              <div key={b.id} className="bg-white border border-stone-200 rounded-xl px-4 sm:px-5 py-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-medium text-stone-900">{b.name}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${b.partnerEditState === "open" ? "bg-sky-100 text-sky-700" : "bg-green-100 text-green-700"}`}>
+                      {b.partnerEditState === "open" ? "Open for your edits" : "Submitted"}
+                    </span>
+                  </div>
+                  <p className="text-xs text-stone-400 mt-0.5">
+                    {b.partnerEditState === "open"
+                      ? "Adjust the line items and workings to your own costs, then submit."
+                      : `Sent to the Foundation${b.partnerSubmittedAt ? ` on ${fmtDate(b.partnerSubmittedAt)}` : ""}. They'll come back to you if anything needs changing.`}
+                  </p>
+                </div>
+                <Link href={`/budget/${b.id}/draft`}
+                  className={`text-sm px-4 py-1.5 rounded-lg whitespace-nowrap ${b.partnerEditState === "open" ? "bg-sky-600 hover:bg-sky-700 text-white" : "border border-stone-300 text-stone-700 hover:bg-stone-50"}`}>
+                  {b.partnerEditState === "open" ? "Open budget" : "View"}
+                </Link>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
       {/* Reports due */}

@@ -14,6 +14,7 @@ import { revalidatePath } from "next/cache";
 import { requireBudgetAccess } from "@/lib/budget/budgetAccess";
 import { getPartnerAccess, partnerCanAccessBudget } from "@/lib/budget/partnerAccess";
 import { diffAgainstBaseline, workingSignature, type BaselineLine, type LineDiff } from "@/lib/budget/partnerDiff";
+import { notifyDraftSentBack, notifyDraftShared, notifyDraftSubmitted } from "@/lib/budget/draftNotify";
 
 /** The lines as the diff sees them. Used both to take the baseline at share
  *  time and to read the current state back at review time. */
@@ -41,7 +42,7 @@ async function requireManager(budgetId: string) {
   if (session.user.role === "partner") throw new Error("Forbidden");
   const budget = await prisma.budget.findUnique({
     where: { id: budgetId },
-    select: { id: true, partnerId: true, grantPartnerId: true, status: true, partnerEditState: true, partnerRound: true, grantLeadId: true },
+    select: { id: true, name: true, partnerId: true, grantPartnerId: true, status: true, partnerEditState: true, partnerRound: true, grantLeadId: true },
   });
   await requireBudgetAccess(session, budget, "update");
   if (!budget) throw new Error("Not found");
@@ -54,7 +55,11 @@ async function requireGrantee(budgetId: string) {
   if (!session?.user?.id) throw new Error("Not authenticated");
   const budget = await prisma.budget.findUnique({
     where: { id: budgetId },
-    select: { id: true, grantPartnerId: true, status: true, partnerEditState: true, partnerRound: true, grantLeadId: true },
+    select: {
+      id: true, name: true, grantPartnerId: true, status: true, partnerEditState: true,
+      partnerRound: true, grantLeadId: true,
+      grantPartner: { select: { name: true } },
+    },
   });
   if (!budget) throw new Error("Not found");
   const access = await getPartnerAccess(session);
@@ -80,6 +85,7 @@ export async function shareBudgetWithPartner(budgetId: string) {
       partnerBaseline: baseline,
     },
   });
+  await notifyDraftShared(budget);
   revalidatePath(`/budget/${budgetId}`);
 }
 
@@ -92,6 +98,7 @@ export async function submitBudgetDraft(budgetId: string) {
     where: { id: budgetId },
     data: { partnerEditState: "submitted", partnerSubmittedAt: new Date() },
   });
+  await notifyDraftSubmitted(budget, budget.grantPartner?.name ?? null);
   revalidatePath("/budget");
   revalidatePath(`/budget/${budgetId}/draft`);
 }
@@ -115,6 +122,7 @@ export async function sendBackBudgetDraft(budgetId: string, note: string) {
       data: { budgetId, budgetLineId: null, round, body, authorId: session.user!.id },
     }),
   ]);
+  await notifyDraftSentBack(budget, body);
   revalidatePath(`/budget/${budgetId}`);
 }
 
@@ -126,6 +134,111 @@ export async function reclaimBudgetDraft(budgetId: string) {
 
   await prisma.budget.update({ where: { id: budgetId }, data: { partnerEditState: "closed" } });
   revalidatePath(`/budget/${budgetId}`);
+}
+
+// ── Line-level queries ────────────────────────────────────────────────────────
+
+export type DraftNote = {
+  id: string;
+  budgetLineId: string | null;
+  round: number;
+  body: string;
+  createdAt: string;
+  resolvedAt: string | null;
+  authorName: string;
+};
+
+const NOTE_SELECT = {
+  id: true, budgetLineId: true, round: true, body: true,
+  createdAt: true, resolvedAt: true,
+  author: { select: { name: true, email: true } },
+} as const;
+
+type NoteRow = {
+  id: string; budgetLineId: string | null; round: number; body: string;
+  createdAt: Date; resolvedAt: Date | null; author: { name: string | null; email: string };
+};
+
+function toDraftNote(n: NoteRow): DraftNote {
+  return {
+    id: n.id, budgetLineId: n.budgetLineId, round: n.round, body: n.body,
+    createdAt: n.createdAt.toISOString(),
+    resolvedAt: n.resolvedAt?.toISOString() ?? null,
+    authorName: n.author.name ?? n.author.email,
+  };
+}
+
+/** Either side of the conversation. The lead raises a query off the review diff
+ *  and the grantee answers it inline on the line, so both may post. */
+async function requireDraftParticipant(budgetId: string) {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error("Not authenticated");
+  const budget = await prisma.budget.findUnique({
+    where: { id: budgetId },
+    select: { id: true, partnerId: true, grantPartnerId: true, status: true, partnerEditState: true, partnerRound: true },
+  });
+  if (!budget) throw new Error("Not found");
+
+  if (session.user.role === "partner") {
+    const access = await getPartnerAccess(session);
+    if (!partnerCanAccessBudget(access, budget)) throw new Error("Forbidden");
+    return { session, budget, isManager: false };
+  }
+  await requireBudgetAccess(session, budget, "update");
+  return { session, budget, isManager: true };
+}
+
+/** Raise or answer a query on one line. Open for as long as the draft is out
+ *  with the grantee — including while submitted, which is when the lead reads
+ *  it and objects. */
+export async function addBudgetLineNote(budgetId: string, budgetLineId: string, body: string): Promise<DraftNote> {
+  const text = body.trim();
+  if (!text) throw new Error("Write something first.");
+  const { session, budget } = await requireDraftParticipant(budgetId);
+  if (budget.partnerEditState === "closed") throw new Error("This draft is closed for comments.");
+
+  const line = await prisma.budgetLine.findUnique({ where: { id: budgetLineId }, select: { budgetId: true } });
+  if (line?.budgetId !== budgetId) throw new Error("Not found");
+
+  const note = await prisma.budgetLineNote.create({
+    data: { budgetId, budgetLineId, round: budget.partnerRound, body: text, authorId: session.user!.id! },
+    select: NOTE_SELECT,
+  });
+  revalidatePath(`/budget/${budgetId}`);
+  revalidatePath(`/budget/${budgetId}/draft`);
+  return toDraftNote(note);
+}
+
+/** Closing out a query is the lead's call — the grantee answering it is not the
+ *  same as the lead being satisfied. */
+export async function setBudgetLineNoteResolved(noteId: string, resolved: boolean): Promise<DraftNote> {
+  const existing = await prisma.budgetLineNote.findUnique({ where: { id: noteId }, select: { budgetId: true } });
+  if (!existing) throw new Error("Not found");
+  const { session, isManager } = await requireDraftParticipant(existing.budgetId);
+  if (!isManager) throw new Error("Forbidden");
+
+  const note = await prisma.budgetLineNote.update({
+    where: { id: noteId },
+    data: {
+      resolvedAt: resolved ? new Date() : null,
+      resolvedById: resolved ? session.user!.id! : null,
+    },
+    select: NOTE_SELECT,
+  });
+  revalidatePath(`/budget/${existing.budgetId}`);
+  revalidatePath(`/budget/${existing.budgetId}/draft`);
+  return toDraftNote(note);
+}
+
+/** Every note on this budget, oldest first — threads read top to bottom. */
+export async function listBudgetLineNotes(budgetId: string): Promise<DraftNote[]> {
+  await requireDraftParticipant(budgetId);
+  const notes = await prisma.budgetLineNote.findMany({
+    where: { budgetId },
+    orderBy: { createdAt: "asc" },
+    select: NOTE_SELECT,
+  });
+  return notes.map(toDraftNote);
 }
 
 /** What the grantee changed since the draft was shared. Null when it has never

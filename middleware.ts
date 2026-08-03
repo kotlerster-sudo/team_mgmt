@@ -44,12 +44,15 @@ const PUBLIC_PREFIXES = [
 ];
 
 // Paths a "partner" role may reach: their budget home, any budget's reports
-// subtree (page + the report server-action POSTs land on the same path), the
-// matching report APIs, plus account/notification self-service.
+// subtree (page + the report server-action POSTs land on the same path), a
+// shared draft budget, the matching report APIs, plus account/notification
+// self-service.
 function partnerAllowedPath(pathname: string): boolean {
   if (pathname === "/budget" || pathname === "/budget/") return true;
   if (pathname === "/budget/account") return true;
   if (/^\/budget\/[^/]+\/reports(\/[^/]*)?$/.test(pathname)) return true;
+  // A draft the lead shared for their input. Server actions POST to the same path.
+  if (/^\/budget\/[^/]+\/draft$/.test(pathname)) return true;
   if (/^\/api\/budget\/[^/]+\/reports\//.test(pathname)) return true;
   if (pathname === "/api/budget/parse-bank-statement") return true;
   if (pathname === "/api/budget/declaration-upload") return true;

@@ -776,6 +776,10 @@ export async function updateLine(
   }
   await stampPartnerEdit(write);
   revalidatePath(`/budget/${line.budgetId}`);
+  // Hand the new concurrency token back: the editor keeps its rows in local state
+  // and would otherwise send a stale token on the very next edit of this line.
+  const fresh = await prisma.budgetLine.findUnique({ where: { id: lineId }, select: { updatedAt: true } });
+  return { updatedAt: fresh?.updatedAt.toISOString() };
 }
 
 /** History for a budget line's base unit cost, newest first. */
@@ -872,6 +876,8 @@ export async function saveBudgetLineComponents(
 
   await stampPartnerEdit(write);
   revalidatePath(`/budget/${line.budgetId}`);
+  const fresh = await prisma.budgetLine.findUnique({ where: { id: lineId }, select: { updatedAt: true } });
+  return { updatedAt: fresh?.updatedAt.toISOString() };
 }
 
 export async function addLine(

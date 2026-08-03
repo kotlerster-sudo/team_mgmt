@@ -545,6 +545,9 @@ enum NotificationType {
   ActivityRescheduled
   BudgetReportDue
   BudgetReportOverdue
+  BudgetDraftShared
+  BudgetDraftSubmitted
+  BudgetDraftSentBack
 }
 
 model Notification {

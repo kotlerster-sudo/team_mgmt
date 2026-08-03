@@ -1,0 +1,224 @@
+"use client";
+
+// The two states of a budget-line row, plus the total tile used by the summary
+// bars. Shared verbatim between the internal manage view and the grantee's draft
+// view — the rows are the same rows; only the chrome around them differs.
+
+import { useState } from "react";
+import type { InflationType } from "@/app/generated/prisma/client";
+import CadencePicker from "./CadencePicker";
+import {
+  type Band, type BandKey, type Line,
+  CADENCE_LABELS, INFLATION_BADGE, fmt, formatPlannedMonths,
+  yTotalKey, yUnitsKey, yCostKey, yAllocKey,
+} from "./types";
+
+export function TotalCell({ label, value, big, white }: { label: string; value: number; big?: boolean; white?: boolean }) {
+  return (
+    <div>
+      <div className={`text-xs ${white ? "text-stone-400" : "text-stone-500"}`}>{label}</div>
+      <div className={`font-semibold ${big ? "text-xl" : "text-base"} ${white ? "text-white" : "text-stone-900"}`}>
+        ₹{(value / 100000).toFixed(2)}L
+      </div>
+    </div>
+  );
+}
+
+export function ViewRow({ line, i, bands, showAlloc, canEdit, canDelete, onEdit, onDelete, onWorking, hasWorking, isOwnWorking, queries, onQueries }: {
+  line: Line; i: number; bands: Band[]; showAlloc: boolean;
+  canEdit: boolean; canDelete: boolean;
+  onEdit: () => void; onDelete: () => void;
+  onWorking: () => void; hasWorking: boolean; isOwnWorking: boolean;
+  queries?: { total: number; open: number };
+  onQueries?: () => void;
+}) {
+  const [showDelete, setShowDelete] = useState(false);
+  return (
+    <tr className="border-b border-stone-50 hover:bg-stone-50 group">
+      <td className="px-4 py-2 text-stone-400 text-xs">{i}</td>
+      <td className="px-2 py-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-stone-800">{line.description}</span>
+          <span className={`text-xs px-1.5 py-0.5 rounded ${INFLATION_BADGE[line.costCategory]}`}>{line.costCategory}</span>
+          {hasWorking && (
+            <button onClick={onWorking} className={`text-xs px-2 py-1 min-h-8 inline-flex items-center rounded border ${isOwnWorking ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-sky-50 text-sky-600 border-sky-100"}`} title={isOwnWorking ? "Custom working on this budget" : "Standard working from the cost registry"}>
+              working{isOwnWorking ? " ✎" : ""}
+            </button>
+          )}
+          {line.cadence !== "monthly" && line.plannedMonths.length > 0 && (
+            <span
+              title={`${CADENCE_LABELS[line.cadence]} · planned in month${line.plannedMonths.length > 1 ? "s" : ""} ${line.plannedMonths.join(", ")} of the grant year`}
+              className="text-[10px] uppercase tracking-wide text-stone-500 bg-stone-100 px-1.5 py-0.5 rounded"
+            >
+              Planned: {formatPlannedMonths(line.plannedMonths)}
+            </span>
+          )}
+          {queries && queries.total > 0 && onQueries && (
+            <button onClick={onQueries}
+              title={queries.open > 0 ? `${queries.open} unresolved quer${queries.open === 1 ? "y" : "ies"} from the grant lead` : "All queries on this line are resolved"}
+              className={`text-xs px-2 py-1 min-h-8 inline-flex items-center rounded border ${queries.open > 0 ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-stone-50 text-stone-500 border-stone-200"}`}>
+              {queries.open > 0 ? `${queries.open} query${queries.open === 1 ? "" : "s"}` : "queries ✓"}
+            </button>
+          )}
+          {line.salaryHint && line.y1UnitCost === 0 && (
+            <span className="text-xs text-amber-600 italic">hint: {line.salaryHint}</span>
+          )}
+        </div>
+        {line.notes && <div className="text-xs text-stone-400 mt-0.5">{line.notes}</div>}
+      </td>
+      <td className="text-right px-2 py-2 text-stone-500 text-xs">{line.y1Units > 0 ? line.y1Units : "–"}</td>
+      <td className="text-right px-2 py-2 text-xs">
+        <button onClick={onWorking} className="text-sky-600 hover:text-sky-800 hover:underline" title="Working & change history">
+          {line.y1UnitCost > 0 ? `₹${line.y1UnitCost.toLocaleString("en-IN")}` : "–"}
+        </button>
+      </td>
+      {showAlloc && <td className="text-right px-2 py-2 text-stone-400 text-xs">{line.y1AllocPct < 1 ? `${(line.y1AllocPct * 100).toFixed(0)}%` : "100%"}</td>}
+      {bands.map(b => {
+        const total = line[yTotalKey(b.k)];
+        const isFirst = b.k === 1;
+        return (
+          <td key={b.k}
+            className={`text-right px-2 py-2 ${isFirst ? `font-medium ${total === 0 ? "text-amber-500" : "text-stone-900"}` : "text-stone-600"}`}>
+            {fmt(total)}
+          </td>
+        );
+      })}
+      <td className="px-2 py-2">
+        <div className="flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+          {canEdit && <button onClick={onEdit} className="text-xs text-sky-600 hover:text-sky-800">Edit</button>}
+          {!line.isAutoGenerated && canDelete && (
+            showDelete
+              ? <button onClick={onDelete} className="text-xs text-red-600 hover:text-red-800">Confirm</button>
+              : <button onClick={() => setShowDelete(true)} className="text-xs text-stone-400 hover:text-red-500">Del</button>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+export function EditRow({ line, vals, setVals, bands, showAlloc, inflationRate, domains, domainLabels, onSave, onCancel }: {
+  line: Line; vals: Partial<Line>; setVals: (v: Partial<Line>) => void;
+  bands: Band[]; showAlloc: boolean; inflationRate: Record<InflationType, number>;
+  domains: string[]; domainLabels: Record<string, string>;
+  onSave: () => void; onCancel: () => void;
+}) {
+  // Switching the inflation category re-inflates the out-year unit costs from Y1
+  // at the new category's rate (no-op when applyInflation is off → rate 0).
+  const setCostCategory = (cat: InflationType) => {
+    const rate = inflationRate[cat] ?? 0;
+    const y1c  = vals.y1UnitCost ?? line.y1UnitCost ?? 0;
+    const next: Partial<Line> = { ...vals, costCategory: cat };
+    for (const b of bands) {
+      if (b.k === 1) continue;
+      next[yCostKey(b.k)] = Math.round(y1c * Math.pow(1 + rate, b.k - 1));
+    }
+    setVals(next);
+  };
+  // Edit row keeps inflation-aware auto-fill but uses zero rate when applyInflation
+  // is off (band.factor stays 1 in those cases). The parent already gates extra
+  // bands on showAlloc / bands.length.
+  const setY1Units = (v: number) => {
+    const next: Partial<Line> = { ...vals, y1Units: v };
+    for (const b of bands) {
+      if (b.k === 1) continue;
+      next[yUnitsKey(b.k)] = v * b.factor;
+    }
+    setVals(next);
+  };
+
+  const setY1UnitCost = (v: number) => {
+    const next: Partial<Line> = { ...vals, y1UnitCost: v };
+    // Re-compute Y2..Y5 from existing cost ratio. Use a conservative inflation
+    // pass: same rate per year as the line's current Y1→Y2 step.
+    const ratio = line.y1UnitCost > 0 ? line.y2UnitCost / line.y1UnitCost : 1;
+    let cur = v;
+    for (const b of bands) {
+      if (b.k === 1) continue;
+      cur = Math.round(cur * ratio);
+      next[yCostKey(b.k)] = cur;
+    }
+    setVals(next);
+  };
+
+  const preview = (k: BandKey) =>
+    Math.round((vals[yUnitsKey(k)] ?? 0) * (vals[yCostKey(k)] ?? 0) * (vals[yAllocKey(k)] ?? 1));
+
+  return (
+    <tr className="border-b border-sky-100 bg-sky-50">
+      <td className="px-4 py-2 text-stone-400 text-xs">✏</td>
+      <td className="px-2 py-1.5">
+        <input
+          value={vals.description ?? ""}
+          onChange={e => setVals({ ...vals, description: e.target.value })}
+          className="w-full border border-sky-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-sky-500"
+        />
+        <div className="flex items-center gap-2 mt-1 flex-wrap">
+          <span className="text-[10px] uppercase tracking-widest text-stone-400">Domain</span>
+          <select value={vals.domain ?? ""}
+            onChange={e => setVals({ ...vals, domain: e.target.value === "" ? null : e.target.value })}
+            className="border border-sky-200 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 bg-white">
+            <option value="">Cross-cutting</option>
+            {domains.map(d => (
+              <option key={d} value={d}>{domainLabels[d] ?? d}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-2 mt-1 flex-wrap">
+          <span className="text-[10px] uppercase tracking-widest text-stone-400">Inflation</span>
+          <select value={vals.costCategory ?? line.costCategory}
+            onChange={e => setCostCategory(e.target.value as InflationType)}
+            className="border border-sky-200 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 bg-white"
+            title="Which inflation category this line compounds at. Changing it re-inflates the out-year unit costs.">
+            {(["Salary", "Other", "Nil"] as InflationType[]).map(cat => {
+              const pct = Math.round((inflationRate[cat] ?? 0) * 100);
+              return <option key={cat} value={cat}>{cat === "Nil" ? "No inflation" : `${cat}${pct > 0 ? ` (${pct}%)` : ""}`}</option>;
+            })}
+          </select>
+        </div>
+        <div className="flex items-center gap-2 mt-1 flex-wrap">
+          <span className="text-[10px] uppercase tracking-widest text-stone-400">Cadence</span>
+          <CadencePicker
+            cadence={vals.cadence ?? line.cadence}
+            plannedMonths={vals.plannedMonths ?? line.plannedMonths}
+            onChange={({ cadence, plannedMonths }) => setVals({ ...vals, cadence, plannedMonths })}
+          />
+        </div>
+        {line.salaryHint && <p className="text-xs text-amber-600 mt-0.5">Suggested: {line.salaryHint}</p>}
+      </td>
+      <td className="px-2 py-1.5">
+        <input type="number" value={vals.y1Units || ""} placeholder="Units"
+          onChange={e => setY1Units(parseFloat(e.target.value) || 0)}
+          className="w-full border border-sky-300 rounded px-2 py-1 text-sm text-right focus:outline-none" />
+      </td>
+      <td className="px-2 py-1.5">
+        <input type="number" value={vals.y1UnitCost || ""} placeholder="Unit cost"
+          onChange={e => setY1UnitCost(parseFloat(e.target.value) || 0)}
+          className="w-full border border-sky-300 rounded px-2 py-1 text-sm text-right focus:outline-none" />
+      </td>
+      {showAlloc && (
+        <td className="px-2 py-1.5">
+          <input type="number" value={(vals.y1AllocPct ?? 1) * 100 || ""} step="0.1"
+            onChange={e => setVals({ ...vals, y1AllocPct: (parseFloat(e.target.value) || 100) / 100 })}
+            className="w-full border border-sky-300 rounded px-2 py-1 text-xs text-right focus:outline-none" />
+        </td>
+      )}
+      {bands.map(b => b.k === 1 ? (
+        <td key={b.k} className="text-right px-2 py-1.5 font-medium text-sky-700">{fmt(preview(1))}</td>
+      ) : (
+        <td key={b.k} className="px-2 py-1.5">
+          <input type="number" value={vals[yCostKey(b.k)] || ""} placeholder={`${b.label} cost`}
+            onChange={e => setVals({ ...vals, [yCostKey(b.k)]: parseFloat(e.target.value) || 0 })}
+            className="w-full border border-sky-200 rounded px-1.5 py-0.5 text-xs text-right focus:outline-none" />
+          <div className="text-right text-xs text-sky-600 mt-0.5">{fmt(preview(b.k))}</div>
+        </td>
+      ))}
+      <td className="px-2 py-1.5">
+        <div className="flex gap-1">
+          <button onClick={onSave} className="text-xs bg-sky-600 text-white px-2 py-0.5 rounded hover:bg-sky-700">Save</button>
+          <button onClick={onCancel} className="text-xs text-stone-400 hover:text-stone-700">×</button>
+        </div>
+      </td>
+    </tr>
+  );
+}

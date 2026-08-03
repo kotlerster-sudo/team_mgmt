@@ -42,7 +42,10 @@ export default async function BudgetCityLandingPage() {
           orderBy: { updatedAt: "desc" },
         })
       : [];
-    return <PartnerBudgetHome budgets={JSON.parse(JSON.stringify(budgets))} linked={!!access.grantPartnerId} />;
+    // partnerBaseline is the share-time line snapshot — server-side diff input,
+    // not something to ship down to the grantee.
+    const safe = budgets.map(({ partnerBaseline, ...b }) => b);
+    return <PartnerBudgetHome budgets={JSON.parse(JSON.stringify(safe))} linked={!!access.grantPartnerId} />;
   }
 
   const [units, budgets] = await Promise.all([

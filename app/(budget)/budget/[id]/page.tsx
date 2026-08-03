@@ -3,8 +3,8 @@ import prisma from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import BudgetEditor from "./BudgetEditor";
 import { canAccessBudget } from "@/lib/budget/budgetAccess";
-import { resolveRegistryCity } from "@/lib/budget/grantingUnits";
-import { resolveRegistryRows, resolveRegistryComponents } from "@/lib/budget/costRegistry";
+import { buildWorkingByLineId } from "@/lib/budget/lineWorking";
+import { listBudgetLineNotes } from "../partner-draft-actions";
 
 export default async function BudgetPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -25,37 +25,7 @@ export default async function BudgetPage({ params }: { params: Promise<{ id: str
   if (!(await canAccessBudget(session, budget, "update"))) notFound();
   if (!budget) notFound();
 
-  // Per-line "working": the line's own components once authored, else a fallback
-  // to the standard registry breakup (via the template's costKey). A unit with
-  // no registry/templates of its own generates from its registryCity, so the
-  // working must resolve against the same source (matches createBudget).
-  const registryCity = await resolveRegistryCity(budget.city);
-  const [tmpls, regCompByKey, regItems] = await Promise.all([
-    prisma.lineTemplate.findMany({ where: { city: registryCity }, select: { templateKey: true, costKey: true } }),
-    resolveRegistryComponents(registryCity),
-    resolveRegistryRows(registryCity),
-  ]);
-  const costKeyByTemplate = new Map(tmpls.map(t => [t.templateKey, t.costKey]));
-  const regDerivByKey = new Map(regItems.map(r => [r.itemKey, r.derivation]));
-
-  // customised = edited on this budget (a budget-specific override).
-  // frozen = the components are a snapshot captured at generation (point-in-time)
-  // vs a live registry fallback (older budgets with no snapshot).
-  type Working = { components: { label: string; spec: string | null; qty: number; unitCost: number }[]; derivation: string | null; customised: boolean; frozen: boolean };
-  const workingByLineId: Record<string, Working> = {};
-  for (const l of budget.lines) {
-    if (l.components.length > 0) {
-      workingByLineId[l.id] = { components: l.components.map(c => ({ label: c.label, spec: c.spec, qty: c.qty, unitCost: c.unitCost })), derivation: l.derivation ?? null, customised: l.workingCustomised, frozen: true };
-    } else {
-      const costKey = l.templateKey ? costKeyByTemplate.get(l.templateKey) ?? null : null;
-      workingByLineId[l.id] = {
-        components: costKey ? (regCompByKey[costKey] ?? []) : [],
-        derivation: (costKey ? regDerivByKey.get(costKey) : null) ?? l.derivation ?? null,
-        customised: false,
-        frozen: false,
-      };
-    }
-  }
+  const workingByLineId = await buildWorkingByLineId(budget.city, budget.lines);
 
   // Load domain labels for this city so BudgetEditor can display them
   const domainConfigs = await prisma.budgetDomainConfig.findMany({
@@ -79,6 +49,13 @@ export default async function BudgetPage({ params }: { params: Promise<{ id: str
     }),
   ]);
 
-  const serialized = JSON.parse(JSON.stringify(budget));
-  return <BudgetEditor budget={{ ...serialized, domainLabels, grantPartners, grantLeads, workingByLineId }} />;
+  // partnerBaseline is the whole share-time line snapshot — server-side input to
+  // the review diff, and no business being in the client payload.
+  const { partnerBaseline, ...rest } = budget;
+  const serialized = JSON.parse(JSON.stringify(rest));
+  const grantPartnerName = grantPartners.find(p => p.id === budget.grantPartnerId)?.name ?? null;
+
+  const notes = await listBudgetLineNotes(id);
+
+  return <BudgetEditor budget={{ ...serialized, domainLabels, grantPartners, grantLeads, grantPartnerName, workingByLineId }} notes={notes} />;
 }
