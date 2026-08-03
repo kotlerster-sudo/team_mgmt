@@ -19,7 +19,10 @@ export default async function BudgetPage({ params }: { params: Promise<{ id: str
     },
   });
 
-  if (!(await canAccessBudget(session, budget, "read"))) notFound();
+  // "update", not "read": this is the manage view. Partners hold budget.read on
+  // their own org's budgets, and everything below — including every internal
+  // user's name and email for the grant-lead picker — ships in the RSC payload.
+  if (!(await canAccessBudget(session, budget, "update"))) notFound();
   if (!budget) notFound();
 
   // Per-line "working": the line's own components once authored, else a fallback
