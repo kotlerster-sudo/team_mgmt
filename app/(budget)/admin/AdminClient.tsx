@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useTransition, Fragment } from "react";
+import { useState, useMemo, useCallback, useEffect, useTransition, Fragment } from "react";
 import {
   seedCostRegistry, resetCostRegistry, deleteCostItem, addCostItem, saveCostComponents,
   overrideCostItem, revertToSharedCost, promoteCostToShared,
@@ -1717,8 +1717,17 @@ function CostAnalysisTab({ templates, costs, domains, city, zones, cityBudgets }
     [indicativeLines, excludedTemplateKeys]
   );
 
-  // Total children derived from registry ratio
-  const totalChildren = Math.round((effectiveInp.nCLCs ?? 0) * (registry["children.children_per_clc"] ?? 0));
+  // Beneficiaries per unit of a domain's driving input. Children's enrolment
+  // ratio is the registry's children_per_clc — the same number the snack and
+  // leisure lines divide by — so the per-child cost can't drift from the lines
+  // that produced it. Every other domain uses its standing config default.
+  const beneficiaryRatio = useCallback(
+    (d: BudgetDomainConfig) =>
+      d.beneficiaryVar === "nCLCs" ? (registry["children.children_per_clc"] || d.beneficiaryMult) : d.beneficiaryMult,
+    [registry]
+  );
+  const ratioCaption = (d: BudgetDomainConfig) =>
+    d.beneficiaryVar === "nCLCs" ? `${d.beneficiaryVar} × children_per_clc` : `${d.beneficiaryVar} × ${d.beneficiaryMult}`;
 
   // Est. households: auto from nSettlements × beneficiaryMult, or manually overridden
   const hhDomain = domains.find(d => d.beneficiaryVar === "nSettlements");
@@ -1756,21 +1765,32 @@ function CostAnalysisTab({ templates, costs, domains, city, zones, cityBudgets }
     return m;
   }, [compareData, ALL_DOMAINS, excludedOrphanIds, excludedTemplateKeys]);
 
-  // Per-unit costs computed from domain configs (beneficiaryVar × beneficiaryMult).
+  // Per-unit costs computed from domain configs (beneficiaryVar × ratio).
   // When comparing, every tile carries a Yours value too so the Δ is visible
   // alongside the Standard reading.
   const perUnit = useMemo(() => {
-    const result: { label: string; std: number | null; you: number | null; sub: string }[] = [];
-    for (const d of domains) {
+    const result: { label: string; domain: string | null; std: number | null; you: number | null; sub: string }[] = [];
+    // Follows the domain chips, as the Coverage row already does — otherwise a
+    // single-domain budget is read against a panel of nine domains it never had.
+    for (const d of domains.filter(d => selectedDomains.size === domains.length || selectedDomains.has(d.key))) {
       if (!d.beneficiaryVar || !d.beneficiaryLabel) continue;
-      const stdCount = Math.round((effectiveInp[d.beneficiaryVar] ?? 0) * d.beneficiaryMult);
+      const ratio = beneficiaryRatio(d);
+      const stdCount = Math.round((effectiveInp[d.beneficiaryVar] ?? 0) * ratio);
       const stdTotal = domainOp[d.key] ?? 0;
+      // The compared budget may have overridden the enrolment ratio itself, and
+      // dividing its spend by the Standard's ratio would fake a variance.
+      const youRatio = (d.beneficiaryVar === "nCLCs"
+        ? compareData?.costOverrides["children.children_per_clc"]
+        : undefined) || ratio;
       const youCount = compareData
-        ? Math.round((compareData.programmeInputs[d.beneficiaryVar] ?? 0) * d.beneficiaryMult)
+        ? Math.round((compareData.programmeInputs[d.beneficiaryVar] ?? 0) * youRatio)
         : 0;
       const youTotal = compareData ? (domainOpYou[d.key] ?? 0) : 0;
       result.push({
+        // Several domains share a beneficiary unit — three read "households" —
+        // so the domain has to travel with the tile to mean anything.
         label: `Per ${d.beneficiaryLabel.toLowerCase()}`,
+        domain: d.label,
         std: stdCount > 0 ? Math.round(stdTotal / stdCount) : null,
         you: compareData && youCount > 0 ? Math.round(youTotal / youCount) : null,
         sub: `${stdCount.toLocaleString("en-IN")} ${d.beneficiaryLabel.toLowerCase()}`,
@@ -1784,18 +1804,20 @@ function CostAnalysisTab({ templates, costs, domains, city, zones, cityBudgets }
       : 0;
     result.push({
       label: "Per cluster",
+      domain: "All selected domains",
       std: (effectiveInp.nClusters ?? 0) > 0 ? Math.round((domainOp["total"] ?? 0) / effectiveInp.nClusters!) : null,
       you: compareData && youClusters > 0 ? Math.round((domainOpYou["total"] ?? 0) / youClusters) : null,
       sub: `${effectiveInp.nClusters ?? 0} clusters`,
     });
     result.push({
-      label: "Per HH",
+      label: "Per household",
+      domain: "All selected domains",
       std: estHH > 0 ? Math.round((domainOp["total"] ?? 0) / estHH) : null,
       you: compareData && youHH > 0 ? Math.round((domainOpYou["total"] ?? 0) / youHH) : null,
       sub: `${estHH.toLocaleString("en-IN")} households`,
     });
     return result;
-  }, [domainOp, domainOpYou, domains, effectiveInp, estHH, hhPerSettlement, compareData]);
+  }, [domainOp, domainOpYou, domains, selectedDomains, beneficiaryRatio, effectiveInp, estHH, hhPerSettlement, compareData]);
 
   /** Partner line a Standard template can't anchor (manual addition or template
    *  no longer active). Surfaced as "your addition" rows in the per-domain table
@@ -2214,26 +2236,16 @@ function CostAnalysisTab({ templates, costs, domains, city, zones, cityBudgets }
         <div>
           <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest mb-2">Coverage & Beneficiaries</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            {/* Children: always derived. Only shown when a selected-domain template wires through nCLCs. */}
-            {(allDomainsSelected || inpKeysBySelectedDomain.has("nCLCs")) && (
-              <div className="block">
-                <span className="text-xs text-stone-500">Children</span>
-                <div className={DERIVED_CLS}>
-                  {totalChildren > 0 ? totalChildren.toLocaleString("en-IN") : <span className="italic text-stone-300">set children_per_clc</span>}
-                </div>
-                <p className="text-xs text-stone-300 mt-0.5">nCLCs × children_per_clc</p>
-              </div>
-            )}
-            {/* Beneficiary counts derived from domain config (beneficiaryVar × beneficiaryMult).
+            {/* Beneficiary counts derived from domain config (beneficiaryVar × ratio).
                 Restricted to selected domains so the row matches the user's filter. */}
             {domains.filter(d => d.beneficiaryVar && d.beneficiaryLabel && d.beneficiaryVar !== "nSettlements")
                     .filter(d => allDomainsSelected || selectedDomains.has(d.key)).map(d => {
-              const count = Math.round((effectiveInp[d.beneficiaryVar!] ?? 0) * d.beneficiaryMult);
+              const count = Math.round((effectiveInp[d.beneficiaryVar!] ?? 0) * beneficiaryRatio(d));
               return (
                 <div key={d.key} className="block">
-                  <span className="text-xs text-stone-500">{d.beneficiaryLabel}</span>
+                  <span className="text-xs text-stone-500">{d.beneficiaryLabel} <span className="text-stone-300">· {d.label}</span></span>
                   <div className={DERIVED_CLS}>{count > 0 ? count.toLocaleString("en-IN") : "—"}</div>
-                  <p className="text-xs text-stone-300 mt-0.5">{d.beneficiaryVar} × {d.beneficiaryMult}</p>
+                  <p className="text-xs text-stone-300 mt-0.5">{ratioCaption(d)}</p>
                 </div>
               );
             })}
@@ -2255,9 +2267,10 @@ function CostAnalysisTab({ templates, costs, domains, city, zones, cityBudgets }
           <span className="ml-2 normal-case font-normal text-sky-500">(excludes capex, admin salaries, admin other)</span>
         </p>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          {perUnit.map(({ label, std, you, sub }) => (
-            <div key={label} className="bg-sky-900/50 rounded-lg p-3">
+          {perUnit.map(({ label, domain, std, you, sub }) => (
+            <div key={`${domain}-${label}`} className="bg-sky-900/50 rounded-lg p-3">
               <p className="text-xs text-sky-400">{label}</p>
+              {domain && <p className="text-[10px] text-sky-600 leading-tight">{domain}</p>}
               <p className="text-lg font-bold text-white mt-1">
                 {std != null ? fmtCost(std) : <span className="text-sky-600 text-sm">—</span>}
               </p>
