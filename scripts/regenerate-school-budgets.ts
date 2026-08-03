@@ -9,6 +9,8 @@
 //
 // Safety:
 //  - Skips budgets with importedAt set (hand-authored via Excel import).
+//  - Skips budgets shared with the grantee or already edited by them
+//    (partnerEditState / partnerEditedAt) — regenerating would erase their work.
 //  - Skips + warns if any BudgetReport / BudgetReportLine / BudgetReallocationRequest
 //    exists — regenerating would cascade-delete those rows.
 //  - `--dry-run` prints per-budget plan + section totals without writing.
@@ -61,6 +63,14 @@ async function main() {
     // Guardrails ------------------------------------------------------------
     if (budget.importedAt) {
       console.log(`- ${plan.name}: importedAt=${budget.importedAt.toISOString()} (hand-authored). Skip.`);
+      skipped++; continue;
+    }
+    if (budget.partnerEditedAt) {
+      console.log(`- ${plan.name}: partnerEditedAt=${budget.partnerEditedAt.toISOString()} (grantee edited this draft). Skip.`);
+      skipped++; continue;
+    }
+    if (budget.partnerEditState !== "closed") {
+      console.log(`- ${plan.name}: shared with the grantee (partnerEditState=${budget.partnerEditState}). Skip.`);
       skipped++; continue;
     }
     if (budget.isMultiPartner) {

@@ -8,40 +8,41 @@ datasource db {
 }
 
 model User {
-  id                  String        @id @default(cuid())
-  name                String?
-  email               String        @unique
-  emailVerified       DateTime?
-  image               String?
-  password            String?
-  role                String        @default("member")
+  id                    String                 @id @default(cuid())
+  name                  String?
+  email                 String                 @unique
+  emailVerified         DateTime?
+  image                 String?
+  password              String?
+  role                  String                 @default("member")
   // Set when this account is the login for a grantee org (role "partner").
-  granteeLogin        GrantPartnerUser? @relation("PartnerLogin")
+  granteeLogin          GrantPartnerUser?      @relation("PartnerLogin")
   budgetReportLineNotes BudgetReportLineNote[]
+  budgetLineNotes       BudgetLineNote[]
   // Owner = "primordial" super-admin. Asymmetric protection: only the owner
   // can mint new super-admins, and no other super-admin can demote, delete,
   // or reset the password of the owner. Exactly one user should carry this.
   // To transfer or relinquish ownership, do it via direct SQL update.
-  isOwner             Boolean       @default(false)
-  designation         String        @default("Other") // RP | ZL | PM | Other
-  bio                 String?
-  notifyDigest        Boolean       @default(false)
-  weeklyCapacity      Float         @default(40)
-  externalCalendarUrl String?
-  lastSeenAt          DateTime?
+  isOwner               Boolean                @default(false)
+  designation           String                 @default("Other") // RP | ZL | PM | Other
+  bio                   String?
+  notifyDigest          Boolean                @default(false)
+  weeklyCapacity        Float                  @default(40)
+  externalCalendarUrl   String?
+  lastSeenAt            DateTime?
   // Tenancy (wiki module). Org is required logically but kept nullable here
   // because the seed-wiki script backfills existing users to the "Pitstops
   // Internal" org as a post-migration step.
-  orgId               String?
+  orgId                 String?
   // Deprecated: previously used for the WhatsApp adapter, which we dropped
   // in favour of email. Columns kept for data preservation — safe to drop in a
   // future migration if confirmed unused.
-  phone               String?
-  whatsappOptIn       Boolean       @default(true)
+  phone                 String?
+  whatsappOptIn         Boolean                @default(true)
   // Wiki email rhythm — opt-out by default. Toggle from /settings/notifications.
-  emailOptIn          Boolean       @default(true)
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
+  emailOptIn            Boolean                @default(true)
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
 
   accounts                  Account[]
   sessions                  Session[]
@@ -1976,6 +1977,12 @@ enum BudgetStatus {
   approved
 }
 
+enum BudgetPartnerEditState {
+  closed
+  open
+  submitted
+}
+
 enum ReportFrequency {
   monthly
   bi_monthly
@@ -2070,8 +2077,21 @@ model Budget {
   // from inputs" action must confirm before overwriting them.
   importedAt         DateTime?
   status             BudgetStatus            @default(draft)
+  // Grant-making stage: whether the grantee may edit this draft. Orthogonal to
+  // `status` — a budget is only ever shared while it is still a draft, and
+  // finalise/approve refuse until this is back to `closed`.
+  partnerEditState   BudgetPartnerEditState  @default(closed)
+  partnerSharedAt    DateTime?
+  partnerSubmittedAt DateTime?
+  partnerEditedAt    DateTime?
+  // Send-back round, incremented each time the lead returns the draft, so
+  // BudgetLineNote threads from separate iterations stay distinguishable.
+  partnerRound       Int                     @default(0)
+  // The lines as they stood when shared — the basis for the review diff.
+  partnerBaseline    Json?
   inputs             BudgetInputs?
   lines              BudgetLine[]
+  lineNotes          BudgetLineNote[]
   deliveryPartners   BudgetDeliveryPartner[]
   reportConfig       BudgetReportConfig?
   reportSlots        BudgetReportSlot[]
@@ -2283,6 +2303,7 @@ model BudgetLine {
   reallocationRequestsFrom BudgetReallocationRequest[] @relation("ReallocationFrom")
   reallocationRequestsTo   BudgetReallocationRequest[] @relation("ReallocationTo")
   reportLineNotes          BudgetReportLineNote[]
+  lineNotes                BudgetLineNote[]
 
   @@index([budgetId, position])
   @@index([deliveryPartnerId])
@@ -2510,6 +2531,32 @@ model BudgetReallocationRequest {
 /// A reviewer's query about one line of a report, and the partner's replies to
 /// it. Sending a whole report back says nothing about what was wrong; these say
 /// exactly which line to look at.
+/// Line-level conversation on a draft budget during the grant-making stage:
+/// the lead queries a line, the partner answers. Distinct from
+/// BudgetReportLineNote, which hangs off a filed report, not the budget.
+model BudgetLineNote {
+  id           String      @id @default(cuid())
+  budgetId     String
+  budget       Budget      @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  // Nullable with SetNull, unlike BudgetReportLineNote: a partner deleting the
+  // line being objected to must not erase the objection. A null line is a
+  // whole-budget note (e.g. the reason a draft was sent back).
+  budgetLineId String?
+  budgetLine   BudgetLine? @relation(fields: [budgetLineId], references: [id], onDelete: SetNull)
+  // Budget.partnerRound at the time of writing, so iterations don't merge into
+  // one undifferentiated thread.
+  round        Int         @default(0)
+  body         String
+  authorId     String
+  author       User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  resolvedAt   DateTime?
+  resolvedById String?
+  createdAt    DateTime    @default(now())
+
+  @@index([budgetId, round])
+  @@index([budgetLineId])
+}
+
 model BudgetReportLineNote {
   id           String       @id @default(cuid())
   reportId     String

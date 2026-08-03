@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 import { generateSlots } from "@/lib/budget-report-slots";
 import { computeDeclarationData } from "@/lib/budget/declarationData";
 import { getPartnerAccess, partnerCanAccessBudget } from "@/lib/budget/partnerAccess";
+import { assertPartnerEditClosed } from "@/lib/budget/partnerDraft";
 import { declarationInputsComplete, AFFIRMATION_CLAUSES, type DeclarationInputs } from "@/lib/budget/declaration";
 import type { ReportFrequency, BudgetSection, ReallocationDuration } from "@/app/generated/prisma/client";
 
@@ -26,6 +27,10 @@ export async function approveBudget(
 ) {
   const session = await auth();
   if (!session?.user || !isBudgetAdminOrSuperAdmin(session)) throw new Error("Unauthorized");
+
+  const budget = await prisma.budget.findUnique({ where: { id: budgetId }, select: { partnerEditState: true } });
+  if (!budget) throw new Error("Not found");
+  assertPartnerEditClosed(budget.partnerEditState, "approved");
 
   const dueAfterDays = config.dueAfterDays ?? 30;
   const slots = generateSlots(config.grantStartDate, config.grantEndDate, config.frequency, dueAfterDays);

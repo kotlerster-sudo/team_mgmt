@@ -3,6 +3,7 @@
 import { auth } from "@/lib/auth";
 import { isBudgetAdminOrSuperAdmin } from "@/lib/roleGuard";
 import { requireBudgetAccess } from "@/lib/budget/budgetAccess";
+import { assertPartnerEditClosed } from "@/lib/budget/partnerDraft";
 import { requireGrantingUnit } from "@/lib/budget/grantingUnits";
 import { resolveRegistryRows, resolveRegistryComponents } from "@/lib/budget/costRegistry";
 import prisma from "@/lib/prisma";
@@ -714,16 +715,29 @@ export async function updateLine(
   const session = await auth();
   if (!session?.user?.id) throw new Error("Not authenticated");
 
-  const line = await prisma.budgetLine.findUnique({ where: { id: lineId }, select: { budgetId: true, budget: { select: { partnerId: true, grantPartnerId: true } }, costCategory: true, y1UnitCost: true } });
+  const line = await prisma.budgetLine.findUnique({
+    where: { id: lineId },
+    select: {
+      budgetId: true, budget: { select: { partnerId: true, grantPartnerId: true } },
+      costCategory: true,
+      y1Units: true, y1UnitCost: true, y1AllocPct: true,
+      y2Units: true, y2UnitCost: true, y2AllocPct: true,
+      y3Units: true, y3UnitCost: true, y3AllocPct: true,
+      y4Units: true, y4UnitCost: true, y4AllocPct: true,
+      y5Units: true, y5UnitCost: true, y5AllocPct: true,
+    },
+  });
   await requireBudgetAccess(session, line?.budget ?? null, "update");
   if (!line) throw new Error("Not found");
 
-  const total = (u?: number, c?: number, a?: number) => Math.round((u ?? 0) * (c ?? 0) * (a ?? 1));
-  const y1Total = total(updates.y1Units, updates.y1UnitCost, updates.y1AllocPct);
-  const y2Total = total(updates.y2Units, updates.y2UnitCost, updates.y2AllocPct);
-  const y3Total = total(updates.y3Units, updates.y3UnitCost, updates.y3AllocPct);
-  const y4Total = total(updates.y4Units, updates.y4UnitCost, updates.y4AllocPct);
-  const y5Total = total(updates.y5Units, updates.y5UnitCost, updates.y5AllocPct);
+  // Merge the patch over the stored row before computing totals. Treating an
+  // absent field as 0 would zero the year totals on any partial patch.
+  const total = (u: number, c: number, a: number) => Math.round(u * c * a);
+  const y1Total = total(updates.y1Units ?? line.y1Units, updates.y1UnitCost ?? line.y1UnitCost, updates.y1AllocPct ?? line.y1AllocPct);
+  const y2Total = total(updates.y2Units ?? line.y2Units, updates.y2UnitCost ?? line.y2UnitCost, updates.y2AllocPct ?? line.y2AllocPct);
+  const y3Total = total(updates.y3Units ?? line.y3Units, updates.y3UnitCost ?? line.y3UnitCost, updates.y3AllocPct ?? line.y3AllocPct);
+  const y4Total = total(updates.y4Units ?? line.y4Units, updates.y4UnitCost ?? line.y4UnitCost, updates.y4AllocPct ?? line.y4AllocPct);
+  const y5Total = total(updates.y5Units ?? line.y5Units, updates.y5UnitCost ?? line.y5UnitCost, updates.y5AllocPct ?? line.y5AllocPct);
 
   // Strip + re-validate the cadence pair so we never persist {one_time, []} etc.
   const { cadence: _c, plannedMonths: _pm, ...rest } = updates;
@@ -939,9 +953,14 @@ export async function deleteLine(lineId: string) {
   const session = await auth();
   if (!session?.user?.id) throw new Error("Not authenticated");
 
-  const line = await prisma.budgetLine.findUnique({ where: { id: lineId }, select: { budgetId: true, budget: { select: { partnerId: true, grantPartnerId: true } } } });
+  const line = await prisma.budgetLine.findUnique({ where: { id: lineId }, select: { budgetId: true, budget: { select: { partnerId: true, grantPartnerId: true, status: true } } } });
   await requireBudgetAccess(session, line?.budget ?? null, "update");
   if (!line) throw new Error("Not found");
+  // BudgetLine cascades to BudgetReportLine and its notes, so a delete past
+  // draft silently destroys filed actuals.
+  if (line.budget.status !== "draft") {
+    throw new Error("This budget is no longer a draft — lines can't be deleted once it is finalised or approved.");
+  }
 
   await prisma.budgetLine.delete({ where: { id: lineId } });
   revalidatePath(`/budget/${line.budgetId}`);
@@ -988,10 +1007,29 @@ export async function finalizeBudget(budgetId: string) {
   const session = await auth();
   if (!session?.user?.id) throw new Error("Not authenticated");
 
-  const budget = await prisma.budget.findUnique({ where: { id: budgetId }, select: { partnerId: true, grantPartnerId: true } });
+  const budget = await prisma.budget.findUnique({ where: { id: budgetId }, select: { partnerId: true, grantPartnerId: true, partnerEditState: true } });
   await requireBudgetAccess(session, budget, "update");
+  if (!budget) throw new Error("Not found");
+  assertPartnerEditClosed(budget.partnerEditState, "finalised");
 
   await prisma.budget.update({ where: { id: budgetId }, data: { status: "final" } });
+  revalidatePath(`/budget/${budgetId}`);
+}
+
+/** Inverse of finalizeBudget: back to draft so lines can move again. Approved
+ *  budgets stay put — their report slots are already generated against these
+ *  lines, and reopening would let the figures drift out from under filed reports. */
+export async function reopenBudget(budgetId: string) {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error("Not authenticated");
+
+  const budget = await prisma.budget.findUnique({ where: { id: budgetId }, select: { partnerId: true, grantPartnerId: true, status: true } });
+  await requireBudgetAccess(session, budget, "update");
+  if (!budget) throw new Error("Not found");
+  if (budget.status === "draft") return;
+  if (budget.status === "approved") throw new Error("This budget is approved and has report slots against it — it can't be reopened.");
+
+  await prisma.budget.update({ where: { id: budgetId }, data: { status: "draft" } });
   revalidatePath(`/budget/${budgetId}`);
 }
 
