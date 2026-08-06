@@ -59,6 +59,11 @@ function partnerAllowedPath(pathname: string): boolean {
   if (pathname.startsWith("/settings/account")) return true;
   if (pathname.startsWith("/api/account")) return true;
   if (pathname.startsWith("/api/notifications")) return true;
+  // Approvals wizard — partner-lane surfaces. Per-assembly ownership is
+  // enforced in the routes themselves via getAssemblyForPartnerUser.
+  if (pathname === "/partner/approvals") return true;
+  if (/^\/partner\/approvals\/[^/]+$/.test(pathname)) return true;
+  if (/^\/api\/approvals\/[^/]+\/partner(\/[^/]*)?$/.test(pathname)) return true;
   return false;
 }
 
