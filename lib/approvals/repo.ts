@@ -101,6 +101,19 @@ export async function listAssembliesForPartner(partnerUserId: string): Promise<A
   `) as AssemblyListRow[];
 }
 
+/** Pending = invited but partner hasn't submitted Step 1 yet. Used by the
+ *  banner on /budget so partners find the wizard without knowing the URL. */
+export async function listPendingForPartner(partnerUserId: string): Promise<AssemblyListRow[]> {
+  return (await sql`
+    SELECT a.*, o.name AS org_name, o.city AS org_city
+    FROM assessment_assemblies a
+    JOIN orgs o ON o.id = a.org_id
+    WHERE a.partner_user_id = ${partnerUserId}
+      AND a.partner_submitted_at IS NULL
+    ORDER BY a.updated_at DESC
+  `) as AssemblyListRow[];
+}
+
 /** Assembly + ownership check for a partner user. Returns null if not theirs. */
 export async function getAssemblyForPartnerUser(
   id: string,

@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { isPartner } from "@/lib/roleGuard";
 import { getPartnerAccess } from "@/lib/budget/partnerAccess";
 import PartnerBudgetHome from "./PartnerBudgetHome";
+import PendingApprovalsBanner from "./PendingApprovalsBanner";
 import { listGrantingUnits } from "@/lib/budget/grantingUnits";
 
 // ₹ in Cr when ≥ 1 Cr, else L.
@@ -45,7 +46,12 @@ export default async function BudgetCityLandingPage() {
     // partnerBaseline is the share-time line snapshot — server-side diff input,
     // not something to ship down to the grantee.
     const safe = budgets.map(({ partnerBaseline, ...b }) => b);
-    return <PartnerBudgetHome budgets={JSON.parse(JSON.stringify(safe))} linked={!!access.grantPartnerId} />;
+    return (
+      <>
+        <PendingApprovalsBanner />
+        <PartnerBudgetHome budgets={JSON.parse(JSON.stringify(safe))} linked={!!access.grantPartnerId} />
+      </>
+    );
   }
 
   const [units, budgets] = await Promise.all([
