@@ -67,3 +67,63 @@ export async function doneVisitsByGoal(
   }
   return out;
 }
+
+/** "YYYY-MM" key for the month containing `d` (local time — server runs IST). */
+export function ymKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+export type VisitStats = {
+  /** Completed cadence visits bucketed by "YYYY-MM". */
+  byMonth: Map<string, number>;
+  /** Most recent completed cadence visit inside the window (null if none). */
+  lastVisitAt: Date | null;
+};
+
+/**
+ * Multi-month sibling of `doneVisitsByGoal` — same cadence-visit discriminator
+ * (parent Visit event, Done, linked to a RECURRING pitstop), but over an
+ * arbitrary [from, to] window, bucketed per calendar month, plus the latest
+ * completion per goal. One query feeds both the visit-compliance heatmap and
+ * "last visited" — leaves `doneVisitsByGoal` untouched for the RP surfaces.
+ */
+export async function visitStatsByGoal(
+  goalIds: string[],
+  from: Date,
+  to: Date,
+): Promise<Map<string, VisitStats>> {
+  const out = new Map<string, VisitStats>();
+  if (goalIds.length === 0) return out;
+
+  const rows = await prisma.pitstopEvent.findMany({
+    where: {
+      type: "Visit",
+      visitEventId: null,
+      status: "Done",
+      deletedAt: null,
+      completedAt: { gte: from, lte: to },
+      pitstops: { some: { pitstop: { deletedAt: null, goalId: { in: goalIds }, recurrence: { not: "None" } } } },
+    },
+    select: {
+      completedAt: true,
+      pitstops: { select: { pitstop: { select: { goalId: true, recurrence: true } } } },
+    },
+  });
+
+  const idSet = new Set(goalIds);
+  for (const r of rows) {
+    if (!r.completedAt) continue;
+    const goals = new Set<string>();
+    for (const p of r.pitstops) {
+      if (p.pitstop.recurrence !== "None" && idSet.has(p.pitstop.goalId)) goals.add(p.pitstop.goalId);
+    }
+    const key = ymKey(r.completedAt);
+    for (const gid of goals) {
+      const stats = out.get(gid) ?? { byMonth: new Map<string, number>(), lastVisitAt: null };
+      stats.byMonth.set(key, (stats.byMonth.get(key) ?? 0) + 1);
+      if (!stats.lastVisitAt || r.completedAt > stats.lastVisitAt) stats.lastVisitAt = r.completedAt;
+      out.set(gid, stats);
+    }
+  }
+  return out;
+}

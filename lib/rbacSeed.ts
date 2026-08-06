@@ -137,6 +137,10 @@ export const RESOURCE_ACTIONS: Record<string, readonly string[]> = {
   // Operating Models (/models) — instances are the play surface; templates are the author layer.
   operating_model:          [...STANDARD_ACTIONS, "promote_to_budget"],
   operating_model_template: [...STANDARD_ACTIONS],
+  // Command center (/command) — leader operational drill-down (zone→cluster→settlement).
+  // Read-only surface; geographic scope is resolved server-side per designation
+  // (resolveCommandScope in lib/operations/command.ts), the grant gates entry.
+  command_center: ["list", "read"],
 };
 
 export type RoleGrant = Record<string, ScopeRule>; // "resource.action" → rule
@@ -338,6 +342,12 @@ const MEMBER_GRANTS: RoleGrant = {
   "retrospective.create":  OWN,
   "retrospective.update":  OWN,
   "retrospective.delete":  OWN,
+
+  // Command center: TEAM — supervisors (ZL/PM/Leader) only in practice; nav
+  // additionally requires reports, and the page resolves allowed zones per
+  // designation (RP/Other resolve to no zones and are redirected).
+  "command_center.list": TEAM,
+  "command_center.read": TEAM,
 
   // Needs assessment + actuals: all-authenticated read, admin mutate.
   "needs_assessment.list": ALL,

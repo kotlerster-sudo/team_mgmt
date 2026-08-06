@@ -65,6 +65,9 @@ export const SURFACES: ReadonlyArray<SurfaceDef> = [
   { id: "operations.shelf",         label: "Catalog shelf (deploy)", description: "Supervisor deploys catalog items to an RP's live centre" },
   { id: "operations.visit",         label: "Live-centre visit",      description: "RP's per-visit checklist/activity completion (voice/upload/done)" },
 
+  // ── Command center ────────────────────────────────────────────────────────
+  { id: "command.view",             label: "Command center",         description: "Leader operational drill-down: zone→cluster→settlement rollup with visits, follow-ups, indicators and setup progress" },
+
   // ── Pitstop ──────────────────────────────────────────────────────────────
   { id: "pitstop.list",          label: "Pitstops list" },
   { id: "pitstop.detail",        label: "Pitstop detail page", description: "Full-screen pitstop view" },

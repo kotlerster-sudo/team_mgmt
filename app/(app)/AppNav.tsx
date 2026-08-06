@@ -8,7 +8,7 @@ import {
   Target, Search, LogOut, Bell, Settings, Users, GanttChartSquare,
   CalendarClock, MoreHorizontal, X, BookOpen, ClipboardList, MapPin,
   CalendarRange, HelpCircle, BarChart3, MessageSquare, LayoutGrid, Route, TrendingUp,
-  Layers, Library, Calculator, GraduationCap, UserSearch,
+  Layers, Library, Calculator, GraduationCap, UserSearch, Radar,
 } from "lucide-react";
 import Avatar from "@/components/Avatar";
 import PWAInstallButton from "@/components/PWAInstallButton";
@@ -75,6 +75,7 @@ export default function AppNav({
   const SETUP_NAV: Array<{ href: string; icon: React.ReactNode; label: string; external?: boolean }> = [
     { href: "/dashboard",  icon: <Target className="w-3.5 h-3.5" />,           label: "Goals"          },
     { href: "/needs",      icon: <BarChart3 className="w-3.5 h-3.5" />,        label: "Field Coverage" },
+    { href: "/command",    icon: <Radar className="w-3.5 h-3.5" />,            label: "Command Center" },
     { href: "/effects",    icon: <TrendingUp className="w-3.5 h-3.5" />,       label: "Effects"        },
     { href: "/programmes", icon: <Layers className="w-3.5 h-3.5" />,           label: "Programmes"     },
     { href: "/map",        icon: <MapPin className="w-3.5 h-3.5" />,           label: "Programme Map"  },

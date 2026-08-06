@@ -36,6 +36,7 @@ type NavGate = {
 export const NAV_GATES: Record<string, NavGate> = {
   "/dashboard":  { resource: "goal",             action: "list" },
   "/needs":      { resource: "needs_assessment", action: "list", requiresReports: true },
+  "/command":    { resource: "command_center",   action: "list", requiresReports: true },
   "/effects":    { resource: "effects_indicator", action: "list", requiresReports: true },
   "/programmes": { resource: "programme",        action: "list", requiresReports: true },
   "/map":        { resource: "map_data",         action: "list" },
