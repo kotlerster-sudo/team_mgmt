@@ -404,5 +404,53 @@ export function budgetAnnexure(full: FullAssembly): (Paragraph | Table)[] {
     }
   }
 
+  // Portfolio comparables — cost-per-beneficiary against similar past grants.
+  const comparables = b.portfolio_comparables as Array<{
+    budget_name: string; city: string; approved_at: string | null;
+    intervention_model: string | null; cost_per_beneficiary: number; caveat: string;
+  }>;
+  out.push(h2('Portfolio comparables'));
+  if (comparables.length === 0) {
+    out.push(
+      body(
+        'No approved comparables on file for this city + domain in the last 3 years.',
+        { muted: true },
+      ),
+    );
+  } else {
+    out.push(
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        borders: ALL_BORDERS,
+        rows: [
+          headerRow(['Grant', 'Approved', 'Model', 'Cost/beneficiary', 'Note'], [30, 12, 14, 15, 29]),
+          ...comparables.map((c) =>
+            dataRow(
+              [
+                `${c.budget_name} — ${c.city}`,
+                c.approved_at || '—',
+                c.intervention_model || '—',
+                money(c.cost_per_beneficiary),
+                c.caveat,
+              ],
+              [{}, { align: 'center' }, {}, { align: 'right' }, { muted: true }],
+            ),
+          ),
+          // Highlight the current grant's cost-per-beneficiary as the last row.
+          dataRow(
+            [
+              'This grant',
+              '—',
+              '—',
+              money(cpb.cost_per_beneficiary),
+              'Proposed',
+            ],
+            [{ bold: true, shading: 'EFF6FF' }, { align: 'center', shading: 'EFF6FF' }, { shading: 'EFF6FF' }, { align: 'right', bold: true, shading: 'EFF6FF' }, { shading: 'EFF6FF' }],
+          ),
+        ],
+      }),
+    );
+  }
+
   return out;
 }

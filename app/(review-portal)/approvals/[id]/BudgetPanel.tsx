@@ -14,6 +14,17 @@ const CARD = 'bg-white border border-stone-200 rounded-xl p-5 mb-3';
 
 type BudgetOption = { id: string; name: string; city: string; domains: string[] };
 
+type Comparable = {
+  budget_id: string;
+  budget_name: string;
+  city: string;
+  domain: string;
+  intervention_model: string | null;
+  cost_per_beneficiary: number;
+  approved_at: string | null;
+  caveat: string;
+};
+
 type Snapshot = {
   budget_id: string;
   deviation_snapshot: {
@@ -47,7 +58,7 @@ type Snapshot = {
     caveat?: string;
   };
   multi_year_cash_flow: { years: Array<{ year_label: string; amount: number }> };
-  portfolio_comparables: unknown[];
+  portfolio_comparables: Comparable[];
   per_partner_snapshots: Record<string, unknown> | null;
   outlier_ack: Record<string, { decision: 'keeping' | 'adjust_budget'; note?: string }>;
   confirmed_at: string | null;
@@ -361,14 +372,61 @@ export default function BudgetPanel({ assemblyId }: { assemblyId: string }) {
         )}
       </div>
 
-      {/* Portfolio comparables placeholder */}
+      {/* Portfolio comparables */}
       <div className={CARD}>
-        <div className="text-sm font-semibold text-stone-800 mb-2">Portfolio comparables</div>
-        <div className="text-xs text-stone-500">
-          Empty for now. Enable by adding <code>theme</code>, <code>interventionModel</code>,{' '}
-          <code>beneficiariesPerYear</code>, <code>approvedAt</code>, <code>approvedAmount</code>{' '}
-          fields to the Budget schema and back-filling recent budgets.
+        <div className="text-sm font-semibold text-stone-800 mb-2">
+          Portfolio comparables
+          <span className="text-stone-400 font-normal ml-1">
+            · cost per beneficiary vs approved past grants (same city + domain)
+          </span>
         </div>
+        {snap.portfolio_comparables.length === 0 ? (
+          <div className="text-xs text-stone-500">
+            No approved comparables on file. Back-fill <code>interventionModel</code>,{' '}
+            <code>beneficiariesPerYear</code>, and <code>approvedAt</code> on recent budgets to
+            enrich this table.
+          </div>
+        ) : (
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-stone-500">
+                <th className="text-left py-1 pr-2">Budget</th>
+                <th className="text-left py-1 pr-2">Approved</th>
+                <th className="text-left py-1 pr-2">Model</th>
+                <th className="text-right py-1 pr-2">Cost/beneficiary</th>
+                <th className="text-left py-1">Note</th>
+              </tr>
+            </thead>
+            <tbody>
+              {snap.portfolio_comparables.map((c) => (
+                <tr key={c.budget_id} className="border-t border-stone-100">
+                  <td className="py-1.5 pr-2 text-stone-800 font-medium">
+                    {c.budget_name}
+                    <div className="text-stone-400 font-normal">{c.city}</div>
+                  </td>
+                  <td className="py-1.5 pr-2">{c.approved_at || '—'}</td>
+                  <td className="py-1.5 pr-2">{c.intervention_model || '—'}</td>
+                  <td className="py-1.5 pr-2 text-right tabular-nums font-medium">
+                    {money(c.cost_per_beneficiary)}
+                  </td>
+                  <td className="py-1.5 text-stone-500">{c.caveat}</td>
+                </tr>
+              ))}
+              <tr className="border-t border-stone-200 bg-sky-50">
+                <td className="py-1.5 pr-2 text-stone-800 font-semibold">
+                  This grant
+                  <div className="text-stone-400 font-normal">{snap.deviation_snapshot.city}</div>
+                </td>
+                <td className="py-1.5 pr-2 text-stone-500">—</td>
+                <td className="py-1.5 pr-2">—</td>
+                <td className="py-1.5 pr-2 text-right tabular-nums font-semibold">
+                  {money(snap.cost_per_beneficiary.cost_per_beneficiary)}
+                </td>
+                <td className="py-1.5" />
+              </tr>
+            </tbody>
+          </table>
+        )}
       </div>
 
       {/* Confirm */}
