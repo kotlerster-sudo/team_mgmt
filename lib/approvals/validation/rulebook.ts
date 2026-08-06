@@ -13,7 +13,7 @@
  */
 
 import type { Rule } from './types';
-import { FY_LABELS } from '../../../app/partner/approvals/[id]/_shared';
+import { FY_LABELS } from '../constants';
 
 /* ─────────────── helpers (kept private) ─────────────── */
 

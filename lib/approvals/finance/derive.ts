@@ -12,8 +12,7 @@
 import type { AssemblyRow } from '../repo';
 import type { PartnerData, Judgement, FinanceAnnexure } from '../schema';
 import type { RuleResult } from '../validation/types';
-
-const FY_LABELS = ['FY22-23', 'FY23-24', 'FY24-25', 'FY25-26', 'FY26-27', 'FY27-28', 'FY28-29'] as const;
+import { FY_LABELS } from '../constants';
 
 /** Domestic vs International heuristic based on FunderType. */
 function originForType(t: string): 'domestic' | 'international' {

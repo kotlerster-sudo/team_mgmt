@@ -128,5 +128,7 @@ export function SectionHeader({ title, hint, right }: { title: string; hint?: st
 
 export const newId = () => Math.random().toString(36).slice(2, 9);
 
-/** FY labels used across the wizard. */
-export const FY_LABELS = ['FY22-23', 'FY23-24', 'FY24-25', 'FY25-26', 'FY26-27', 'FY27-28', 'FY28-29'] as const;
+/** FY labels re-exported from a plain server-safe module so validator/rulebook
+ *  code can share them without dragging in this file's `'use client'` boundary
+ *  (that mismatch caused a build-time TypeError on Vercel 2026-08-06). */
+export { FY_LABELS } from '@/lib/approvals/constants';
