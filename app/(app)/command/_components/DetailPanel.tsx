@@ -106,6 +106,13 @@ export function DetailPanel({ row, onClose }: { row: CommandRow; onClose: () => 
     };
   }, [row.goalId]);
 
+  // Escape closes the panel (it's a full-screen sheet on mobile).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   return (
     <div className="fixed inset-0 z-40 lg:static lg:z-auto">
       {/* Mobile scrim */}

@@ -23,7 +23,6 @@ import { monthBounds, requiredVisitsForMonth, visitStatsByGoal, ymKey } from "./
 import { resolveCadence } from "@/lib/catalogDb";
 import {
   loadThemeCatalog,
-  loadLayerToDomain,
   resolveGoalThemeKey,
   indexThemes,
   type ThemeDef,
@@ -360,7 +359,7 @@ export async function loadCommandRollup(
     ymKey(new Date(now.getFullYear(), now.getMonth() - (MONTHLY_WINDOW - 1) + i, 15)),
   );
 
-  const [goals, themeCatalog, layerToDomain] = await Promise.all([
+  const [goals, themeCatalog] = await Promise.all([
     prisma.goal.findMany({
       where: {
         AND: [
@@ -407,10 +406,13 @@ export async function loadCommandRollup(
       },
     }),
     loadThemeCatalog(),
-    loadLayerToDomain(),
   ]);
 
   const themesByKey = indexThemes(themeCatalog);
+  // layerKey → domain, derived from the theme catalog we already loaded — avoids
+  // a redundant facilityLayerConfig round-trip (loadLayerToDomain queries it again).
+  const layerToDomain = new Map<string, string>();
+  for (const t of themeCatalog) if (t.layerKey) layerToDomain.set(t.layerKey, t.key);
 
   // Decorate with theme; drop goals that resolve to no programme domain
   // (general project goals are out of scope for the command center).
@@ -438,7 +440,19 @@ export async function loadCommandRollup(
 
   const todayStart = startOfLocalDay(now);
 
-  const [visitStats, setupEvents, apOpen, apOverdue] = await Promise.all([
+  // Everything derivable from the goals+catalog (no further DB) — computed up
+  // front so the indicator-def and facility-count queries can join the same
+  // parallel wave rather than waiting for it.
+  const domainsInScope = [...new Set(themed.map((x) => x.themeKey))];
+  const rowSettlementIds = [
+    ...new Set(
+      themed
+        .map((x) => x.g.linkedFacility?.settlement?.id ?? x.g.needsSettlement?.id ?? null)
+        .filter((id): id is string => !!id),
+    ),
+  ];
+
+  const [visitStats, setupEvents, apOpen, apOverdue, defs, facilityCounts] = await Promise.all([
     visitStatsByGoal(liveGoalIds, windowStart, anchor.end),
     // Non-Done setup activities scheduled before the anchor month — the
     // month-based overdue convention from centres.ts (an RP has the whole
@@ -465,6 +479,27 @@ export async function loadCommandRollup(
       where: { goalId: { in: goalIds }, status: "open", dueDate: { lt: todayStart } },
       _count: { _all: true },
     }),
+    prisma.facilityIndicatorDef.findMany({
+      where: { isActive: true, domain: { in: domainsInScope } },
+      orderBy: [{ sortOrder: "asc" }],
+      select: {
+        id: true,
+        key: true,
+        label: true,
+        unit: true,
+        domain: true,
+        facilityLayerKey: true,
+        staleYellowDays: true,
+        staleRedDays: true,
+      },
+    }),
+    rowSettlementIds.length > 0
+      ? prisma.layerFeature.groupBy({
+          by: ["settlementId", "layerKey"],
+          where: { settlementId: { in: rowSettlementIds } },
+          _count: { id: true },
+        })
+      : Promise.resolve([]),
   ]);
 
   const overdueActivitiesByGoal = new Map<string, number>();
@@ -481,29 +516,6 @@ export async function loadCommandRollup(
   const apOverdueByGoal = new Map(apOverdue.map((r) => [r.goalId, r._count._all]));
 
   // ── Indicators (settlement grain) ─────────────────────────────────────────
-  const domainsInScope = [...new Set(themed.map((x) => x.themeKey))];
-  const rowSettlementIds = [
-    ...new Set(
-      themed
-        .map((x) => x.g.linkedFacility?.settlement?.id ?? x.g.needsSettlement?.id ?? null)
-        .filter((id): id is string => !!id),
-    ),
-  ];
-
-  const defs = await prisma.facilityIndicatorDef.findMany({
-    where: { isActive: true, domain: { in: domainsInScope } },
-    orderBy: [{ sortOrder: "asc" }],
-    select: {
-      id: true,
-      key: true,
-      label: true,
-      unit: true,
-      domain: true,
-      facilityLayerKey: true,
-      staleYellowDays: true,
-      staleRedDays: true,
-    },
-  });
   // Top-K per domain by sortOrder (admin-controlled highlight order).
   const defsByDomain = new Map<string, typeof defs>();
   for (const d of defs) {
@@ -513,9 +525,9 @@ export async function loadCommandRollup(
   }
   const keptDefIds = [...defsByDomain.values()].flat().map((d) => d.id);
 
-  const [instances, facilityCounts] = await Promise.all([
+  const instances =
     keptDefIds.length > 0 && rowSettlementIds.length > 0
-      ? prisma.facilityIndicator.findMany({
+      ? await prisma.facilityIndicator.findMany({
           where: { defId: { in: keptDefIds }, settlementId: { in: rowSettlementIds } },
           select: {
             id: true,
@@ -526,15 +538,7 @@ export async function loadCommandRollup(
             lastCapturedAt: true,
           },
         })
-      : Promise.resolve([]),
-    rowSettlementIds.length > 0
-      ? prisma.layerFeature.groupBy({
-          by: ["settlementId", "layerKey"],
-          where: { settlementId: { in: rowSettlementIds } },
-          _count: { id: true },
-        })
-      : Promise.resolve([]),
-  ]);
+      : [];
 
   // Latest point strictly before the anchor month, per indicator instance → delta basis.
   const prevPoints =

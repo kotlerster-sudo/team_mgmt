@@ -16,7 +16,12 @@ import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, MapPin, User as UserIcon, Layers } from "lucide-react";
 import type { CommandRow } from "@/lib/operations/command";
 import type { CommandLens } from "../useCommandState";
-import { ApsCell, IndicatorChips, PhaseChip, StuckBadge, VisitDots } from "./cells";
+import { ApsCell, IndicatorChips, PhaseChip, Sparkline, StuckBadge, VisitDots } from "./cells";
+
+/** 6-month cadence-compliance trend (0..1 per month) for a live centre. */
+function complianceTrend(live: NonNullable<CommandRow["live"]>): number[] {
+  return live.monthly.map((m) => (m.required > 0 ? Math.min(1, m.done / m.required) : m.done > 0 ? 1 : 0));
+}
 
 type Group = {
   key: string;
@@ -125,7 +130,7 @@ export function DrillGrid({
     <div className="border border-stone-200 rounded-xl overflow-hidden bg-white">
       {/* Desktop column headers */}
       <div
-        className="hidden sm:grid items-center gap-x-3 px-3 py-2 bg-stone-50 border-b border-stone-100 text-[10px] font-semibold uppercase tracking-wider text-stone-400"
+        className="hidden md:grid items-center gap-x-3 px-3 py-2 bg-stone-50 border-b border-stone-100 text-[10px] font-semibold uppercase tracking-wider text-stone-400"
         style={{ gridTemplateColumns: GRID_COLS }}
       >
         <span>Centre / goal</span>
@@ -141,43 +146,47 @@ export function DrillGrid({
           const isOpen = !closed.has(g.key);
           return (
             <div key={g.key}>
-              {/* Group header */}
+              {/* Group header — stacks on mobile so aggregates stay visible */}
               <button
                 onClick={() => toggle(g.key)}
-                className="w-full flex items-center gap-2 px-3 py-2.5 bg-stone-50/60 hover:bg-stone-100 transition-colors text-left"
+                className="w-full flex flex-col md:flex-row md:items-center gap-1 md:gap-2 px-3 py-2.5 bg-stone-50/60 hover:bg-stone-100 transition-colors text-left"
               >
-                {isOpen ? (
-                  <ChevronDown className="w-3.5 h-3.5 text-stone-400 shrink-0" />
-                ) : (
-                  <ChevronRight className="w-3.5 h-3.5 text-stone-400 shrink-0" />
-                )}
-                {g.color ? (
-                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: g.color }} />
-                ) : (
-                  LENS_ICON[lens]
-                )}
-                <span className="text-sm font-semibold text-stone-800">{g.label}</span>
-                <span className="text-[11px] text-stone-400">
-                  {g.rows.length} · {s.live} live · {s.setup} setting up
-                </span>
-                <span className="flex-1" />
-                <span className="hidden sm:flex items-center gap-3 text-[11px] tabular-nums">
-                  {s.vRequired > 0 && (
-                    <span
-                      className={s.vDone >= s.vRequired ? "text-emerald-600 font-semibold" : "text-stone-500"}
-                      title="Cadence visits done / required this month"
-                    >
-                      visits {s.vDone}/{s.vRequired}
-                    </span>
+                <div className="flex items-center gap-2 min-w-0 w-full md:w-auto">
+                  {isOpen ? (
+                    <ChevronDown className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                  ) : (
+                    <ChevronRight className="w-3.5 h-3.5 text-stone-400 shrink-0" />
                   )}
-                  {s.apOpen > 0 && (
-                    <span className={s.apOverdue > 0 ? "text-red-600 font-semibold" : "text-stone-500"}>
-                      {s.apOpen} follow-up{s.apOpen === 1 ? "" : "s"}
-                    </span>
+                  {g.color ? (
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: g.color }} />
+                  ) : (
+                    LENS_ICON[lens]
                   )}
-                  {s.stuck > 0 && <span className="text-red-600 font-semibold">{s.stuck} stuck</span>}
-                  {s.overdueActs > 0 && <span className="text-amber-600">{s.overdueActs} overdue acts</span>}
-                </span>
+                  <span className="text-sm font-semibold text-stone-800 truncate">{g.label}</span>
+                  <span className="text-[11px] text-stone-400 shrink-0">
+                    {g.rows.length} · {s.live} live · {s.setup} setting up
+                  </span>
+                </div>
+                <span className="hidden md:block md:flex-1" />
+                {(s.vRequired > 0 || s.apOpen > 0 || s.stuck > 0 || s.overdueActs > 0) && (
+                  <span className="flex items-center gap-2 md:gap-3 text-[11px] tabular-nums flex-wrap pl-5 md:pl-0">
+                    {s.vRequired > 0 && (
+                      <span
+                        className={s.vDone >= s.vRequired ? "text-emerald-600 font-semibold" : "text-stone-500"}
+                        title="Cadence visits done / required this month"
+                      >
+                        visits {s.vDone}/{s.vRequired}
+                      </span>
+                    )}
+                    {s.apOpen > 0 && (
+                      <span className={s.apOverdue > 0 ? "text-red-600 font-semibold" : "text-stone-500"}>
+                        {s.apOpen} follow-up{s.apOpen === 1 ? "" : "s"}
+                      </span>
+                    )}
+                    {s.stuck > 0 && <span className="text-red-600 font-semibold">{s.stuck} stuck</span>}
+                    {s.overdueActs > 0 && <span className="text-amber-600">{s.overdueActs} overdue acts</span>}
+                  </span>
+                )}
               </button>
 
               {/* Rows */}
@@ -197,7 +206,7 @@ export function DrillGrid({
                     >
                       {/* Desktop */}
                       <div
-                        className="hidden sm:grid items-center gap-x-3 px-3 py-2.5"
+                        className="hidden md:grid items-center gap-x-3 px-3 py-2.5"
                         style={{ gridTemplateColumns: GRID_COLS }}
                       >
                         <div className="min-w-0 flex items-center gap-2">
@@ -223,8 +232,16 @@ export function DrillGrid({
                         </div>
                         <div className="min-w-0">
                           {r.live ? (
-                            <span className="inline-flex items-center gap-1.5">
+                            <span className="inline-flex items-center gap-2">
                               <VisitDots done={r.live.cadence.done} required={r.live.cadence.required} />
+                              <span className="opacity-70" title="6-month cadence trend">
+                                <Sparkline
+                                  points={complianceTrend(r.live)}
+                                  width={40}
+                                  height={16}
+                                  stroke={r.live.cadence.done >= r.live.cadence.required ? "#10b981" : "#f59e0b"}
+                                />
+                              </span>
                             </span>
                           ) : r.setup ? (
                             <StuckBadge setup={r.setup} />
@@ -241,7 +258,7 @@ export function DrillGrid({
                       </div>
 
                       {/* Mobile card */}
-                      <div className="sm:hidden px-3 py-2.5 space-y-1.5">
+                      <div className="md:hidden px-3 py-2.5 space-y-1.5">
                         <div className="flex items-center gap-2">
                           <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: r.themeColor }} />
                           <p className="text-xs font-medium text-stone-800 truncate flex-1">{r.name}</p>

@@ -107,8 +107,16 @@ function CommandCenterInner({ zones }: { zones: CommandZoneOption[] }) {
         </div>
       )}
       {loading && !rollup && (
-        <div className="rounded-xl border border-stone-200 p-10 text-center text-sm text-stone-400 animate-pulse">
-          Loading operational rollup…
+        <div className="border border-stone-200 rounded-xl overflow-hidden bg-white animate-pulse">
+          {Array.from({ length: 6 }, (_, i) => (
+            <div key={i} className="flex items-center gap-3 px-3 py-3 border-b border-stone-50 last:border-b-0">
+              <div className="w-2.5 h-2.5 rounded-full bg-stone-200 shrink-0" />
+              <div className="h-3 rounded bg-stone-200" style={{ width: `${30 + ((i * 13) % 40)}%` }} />
+              <div className="flex-1" />
+              <div className="h-3 w-16 rounded bg-stone-100 hidden sm:block" />
+              <div className="h-3 w-10 rounded bg-stone-100" />
+            </div>
+          ))}
         </div>
       )}
 
