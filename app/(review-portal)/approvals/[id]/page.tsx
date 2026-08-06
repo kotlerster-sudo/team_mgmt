@@ -9,6 +9,7 @@ import ValidatePanel from './ValidatePanel';
 import JudgementPanel from './JudgementPanel';
 import FinancePanel from './FinancePanel';
 import BudgetPanel from './BudgetPanel';
+import RenderPanel from './RenderPanel';
 
 const STEP_LABELS: Record<string, string> = {
   setup: 'Setup',
@@ -161,9 +162,12 @@ export default async function AssemblyDetailPage({
           <BudgetPanel assemblyId={asm.id} />
         )}
         {asm.current_step === 'render' && (
-          <div className="text-sm text-stone-400">
-            Render step (Phase 4) — deterministic docx templates per doc type. Ships next.
-          </div>
+          <RenderPanel
+            assemblyId={asm.id}
+            docType={asm.doc_type}
+            renderedAt={asm.rendered_at}
+            status={asm.status}
+          />
         )}
       </div>
 

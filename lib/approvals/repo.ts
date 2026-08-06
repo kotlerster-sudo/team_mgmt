@@ -278,6 +278,49 @@ export type VersionRow = {
   created_at: string;
 };
 
+/**
+ * Stamp rendered_at + status → 'rendered' (idempotent). Called after a
+ * successful docx download; writes a version snapshot to record the event.
+ */
+export async function markRendered(assemblyId: string, actorUserId: string): Promise<void> {
+  const asm = await getAssembly(assemblyId);
+  if (!asm) throw new Error('assembly not found');
+  if (asm.rendered_at) return; // idempotent
+
+  const versionRows = (await sql`
+    SELECT COALESCE(MAX(version_number), 0) + 1 AS next_num
+    FROM assessment_versions WHERE assembly_id = ${assemblyId}
+  `) as { next_num: number }[];
+
+  await sql`
+    INSERT INTO assessment_versions
+      (assembly_id, version_number, trigger, snapshot_json, created_by)
+    VALUES
+      (${assemblyId}, ${versionRows[0].next_num}, 'render',
+       ${JSON.stringify({ header: asm })}::jsonb,
+       ${actorUserId})
+  `;
+
+  await sql`
+    UPDATE assessment_assemblies
+    SET status = 'rendered',
+        rendered_at = now(),
+        updated_at = now()
+    WHERE id = ${assemblyId}
+  `;
+}
+
+/**
+ * RP hits "Submit to meeting" after rendering — flips status → 'submitted'.
+ */
+export async function markSubmittedToMeeting(assemblyId: string): Promise<void> {
+  await sql`
+    UPDATE assessment_assemblies
+    SET status = 'submitted', updated_at = now()
+    WHERE id = ${assemblyId} AND rendered_at IS NOT NULL
+  `;
+}
+
 export async function listVersions(assemblyId: string): Promise<VersionRow[]> {
   return (await sql`
     SELECT * FROM assessment_versions
