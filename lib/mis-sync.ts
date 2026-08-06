@@ -177,9 +177,12 @@ export async function runMisSync(providerId: string): Promise<SyncResult> {
         const numValue = Number(value);
         if (!Number.isFinite(numValue)) continue;
 
-        // Upsert FacilityIndicator, then insert point
+        // Upsert FacilityIndicator, then insert point. MIS feeds are
+        // settlement-wide aggregates with no facility identity, so they own the
+        // settlement-level (facilityId IS NULL) row — never a per-facility one.
         const existing = await prisma.$queryRaw<{ id: string }[]>`
-          SELECT id FROM "FacilityIndicator" WHERE "defId" = ${def.id} AND "settlementId" = ${sid}
+          SELECT id FROM "FacilityIndicator"
+          WHERE "defId" = ${def.id} AND "settlementId" = ${sid} AND "facilityId" IS NULL
         `;
         let indicatorId: string;
         if (existing[0]) {

@@ -917,6 +917,10 @@ model FacilityIndicator {
   id             String                   @id @default(cuid())
   defId          String
   settlementId   String
+  // Per-facility grain: set when the value was captured against a specific
+  // facility (a facility-linked goal's LayerFeature). NULL = settlement-level
+  // aggregate (MIS sync, civic domains, goals with no linked facility).
+  facilityId     String?
   currentValue   Float?
   targetValue    Float? // snapshot at last capture
   lastCapturedAt DateTime?
@@ -926,10 +930,15 @@ model FacilityIndicator {
 
   def        FacilityIndicatorDef     @relation(fields: [defId], references: [id], onDelete: Cascade)
   settlement Settlement               @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  facility   LayerFeature?            @relation(fields: [facilityId], references: [id], onDelete: SetNull)
   points     FacilityIndicatorPoint[]
 
-  @@unique([defId, settlementId])
+  // One row per (def, settlement, facility). A companion partial unique index
+  // (facilityId IS NULL) added in the migration guarantees a single
+  // settlement-level row, since Postgres treats NULLs as distinct here.
+  @@unique([defId, settlementId, facilityId])
   @@index([settlementId])
+  @@index([facilityId])
 }
 
 model FacilityIndicatorPoint {
@@ -1166,6 +1175,8 @@ model LayerFeature {
   zone        Zone?       @relation(fields: [zoneId], references: [id], onDelete: SetNull)
   linkedGoals Goal[]      @relation("GoalLinkedFacility")
   partnerOrg  Org?        @relation("LayerFeaturePartnerOrg", fields: [partnerOrgId], references: [id], onDelete: SetNull)
+  // Per-facility Layer-2 indicators captured against this facility.
+  facilityIndicators FacilityIndicator[]
 
   @@index([partnerOrgId])
 }

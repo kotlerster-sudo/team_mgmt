@@ -200,8 +200,12 @@ export type CommandIndicator = {
   prevValue: number | null;
   lastCapturedAt: string | null;
   staleness: "green" | "yellow" | "red" | "none";
-  /** Indicators live at settlement grain; >1 same-layer facilities share these numbers. */
-  grain: "settlement";
+  /**
+   * "facility" = captured against this centre's own facility. "settlement" =
+   * a settlement-level value (no per-facility capture yet, or a civic/MIS
+   * indicator) shared across `sharedFacilityCount` same-layer facilities.
+   */
+  grain: "facility" | "settlement";
   sharedFacilityCount: number;
 };
 
@@ -533,6 +537,7 @@ export async function loadCommandRollup(
             id: true,
             defId: true,
             settlementId: true,
+            facilityId: true,
             currentValue: true,
             targetValue: true,
             lastCapturedAt: true,
@@ -552,7 +557,16 @@ export async function loadCommandRollup(
       : [];
   const prevByInstance = new Map(prevPoints.map((p) => [p.indicatorId, p.value]));
 
-  const instanceByDefSettlement = new Map(instances.map((i) => [`${i.defId}:${i.settlementId}`, i]));
+  // Two lookups: per-facility rows (grain="facility") and settlement-level rows
+  // (facilityId NULL, the fallback). A row prefers its own facility's value,
+  // falling back to the settlement-level value when none is captured yet.
+  type Inst = (typeof instances)[number];
+  const instByDefFacility = new Map<string, Inst>();
+  const instByDefSettlementNull = new Map<string, Inst>();
+  for (const i of instances) {
+    if (i.facilityId) instByDefFacility.set(`${i.defId}:${i.facilityId}`, i);
+    else instByDefSettlementNull.set(`${i.defId}:${i.settlementId}`, i);
+  }
   const facilityCountByKey = new Map(
     facilityCounts
       .filter((f) => f.settlementId)
@@ -675,12 +689,17 @@ export async function loadCommandRollup(
       oldestDue: oldestDue ? oldestDue.toISOString() : null,
     };
 
-    // ── Indicators (via the row's settlement) ──
+    // ── Indicators: prefer this centre's own facility value, else the
+    //    settlement-level value (labelled "settlement" grain). ──
     const indicators: CommandIndicator[] = [];
     const sid = settlement?.id ?? null;
+    const fid = g.linkedFacility?.id ?? null;
     if (sid) {
       for (const def of defsByDomain.get(themeKey) ?? []) {
-        const inst = instanceByDefSettlement.get(`${def.id}:${sid}`);
+        const facilityInst = fid ? instByDefFacility.get(`${def.id}:${fid}`) : undefined;
+        const settlementInst = instByDefSettlementNull.get(`${def.id}:${sid}`);
+        const inst = facilityInst ?? settlementInst;
+        const grain: CommandIndicator["grain"] = facilityInst ? "facility" : "settlement";
         const layerKey = def.facilityLayerKey ?? theme.layerKey;
         indicators.push({
           defId: def.id,
@@ -692,8 +711,10 @@ export async function loadCommandRollup(
           prevValue: inst ? prevByInstance.get(inst.id) ?? null : null,
           lastCapturedAt: inst?.lastCapturedAt ? inst.lastCapturedAt.toISOString() : null,
           staleness: getStaleness(inst?.lastCapturedAt ?? null, def.staleYellowDays, def.staleRedDays, now),
-          grain: "settlement",
-          sharedFacilityCount: layerKey ? facilityCountByKey.get(`${sid}:${layerKey}`) ?? 1 : 1,
+          grain,
+          // Only meaningful for a shared settlement-level value; a facility's own
+          // value is not "shared".
+          sharedFacilityCount: grain === "facility" ? 1 : layerKey ? facilityCountByKey.get(`${sid}:${layerKey}`) ?? 1 : 1,
         });
       }
     }

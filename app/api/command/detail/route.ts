@@ -78,6 +78,7 @@ export async function GET(req: NextRequest) {
   const now = new Date();
   const seriesStart = new Date(now.getFullYear(), now.getMonth() - (SERIES_MONTHS - 1), 1);
   const settlementId = goal.linkedFacility?.settlement?.id ?? goal.needsSettlement?.id ?? null;
+  const facilityId = goal.linkedFacility?.id ?? null;
   const layerToDomain = await loadLayerToDomain();
   const themeKey = resolveGoalThemeKey(goal, layerToDomain);
 
@@ -162,6 +163,8 @@ export async function GET(req: NextRequest) {
             capturedAt: { gte: seriesStart },
             indicator: {
               settlementId,
+              // This centre's own facility series, plus settlement-level as fallback.
+              OR: [{ facilityId }, { facilityId: null }],
               ...(themeKey ? { def: { domain: themeKey, isActive: true } } : { def: { isActive: true } }),
             },
           },
@@ -173,6 +176,7 @@ export async function GET(req: NextRequest) {
             indicator: {
               select: {
                 targetValue: true,
+                facilityId: true,
                 def: { select: { id: true, key: true, label: true, unit: true, sortOrder: true } },
               },
             },
@@ -267,7 +271,11 @@ export async function GET(req: NextRequest) {
     };
   });
 
-  // Indicator series grouped by def.
+  // Indicator series grouped by def. Per def, prefer this facility's own points;
+  // fall back to settlement-level points only when the facility has none.
+  const defHasFacilityPoints = new Set(
+    seriesPoints.filter((p) => p.indicator.facilityId === facilityId && facilityId != null).map((p) => p.indicator.def.id),
+  );
   const seriesByDef = new Map<
     string,
     {
@@ -278,6 +286,8 @@ export async function GET(req: NextRequest) {
   >();
   for (const p of seriesPoints) {
     const def = p.indicator.def;
+    // If the facility has its own series for this def, drop the settlement-level points.
+    if (defHasFacilityPoints.has(def.id) && p.indicator.facilityId !== facilityId) continue;
     const entry = seriesByDef.get(def.id) ?? { def, target: p.indicator.targetValue, series: [] };
     entry.series.push({ capturedAt: p.capturedAt.toISOString(), value: p.value, source: p.source });
     seriesByDef.set(def.id, entry);

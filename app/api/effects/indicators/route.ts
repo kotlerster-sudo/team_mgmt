@@ -271,23 +271,32 @@ export async function GET(req: Request) {
     }
   }
 
+  // A settlement can now hold multiple FacilityIndicator rows for one def (one
+  // per creche + a settlement-level row). Collapse them to a single value per
+  // (def, settlement) — averaged across facilities — so the geography rollup
+  // isn't skewed by how many facilities a settlement happens to have.
+  const indicatorToSettlement = new Map(indicatorRows.map(r => [r.id, r.settlementId]));
+  const rowsByDefSettlement = new Map<string, { defId: string; settlementId: string; values: number[]; last: Date | null }>();
   for (const row of indicatorRows) {
-    const agg = byDef.get(row.defId);
+    const key = `${row.defId}:${row.settlementId}`;
+    const e = rowsByDefSettlement.get(key) ?? { defId: row.defId, settlementId: row.settlementId, values: [], last: null };
+    if (row.currentValue != null) e.values.push(row.currentValue);
+    if (row.lastCapturedAt && (!e.last || row.lastCapturedAt > e.last)) e.last = row.lastCapturedAt;
+    rowsByDefSettlement.set(key, e);
+  }
+  for (const e of rowsByDefSettlement.values()) {
+    const agg = byDef.get(e.defId);
     if (!agg) continue;
+    const value = e.values.length ? e.values.reduce((s, v) => s + v, 0) / e.values.length : null;
     const t = await resolveTarget(
       agg.def.targetFormula,
-      row.settlementId,
+      e.settlementId,
       agg.def.facilityLayerKey,
       assessmentByIdField,
       facilityCountByIdLayer,
     );
-    const pct = (row.currentValue != null && t != null && t > 0) ? (row.currentValue / t) * 100 : null;
-    agg.settlements.set(row.settlementId, {
-      value: row.currentValue,
-      target: t,
-      lastCapturedAt: row.lastCapturedAt,
-      pct,
-    });
+    const pct = (value != null && t != null && t > 0) ? (value / t) * 100 : null;
+    agg.settlements.set(e.settlementId, { value, target: t, lastCapturedAt: e.last, pct });
   }
   for (const p of points) {
     const row = indicatorRows.find(r => r.id === p.indicatorId);
@@ -318,7 +327,8 @@ export async function GET(req: Request) {
       if (!buckets.has(key)) buckets.set(key, { values: [], settlements: new Set() });
       const b = buckets.get(key)!;
       b.values.push(p.value);
-      b.settlements.add(p.indicatorId);
+      // Count distinct SETTLEMENTS (not indicator rows — multiple creches now share one).
+      b.settlements.add(indicatorToSettlement.get(p.indicatorId) ?? p.indicatorId);
     }
     const timeSeries = Array.from(buckets.entries())
       .sort(([a], [b]) => a.localeCompare(b))

@@ -5,6 +5,8 @@ type ItemContext = {
   key: string | null;
   templateSlug: string | null;
   settlementId: string | null;
+  /** The goal's linked facility, when it is a facility-managed centre. NULL = settlement-level. */
+  facilityId: string | null;
 };
 
 type Binding = {
@@ -51,10 +53,14 @@ export async function captureIndicatorPointsForChecklistItem({
     SELECT
       ci.key,
       ci."templateSlug",
-      COALESCE(g."needsSettlementId", p."needsSettlementId") AS "settlementId"
+      -- Facility-linked centres carry their settlement on the LayerFeature, not
+      -- needsSettlementId — fall back to it so those captures aren't dropped.
+      COALESCE(g."needsSettlementId", p."needsSettlementId", lf."settlementId") AS "settlementId",
+      g."linkedFacilityId" AS "facilityId"
     FROM "ChecklistItem" ci
     JOIN "Pitstop" p ON p.id = ci."pitstopId"
     JOIN "Goal" g ON g.id = p."goalId"
+    LEFT JOIN "LayerFeature" lf ON lf.id = g."linkedFacilityId"
     WHERE ci.id = ${itemId}
     LIMIT 1
   `;
@@ -99,29 +105,38 @@ export async function captureIndicatorPointsForChecklistItem({
 
     if (raw === undefined || raw === null || !isFinite(raw)) continue;
 
-    const indicatorId = randomUUID();
-    await prisma.$executeRaw`
-      INSERT INTO "FacilityIndicator" (
-        id, "defId", "settlementId", "currentValue",
-        "lastCapturedAt", "lastSource", "createdAt", "updatedAt"
-      ) VALUES (
-        ${indicatorId}, ${b.defId}, ${ctx.settlementId}, ${raw},
-        NOW(), 'RP_ACTIVITY'::"FacilityIndicatorSource", NOW(), NOW()
-      )
-      ON CONFLICT ("defId", "settlementId") DO UPDATE SET
-        "currentValue" = EXCLUDED."currentValue",
-        "lastCapturedAt" = EXCLUDED."lastCapturedAt",
-        "lastSource" = EXCLUDED."lastSource",
-        "updatedAt" = NOW()
-    `;
-
+    // Per-facility grain: the row is keyed by (def, settlement, facility) with a
+    // NULL facility for settlement-level captures. `IS NOT DISTINCT FROM` matches
+    // NULL=NULL, so find-then-write is used instead of ON CONFLICT (whose NULL
+    // handling around the partial unique index is awkward).
     const existing = await prisma.$queryRaw<{ id: string }[]>`
       SELECT id FROM "FacilityIndicator"
-      WHERE "defId" = ${b.defId} AND "settlementId" = ${ctx.settlementId}
+      WHERE "defId" = ${b.defId}
+        AND "settlementId" = ${ctx.settlementId}
+        AND "facilityId" IS NOT DISTINCT FROM ${ctx.facilityId}
       LIMIT 1
     `;
-    const resolvedIndicatorId = existing[0]?.id;
-    if (!resolvedIndicatorId) continue;
+    let resolvedIndicatorId: string;
+    if (existing[0]) {
+      resolvedIndicatorId = existing[0].id;
+      await prisma.$executeRaw`
+        UPDATE "FacilityIndicator"
+        SET "currentValue" = ${raw}, "lastCapturedAt" = NOW(),
+            "lastSource" = 'RP_ACTIVITY'::"FacilityIndicatorSource", "updatedAt" = NOW()
+        WHERE id = ${resolvedIndicatorId}
+      `;
+    } else {
+      resolvedIndicatorId = randomUUID();
+      await prisma.$executeRaw`
+        INSERT INTO "FacilityIndicator" (
+          id, "defId", "settlementId", "facilityId", "currentValue",
+          "lastCapturedAt", "lastSource", "createdAt", "updatedAt"
+        ) VALUES (
+          ${resolvedIndicatorId}, ${b.defId}, ${ctx.settlementId}, ${ctx.facilityId}, ${raw},
+          NOW(), 'RP_ACTIVITY'::"FacilityIndicatorSource", NOW(), NOW()
+        )
+      `;
+    }
 
     const pointId = randomUUID();
     const pointInsert = prisma.$executeRaw`
