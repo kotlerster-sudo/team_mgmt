@@ -2106,10 +2106,28 @@ model Budget {
   createdAt          DateTime                @default(now())
   updatedAt          DateTime                @updatedAt
 
+  // ── Portfolio-comparables metadata (approvals wizard, Step 5) ─────────────
+  // All nullable so existing rows survive the migration. Populated going
+  // forward via the budget creation/edit UI + a one-off backfill for the
+  // approved corpus. Enables the "cost per beneficiary vs 2-4 similar past
+  // grants" section on the approval doc.
+  // theme: coarse programme category (e.g. nutrition, early_learning, wash).
+  theme                String?
+  // interventionModel: direct / capacity / advocacy / livelihoods.
+  interventionModel    String?
+  // beneficiariesPerYear: distinct people the programme reaches per year;
+  // used as the divisor for cost-per-beneficiary.
+  beneficiariesPerYear Int?
+  // approvedAt / approvedAmount: filled when the approval meeting signs off,
+  // so comparables can restrict to actually-approved (vs draft) budgets.
+  approvedAt           DateTime?
+  approvedAmount       Float?
+
   @@index([partnerId])
   @@index([grantPartnerId])
   @@index([grantingUnitId])
   @@index([grantLeadId])
+  @@index([city, domains, interventionModel, approvedAt])
 }
 
 /// Who makes and manages a grant: a focus-geography office, a travelling thematic

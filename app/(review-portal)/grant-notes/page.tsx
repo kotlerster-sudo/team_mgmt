@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { FileText, PenLine, Settings, ClipboardCheck } from 'lucide-react';
+import { FileText, PenLine, Settings, ClipboardCheck, Workflow } from 'lucide-react';
 
 export default function GrantNotesHomePage() {
   return (
@@ -40,6 +40,17 @@ export default function GrantNotesHomePage() {
           <div>
             <p className="font-medium text-stone-900">Due Diligence</p>
             <p className="text-xs text-stone-500 mt-0.5 leading-relaxed">Progressive org data collection — profile, compliance, financials, programme design.</p>
+          </div>
+        </Link>
+
+        <Link href="/approvals"
+          className="flex flex-col gap-3 p-5 bg-white border border-stone-200 rounded-xl hover:border-emerald-300 hover:shadow-sm transition-all">
+          <div className="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center">
+            <Workflow className="w-4 h-4 text-emerald-600" />
+          </div>
+          <div>
+            <p className="font-medium text-stone-900">Approvals</p>
+            <p className="text-xs text-stone-500 mt-0.5 leading-relaxed">Structured wizard: partner data → validate → judgement → finance → budget → deck. No free-form editing.</p>
           </div>
         </Link>
 
