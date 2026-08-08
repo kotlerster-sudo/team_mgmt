@@ -13,10 +13,14 @@ import type { CatalogCategory, CatalogItem, CentreCatalogOverrides } from "@/lib
  * Supervisor deploys catalog items onto an RP's LIVE centre — the "catalog shelf".
  *
  * Reuses the exact per-centre override mechanism the RP "Add item" flow uses: each deployed item
- * is appended to CentreCatalog.overrides under a dedicated "Assigned" added category, tagged with
- * its template `ref` so indicator/journey bindings resolve on completion, and marked APPROVED
- * (supervisor-authored — no pending review). Items materialise into the RP's next visit via the
- * standard materialiseVisitItems path. Optional by default; `required` sets blocksSignoff.
+ * is appended to CentreCatalog.overrides under a dedicated "Assigned" added category and marked
+ * APPROVED (supervisor-authored — no pending review). Items materialise into the RP's next visit
+ * via the standard materialiseVisitItems path. Optional by default; `required` sets blocksSignoff.
+ *
+ * Items come from either of two places. Template-sourced items carry a `ref` so indicator and
+ * journey bindings resolve on completion. Free-text items — the supervisor asking for something
+ * the domain templates don't cover — carry no `ref` at all, rather than one pointing at an empty
+ * templateSlug that every binding lookup would then have to tolerate.
  *
  * Gated on catalog_item.deploy (TEAM) + the goal being in the supervisor's visible set.
  */
@@ -24,8 +28,11 @@ import type { CatalogCategory, CatalogItem, CentreCatalogOverrides } from "@/lib
 const ASSIGNED_CATEGORY = { key: "supervisor_assigned", label: "Assigned" };
 
 type DeployItem = {
-  templateSlug: string;
-  checklistKey: string;
+  // Absent for a free-text item — a supervisor asking for something the domain
+  // templates don't cover. Only a template-sourced item carries a `ref`, since
+  // that is what indicator and journey bindings resolve against.
+  templateSlug?: string;
+  checklistKey?: string;
   text: string;
   completionType?: string;
   required?: boolean;
@@ -50,7 +57,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ goa
 
   const body = await req.json().catch(() => ({}));
   const rawItems: DeployItem[] = Array.isArray(body?.items) ? body.items : [];
-  const items = rawItems.filter((i) => i && typeof i.templateSlug === "string" && typeof i.text === "string" && i.text.trim());
+  const items = rawItems.filter((i) => i && typeof i.text === "string" && i.text.trim());
   if (items.length === 0) return Response.json({ error: "No items to deploy" }, { status: 400 });
 
   const centre = await prisma.centreCatalog.findFirst({
@@ -79,7 +86,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ goa
       text: it.text.trim(),
       completionType: it.completionType || "Activity",
       blocksSignoff: !!it.required,
-      ref: { templateSlug: it.templateSlug, checklistKey },
+      ...(it.templateSlug ? { ref: { templateSlug: it.templateSlug, checklistKey } } : {}),
     });
   }
   if (toAdd.length === 0) return Response.json({ ok: true, added: 0 });

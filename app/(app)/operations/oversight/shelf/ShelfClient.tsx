@@ -10,6 +10,10 @@ import type { ShelfRp, ShelfChecklist } from "@/lib/operations/shelf";
  * Three-step deploy flow: pick RP → pick their live centre → select shelf items (optional by
  * default, per-item "required" toggle) → deploy. POSTs to the deploy-items route via fetchJson
  * so the X-Surface header (operations.shelf) rides along for the RBAC surface check.
+ *
+ * The shelf itself only carries the domain's template checklist items. "Something else" is the
+ * escape hatch for a one-off ask the templates don't cover; it deploys with no template ref and
+ * so captures no indicator.
  */
 export function ShelfClient({ rps }: { rps: ShelfRp[] }) {
   const router = useRouter();
@@ -17,6 +21,9 @@ export function ShelfClient({ rps }: { rps: ShelfRp[] }) {
   const [goalId, setGoalId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [required, setRequired] = useState<Set<string>>(new Set());
+  const [freeText, setFreeText] = useState("");
+  const [freeCompletion, setFreeCompletion] = useState("Activity");
+  const [freeRequired, setFreeRequired] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [doneMsg, setDoneMsg] = useState<string | null>(null);
@@ -27,7 +34,11 @@ export function ShelfClient({ rps }: { rps: ShelfRp[] }) {
 
   const rowKey = (i: ShelfChecklist) => `${i.templateSlug}::${i.checklistKey}`;
 
-  const resetSelection = () => { setSelected(new Set()); setRequired(new Set()); setDoneMsg(null); setError(""); };
+  const resetSelection = () => {
+    setSelected(new Set()); setRequired(new Set());
+    setFreeText(""); setFreeCompletion("Activity"); setFreeRequired(false);
+    setDoneMsg(null); setError("");
+  };
 
   const toggle = (i: ShelfChecklist) => {
     const k = rowKey(i);
@@ -43,10 +54,16 @@ export function ShelfClient({ rps }: { rps: ShelfRp[] }) {
     setRequired((prev) => { const next = new Set(prev); next.has(k) ? next.delete(k) : next.add(k); return next; });
   };
 
+  const freeAsk = freeText.trim();
+  const deployCount = selected.size + (freeAsk ? 1 : 0);
+
   const deploy = async () => {
-    if (!centre || selected.size === 0) return;
+    if (!centre || deployCount === 0) return;
     setBusy(true); setError(""); setDoneMsg(null);
-    const items = (centre.shelf.flatMap((g) => g.items))
+    const items: {
+      templateSlug?: string; checklistKey?: string;
+      text: string; completionType: string; required: boolean;
+    }[] = (centre.shelf.flatMap((g) => g.items))
       .filter((i) => selected.has(rowKey(i)))
       .map((i) => ({
         templateSlug: i.templateSlug,
@@ -55,6 +72,8 @@ export function ShelfClient({ rps }: { rps: ShelfRp[] }) {
         completionType: i.completionType,
         required: required.has(rowKey(i)),
       }));
+    // No templateSlug — the route omits `ref` for these, so no binding resolves against it.
+    if (freeAsk) items.push({ text: freeAsk, completionType: freeCompletion, required: freeRequired });
     try {
       const res = await fetchJson<{ added: number }>(`/api/operations/centres/${centre.goalId}/deploy-items`, {
         method: "POST", body: JSON.stringify({ items }),
@@ -106,7 +125,6 @@ export function ShelfClient({ rps }: { rps: ShelfRp[] }) {
   }
 
   // ── Step 3: select + deploy ──
-  const selectableCount = centre.shelf.flatMap((g) => g.items).filter((i) => !existing.has(i.checklistKey)).length;
   return (
     <Step label={`${centre.name} · pick items`} onBack={() => { setGoalId(null); resetSelection(); }}>
       {doneMsg && (
@@ -161,16 +179,45 @@ export function ShelfClient({ rps }: { rps: ShelfRp[] }) {
         </div>
       )}
 
-      {selectableCount > 0 && (
-        <button
-          onClick={deploy}
-          disabled={busy || selected.size === 0}
-          className="w-full mt-2 flex items-center justify-center gap-2 rounded-xl bg-stone-900 text-white px-4 py-3 text-sm font-medium hover:bg-stone-700 disabled:opacity-50"
-        >
-          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-          Deploy {selected.size > 0 ? `${selected.size} item${selected.size === 1 ? "" : "s"}` : "items"}
-        </button>
-      )}
+      <div className="rounded-lg border border-dashed border-stone-300 bg-stone-50/60 px-3 py-2.5 space-y-2">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">Something else</p>
+        <input
+          value={freeText}
+          onChange={(e) => setFreeText(e.target.value)}
+          placeholder="Ask for something not on the shelf…"
+          className="w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm text-stone-800 placeholder:text-stone-400 focus:border-stone-400 focus:outline-none"
+        />
+        {freeAsk && (
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-1.5 text-[11px] text-stone-500">
+              How it&apos;s closed
+              <select
+                value={freeCompletion}
+                onChange={(e) => setFreeCompletion(e.target.value)}
+                className="rounded border border-stone-200 bg-white px-1.5 py-1 text-[11px] text-stone-700 focus:outline-none"
+              >
+                <option value="Activity">Mark done</option>
+                <option value="Voice">Voice</option>
+                <option value="Upload">Photo</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-1.5 text-[11px] text-stone-500 cursor-pointer">
+              <input type="checkbox" checked={freeRequired} onChange={() => setFreeRequired((v) => !v)} className="accent-amber-500" />
+              Required for visit sign-off
+            </label>
+            <span className="text-[10px] text-stone-400">Captures no indicator.</span>
+          </div>
+        )}
+      </div>
+
+      <button
+        onClick={deploy}
+        disabled={busy || deployCount === 0}
+        className="w-full mt-2 flex items-center justify-center gap-2 rounded-xl bg-stone-900 text-white px-4 py-3 text-sm font-medium hover:bg-stone-700 disabled:opacity-50"
+      >
+        {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+        Deploy {deployCount > 0 ? `${deployCount} item${deployCount === 1 ? "" : "s"}` : "items"}
+      </button>
     </Step>
   );
 }
