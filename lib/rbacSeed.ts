@@ -91,10 +91,12 @@ export const RESOURCE_ACTIONS: Record<string, readonly string[]> = {
   programme_journey: [...STANDARD_ACTIONS, "apply_pack"],
   plan_item: [...STANDARD_ACTIONS],
   checklist_item: [...STANDARD_ACTIONS],
-  // ActionPoint — follow-ups that emerge during a visit. Rooted in
-  // Goal → Pitstop → PitstopEvent. Owner = RP at creation; ZL/PM/Leader may
-  // close on the RP's behalf via TEAM scope.
-  action_point: [...STANDARD_ACTIONS],
+  // ActionPoint — follow-ups that emerge during a visit (rooted in
+  // Goal → Pitstop → PitstopEvent), and ad-hoc tasks that sit outside that
+  // hierarchy. Owner = whoever carries it; ZL/PM/Leader may close on the RP's
+  // behalf via TEAM scope. `assign` = raise a task owned by someone else; TEAM
+  // resolves to self for an RP, so one grant covers self-assignment too.
+  action_point: [...STANDARD_ACTIONS, "assign"],
   thread: [...STANDARD_ACTIONS, "post_message", "subscribe"],
   notification: ["list", "read", "mark_read"],
   map_note: [...STANDARD_ACTIONS],
@@ -287,6 +289,7 @@ const MEMBER_GRANTS: RoleGrant = {
   "action_point.create": OWN,
   "action_point.update": TEAM,
   "action_point.delete": OWN,
+  "action_point.assign": TEAM,
 
   "thread.list":         TEAM_OR_SUBSCRIBED,
   "thread.read":         TEAM_OR_SUBSCRIBED,

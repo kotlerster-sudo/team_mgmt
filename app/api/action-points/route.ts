@@ -16,14 +16,22 @@ import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { viewerForbidden } from "@/lib/roleGuard";
-import { buildRbacContext, scopeWhere } from "@/lib/rbac";
+import { buildRbacContext, scopeWhere, can } from "@/lib/rbac";
+import { getVisibleUserIds } from "@/lib/visibilityScope";
 import { auditLog } from "@/lib/auditLog";
 
 const selectFull = {
   id: true,
+  source: true,
   goalId: true,
   pitstopId: true,
   pitstopEventId: true,
+  needsSettlementId: true,
+  needsClusterId: true,
+  needsZoneId: true,
+  needsCityId: true,
+  catalogItemKey: true,
+  assignedById: true,
   title: true,
   detail: true,
   partnerStaffLabel: true,
@@ -45,6 +53,11 @@ const selectFull = {
   pitstop:     { select: { id: true, title: true, goalId: true } },
   goal:        { select: { id: true, title: true } },
   pitstopEvent: { select: { id: true, title: true, scheduledAt: true } },
+  assignedBy:  { select: { id: true, name: true, image: true } },
+  needsSettlement: { select: { id: true, name: true } },
+  needsCluster:    { select: { id: true, name: true } },
+  needsZone:       { select: { id: true, name: true } },
+  needsCity:       { select: { id: true, name: true } },
 } as const;
 
 // IST-aware day boundaries — same convention as Home today/overdue queries.
@@ -125,13 +138,66 @@ export async function GET(req: NextRequest) {
 }
 
 type ApInput = {
-  pitstopEventId: string;
+  // Present → a visit follow-up (source 'activity'), hierarchy resolved from the
+  // event. Absent → an ad-hoc task (source 'adhoc') scoped by whatever of
+  // goalId / needs* the caller supplies, all of them optional.
+  pitstopEventId?: string;
   title: string;
   detail?: string | null;
   dueDate: string; // ISO
   priority?: "routine" | "urgent";
   partnerStaffLabel?: string | null;
+  assigneeId?: string | null;
+  goalId?: string | null;
+  needsSettlementId?: string | null;
+  needsClusterId?: string | null;
+  needsZoneId?: string | null;
+  needsCityId?: string | null;
 };
+
+type PreparedAp = {
+  source: "activity" | "adhoc";
+  pitstopEventId: string | null;
+  pitstopId: string | null;
+  goalId: string | null;
+  needsSettlementId: string | null;
+  needsClusterId: string | null;
+  needsZoneId: string | null;
+  needsCityId: string | null;
+  title: string;
+  detail: string | null;
+  dueDate: Date;
+  priority: string;
+  partnerStaffLabel: string | null;
+  ownerId: string;
+  assignedById: string | null;
+};
+
+// The four needs* ids and goalId arrive straight from a picker, so a stale or
+// wrong id would otherwise surface as a 500 from the FK constraint. Batch-check
+// each level once and return a 400 the client can show.
+async function validateScopeRefs(prepared: PreparedAp[]): Promise<string | null> {
+  const ids = (pick: (p: PreparedAp) => string | null) =>
+    Array.from(new Set(prepared.map(pick).filter((v): v is string => !!v)));
+
+  const checks: [string, string[], (where: { id: { in: string[] } }) => Promise<{ id: string }[]>][] = [
+    ["goal",       ids((p) => p.goalId),             (w) => prisma.goal.findMany({ where: w, select: { id: true } })],
+    ["settlement", ids((p) => p.needsSettlementId),  (w) => prisma.settlement.findMany({ where: w, select: { id: true } })],
+    ["cluster",    ids((p) => p.needsClusterId),     (w) => prisma.cluster.findMany({ where: w, select: { id: true } })],
+    ["zone",       ids((p) => p.needsZoneId),        (w) => prisma.zone.findMany({ where: w, select: { id: true } })],
+    ["city",       ids((p) => p.needsCityId),        (w) => prisma.city.findMany({ where: w, select: { id: true } })],
+  ];
+
+  for (const [label, wanted, load] of checks) {
+    if (!wanted.length) continue;
+    const found = await load({ id: { in: wanted } });
+    if (found.length !== wanted.length) {
+      const missing = wanted.filter((id) => !found.some((f) => f.id === id));
+      return `Unknown ${label}: ${missing.join(", ")}`;
+    }
+  }
+  return null;
+}
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -152,52 +218,86 @@ export async function POST(req: NextRequest) {
   // The first linked pitstop wins — APs nest under the activity, and an activity
   // sometimes has multiple pitstops; we anchor to the canonical first for the
   // hierarchy denormalization.
-  const eventIds = Array.from(new Set(items.map((i) => i.pitstopEventId).filter(Boolean)));
-  if (eventIds.length === 0) {
-    return Response.json({ error: "pitstopEventId required" }, { status: 400 });
-  }
-  const events = await prisma.pitstopEvent.findMany({
-    where: { id: { in: eventIds } },
-    select: {
-      id: true,
-      pitstops: {
-        select: { pitstop: { select: { id: true, goalId: true } } },
-        take: 1,
-      },
-    },
-  });
+  const eventIds = Array.from(new Set(items.map((i) => i.pitstopEventId).filter((id): id is string => !!id)));
+  const events = eventIds.length
+    ? await prisma.pitstopEvent.findMany({
+        where: { id: { in: eventIds } },
+        select: {
+          id: true,
+          pitstops: {
+            select: { pitstop: { select: { id: true, goalId: true } } },
+            take: 1,
+          },
+        },
+      })
+    : [];
   const hierarchy = new Map<string, { pitstopId: string; goalId: string }>();
   for (const ev of events) {
     const p = ev.pitstops[0]?.pitstop;
     if (p) hierarchy.set(ev.id, { pitstopId: p.id, goalId: p.goalId });
   }
 
+  // Who this actor may hand a task to. TEAM resolves to just themselves for an
+  // RP, so the same check covers self-assignment without a special case. Loaded
+  // once, and only when some row actually delegates.
+  const delegates = items.some((i) => i.assigneeId && i.assigneeId !== actorId);
+  let assignableIds: Set<string> | null = null;
+  if (delegates) {
+    const ctx = await buildRbacContext(session, { req });
+    if (!ctx || !(await can(ctx, "action_point", "assign"))) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
+    assignableIds = new Set(await getVisibleUserIds(ctx));
+  }
+
   // Validate first — if any row is bad, fail the whole batch (close-out flow
   // shouldn't half-create APs and leave the RP with an unclear state).
-  const prepared: {
-    pitstopEventId: string; pitstopId: string; goalId: string;
-    title: string; detail: string | null; dueDate: Date;
-    priority: string; partnerStaffLabel: string | null;
-  }[] = [];
+  const prepared: PreparedAp[] = [];
   for (const it of items) {
-    if (!it.pitstopEventId || !it.title?.trim() || !it.dueDate) {
-      return Response.json({ error: "Each item needs pitstopEventId, title, dueDate" }, { status: 400 });
+    if (!it.title?.trim() || !it.dueDate) {
+      return Response.json({ error: "Each item needs title and dueDate" }, { status: 400 });
     }
-    const h = hierarchy.get(it.pitstopEventId);
-    if (!h) return Response.json({ error: `Unknown pitstopEvent: ${it.pitstopEventId}` }, { status: 400 });
     const due = new Date(it.dueDate);
     if (Number.isNaN(due.getTime())) return Response.json({ error: "Invalid dueDate" }, { status: 400 });
-    prepared.push({
-      pitstopEventId: it.pitstopEventId,
-      pitstopId: h.pitstopId,
-      goalId:    h.goalId,
+
+    const common = {
       title: it.title.trim(),
       detail: it.detail?.trim() || null,
       dueDate: due,
       priority: it.priority === "urgent" ? "urgent" : "routine",
       partnerStaffLabel: it.partnerStaffLabel?.trim() || null,
+    };
+
+    if (it.pitstopEventId) {
+      const h = hierarchy.get(it.pitstopEventId);
+      if (!h) return Response.json({ error: `Unknown pitstopEvent: ${it.pitstopEventId}` }, { status: 400 });
+      prepared.push({
+        ...common, source: "activity",
+        pitstopEventId: it.pitstopEventId, pitstopId: h.pitstopId, goalId: h.goalId,
+        needsSettlementId: null, needsClusterId: null, needsZoneId: null, needsCityId: null,
+        ownerId: actorId, assignedById: null,
+      });
+      continue;
+    }
+
+    const assignee = it.assigneeId?.trim() || actorId;
+    if (assignee !== actorId && !assignableIds?.has(assignee)) {
+      return Response.json({ error: "Not in your team" }, { status: 403 });
+    }
+    prepared.push({
+      ...common, source: "adhoc",
+      pitstopEventId: null, pitstopId: null, goalId: it.goalId || null,
+      needsSettlementId: it.needsSettlementId || null,
+      needsClusterId: it.needsClusterId || null,
+      needsZoneId: it.needsZoneId || null,
+      needsCityId: it.needsCityId || null,
+      ownerId: assignee,
+      assignedById: assignee === actorId ? null : actorId,
     });
   }
+
+  const scopeError = await validateScopeRefs(prepared);
+  if (scopeError) return Response.json({ error: scopeError }, { status: 400 });
 
   // Sequential creates so we can capture ids for the audit log; the batch is
   // typically 1–5 rows so the cost is fine.
@@ -205,8 +305,7 @@ export async function POST(req: NextRequest) {
   for (const p of prepared) {
     const row = await prisma.actionPoint.create({
       data: {
-        ...p,
-        ownerId: actorId,       // RP raising the AP owns it (locked: always self at creation)
+        ...p,               // carries ownerId — self for a visit follow-up, the delegate for an assigned task
         createdById: actorId,
         status: "open",
       },

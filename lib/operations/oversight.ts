@@ -299,7 +299,7 @@ export async function loadClusterBoard(
     const aps = await prisma.actionPoint.groupBy({
       by: ["goalId"], where: { status: "open", goalId: { in: goalIds } }, _count: true,
     });
-    for (const a of aps) { const c = centreByGoal.get(a.goalId); if (c) c.followUps = a._count; }
+    for (const a of aps) { const c = a.goalId ? centreByGoal.get(a.goalId) : null; if (c) c.followUps = a._count; }
   }
 
   // Setting-up before live; then by attention (overdue+today), then name.
@@ -366,7 +366,7 @@ export type OpenActionPoint = {
   detail: string | null;
   priority: string;
   dueDate: string | null;
-  goalTitle: string;
+  goalTitle: string | null; // null for an ad-hoc task that names no goal
   clusterName: string | null;
   ownerName: string | null;
 };
@@ -395,8 +395,8 @@ export async function loadOpenActionPoints(userIds: string[]): Promise<OpenActio
     detail: r.detail,
     priority: r.priority,
     dueDate: r.dueDate ? r.dueDate.toISOString() : null,
-    goalTitle: r.goal.title,
-    clusterName: r.goal.needsCluster?.name ?? r.goal.needsSettlement?.cluster?.name ?? null,
+    goalTitle: r.goal?.title ?? null,
+    clusterName: r.goal?.needsCluster?.name ?? r.goal?.needsSettlement?.cluster?.name ?? null,
     ownerName: r.owner?.name ?? null,
   }));
 }

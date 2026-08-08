@@ -143,6 +143,7 @@ model User {
   wikiArticleVersionsSaved  WikiArticleVersion[]           @relation("WikiArticleVersionSaver")
   // Action points (visit follow-ups)
   ownedActionPoints         ActionPoint[]                  @relation("ActionPointOwner")
+  assignedActionPoints      ActionPoint[]                  @relation("ActionPointAssigner")
   createdActionPoints       ActionPoint[]                  @relation("ActionPointCreator")
   lastUpdatedActionPoints   ActionPoint[]                  @relation("ActionPointLastUpdater")
   completedActionPoints     ActionPoint[]                  @relation("ActionPointCompleter")
@@ -1185,6 +1186,7 @@ model City {
   zones         Zone[]
   settlements   Settlement[]
   needsGoals    Goal[]         @relation("GoalNeedsCity")
+  needsActionPoints ActionPoint[] @relation("ActionPointNeedsCity")
   users         User[]         @relation("UserCity")
   grantingUnits GrantingUnit[]
 }
@@ -1206,6 +1208,7 @@ model Zone {
   lead          User?                @relation("ZoneLead", fields: [leadId], references: [id], onDelete: SetNull)
   clusters      Cluster[]
   needsGoals    Goal[]               @relation("GoalNeedsZone")
+  needsActionPoints ActionPoint[]     @relation("ActionPointNeedsZone")
   needsPitstops Pitstop[]            @relation("PitstopNeedsZone")
   layerFeatures LayerFeature[]
   wikiCircles   WikiPracticeCircle[]
@@ -1231,6 +1234,7 @@ model Cluster {
   zone          Zone           @relation(fields: [zoneId], references: [id], onDelete: Cascade)
   settlements   Settlement[]
   needsGoals    Goal[]         @relation("GoalNeedsCluster")
+  needsActionPoints ActionPoint[] @relation("ActionPointNeedsCluster")
   needsPitstops Pitstop[]      @relation("PitstopNeedsCluster")
   layerFeatures LayerFeature[]
   rps           User[]         @relation("RPClusters")
@@ -1302,6 +1306,7 @@ model Settlement {
   civicData          SettlementCivicData?
   // Needs geography back-relations
   needsGoals         Goal[]                   @relation("GoalNeedsSettlement")
+  needsActionPoints  ActionPoint[]             @relation("ActionPointNeedsSettlement")
   needsPitstops      Pitstop[]                @relation("PitstopNeedsSettlement")
   goalOutcomes       GoalOutcome[]
   schools            SettlementSchool[]
@@ -3710,10 +3715,25 @@ model ModelInstance {
 model ActionPoint {
   id String @id @default(cuid())
 
-  // Hierarchy — always required, denormalized for fast queries
-  goalId         String
-  pitstopId      String
-  pitstopEventId String
+  // Hierarchy — denormalized for fast queries. Set for source='activity' (the
+  // visit follow-up path); any or all may be null for source='adhoc'.
+  goalId         String?
+  pitstopId      String?
+  pitstopEventId String?
+
+  // 'activity' = raised against a visit activity (the original path).
+  // 'adhoc'    = free-standing task, outside the goal hierarchy.
+  source String @default("activity")
+
+  // Geography for an ad-hoc task that names no goal — mirrors Goal's four levels.
+  needsSettlementId String?
+  needsClusterId    String?
+  needsZoneId       String?
+  needsCityId       String?
+
+  // Set when the task is also presented as a catalog item on a live centre —
+  // ticking it there closes this row.
+  catalogItemKey String?
 
   // Content
   title             String
@@ -3721,7 +3741,10 @@ model ActionPoint {
   partnerStaffLabel String? // free-text — "creche supervisor", "ZL Ravi", etc.
 
   // Ownership / lifecycle
-  ownerId  String // = RP (always self at creation; ZL/PM/Leader may close on their behalf)
+  ownerId  String // = who carries it. Self at creation, except when delegated downward.
+  // Who asked, when delegated. Null on a self-raised task. When set and different
+  // from ownerId the owner may close the task but not edit it.
+  assignedById String?
   dueDate  DateTime
   priority String   @default("routine") // routine | urgent
 
@@ -3738,13 +3761,18 @@ model ActionPoint {
   lastUpdatedById String?
 
   // Relations
-  goal          Goal         @relation(fields: [goalId], references: [id], onDelete: Cascade)
-  pitstop       Pitstop      @relation(fields: [pitstopId], references: [id], onDelete: Cascade)
-  pitstopEvent  PitstopEvent @relation(fields: [pitstopEventId], references: [id], onDelete: Cascade)
-  owner         User         @relation("ActionPointOwner", fields: [ownerId], references: [id])
-  createdBy     User         @relation("ActionPointCreator", fields: [createdById], references: [id])
-  lastUpdatedBy User?        @relation("ActionPointLastUpdater", fields: [lastUpdatedById], references: [id])
-  completedBy   User?        @relation("ActionPointCompleter", fields: [completedById], references: [id])
+  goal          Goal?         @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  pitstop       Pitstop?      @relation(fields: [pitstopId], references: [id], onDelete: Cascade)
+  pitstopEvent  PitstopEvent? @relation(fields: [pitstopEventId], references: [id], onDelete: Cascade)
+  owner         User          @relation("ActionPointOwner", fields: [ownerId], references: [id])
+  assignedBy    User?         @relation("ActionPointAssigner", fields: [assignedById], references: [id])
+  createdBy     User          @relation("ActionPointCreator", fields: [createdById], references: [id])
+  lastUpdatedBy User?         @relation("ActionPointLastUpdater", fields: [lastUpdatedById], references: [id])
+  completedBy   User?         @relation("ActionPointCompleter", fields: [completedById], references: [id])
+  needsSettlement Settlement? @relation("ActionPointNeedsSettlement", fields: [needsSettlementId], references: [id])
+  needsCluster    Cluster?    @relation("ActionPointNeedsCluster", fields: [needsClusterId], references: [id])
+  needsZone       Zone?       @relation("ActionPointNeedsZone", fields: [needsZoneId], references: [id])
+  needsCity       City?       @relation("ActionPointNeedsCity", fields: [needsCityId], references: [id])
   caregiverObservation CaregiverPracticeObservation?
 
   @@index([ownerId, status, dueDate])
@@ -3752,6 +3780,9 @@ model ActionPoint {
   @@index([pitstopId])
   @@index([goalId])
   @@index([status, dueDate])
+  @@index([source, status, dueDate])
+  @@index([needsClusterId, status])
+  @@index([assignedById, status])
 }
 
 // ── Wiki v2 — Articles + Spine ─────────────────────────────────────────────
