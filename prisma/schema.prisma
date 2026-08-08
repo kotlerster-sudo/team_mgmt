@@ -87,6 +87,7 @@ model User {
   // Layer 3 journey outcome captures
   journeyOutcomeCaptures    ProgrammeJourneyOutcomePoint[] @relation("JourneyOutcomeCapture")
   closedJourneys            ProgrammeJourney[]             @relation("JourneyClosedBy")
+  caregiverObservations     CaregiverPracticeObservation[] @relation("CaregiverObservationCapturer")
   // Needs assessment
   assessments               SettlementAssessment[]
   // Reporting structure (for notification routing — not a hard gate)
@@ -262,6 +263,7 @@ model Goal {
   // Live-centre visit catalog (present once Goal.mode = "live")
   centreCatalog    CentreCatalog?
   catalogApprovals CatalogItemApproval[]
+  caregiverObservations CaregiverPracticeObservation[]
 }
 
 // One row per settlement that received actuals from a completed domain goal.
@@ -1050,6 +1052,88 @@ model IndicatorPointAnswer {
   @@index([itemDefId, answer])
 }
 
+// ── Caregiver Practices (creche live-visit quality layer) ─────────────────────
+// A dedicated observation layer distinct from the binary FacilityIndicator
+// scored-checklist: 3-level taxonomy (category → subcategory → practice), a
+// graded 5-value status, exception-based capture (RP flags only deficient
+// practices during a visit), and a derived carry-forward loop (a practice
+// flagged NeedsImprovement/NotPracticed resurfaces on the creche's next visit).
+// Entry is a single "Caregiver practices" catalog item on the creche visit.
+
+enum CaregiverPracticeStatus {
+  OK // observed, done correctly
+  NeedsImprovement // attempted but incorrect / partial
+  NotPracticed // missing entirely
+  NotObserved // could not be verified this visit
+  NotApplicable // doesn't apply to this creche
+}
+
+enum CaregiverPracticeAction {
+  FeedbackOnSpot
+  RefresherPlanned
+  EscalateToSupervisor
+}
+
+model CaregiverPracticeCategory {
+  id        String   @id @default(cuid())
+  code      String   @unique // e.g. "FN"
+  name      String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  practices CaregiverPractice[]
+}
+
+model CaregiverPractice {
+  id             String   @id @default(cuid())
+  code           String   @unique // e.g. "FN-10"
+  categoryId     String
+  subcategory    String // grouping label within the category (not a table)
+  shortLabel     String // UI label in the drill
+  fullText       String // full portal wording
+  trainingModule Int? // phase-2 refresher-training demand rollup tag
+  sortOrder      Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  category     CaregiverPracticeCategory      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  observations CaregiverPracticeObservation[]
+
+  @@index([categoryId, sortOrder])
+  @@index([trainingModule])
+}
+
+model CaregiverPracticeObservation {
+  id           String                   @id @default(cuid())
+  practiceId   String
+  facilityId   String // the creche (goal's LayerFeature)
+  settlementId String
+  goalId       String
+  visitEventId String // parent Visit PitstopEvent
+  status       CaregiverPracticeStatus
+  remarks      String?
+  action       CaregiverPracticeAction?
+  photoUrl     String?
+  capturedById String
+  capturedAt   DateTime                 @default(now())
+
+  practice   CaregiverPractice @relation(fields: [practiceId], references: [id], onDelete: Restrict)
+  facility   LayerFeature      @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  settlement Settlement        @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  goal       Goal              @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  visit      PitstopEvent      @relation(fields: [visitEventId], references: [id], onDelete: Cascade)
+  capturedBy User              @relation("CaregiverObservationCapturer", fields: [capturedById], references: [id])
+
+  // Carry-forward: "latest observation per (facility, practice)".
+  @@index([facilityId, practiceId, capturedAt])
+  @@index([visitEventId])
+  @@index([facilityId, status]) // phase-2 command-center facility rollup
+  @@index([practiceId, status]) // phase-2 training-module demand
+}
+
 // ── Themes ────────────────────────────────────────────────────────────────────
 
 model Theme {
@@ -1177,6 +1261,7 @@ model LayerFeature {
   partnerOrg  Org?        @relation("LayerFeaturePartnerOrg", fields: [partnerOrgId], references: [id], onDelete: SetNull)
   // Per-facility Layer-2 indicators captured against this facility.
   facilityIndicators FacilityIndicator[]
+  caregiverObservations CaregiverPracticeObservation[]
 
   @@index([partnerOrgId])
 }
@@ -1221,6 +1306,7 @@ model Settlement {
   facilityIndicators FacilityIndicator[]
   // Layer 3 programme journeys
   programmeJourneys  ProgrammeJourney[]
+  caregiverObservations CaregiverPracticeObservation[]
 
   @@index([partnerOrgId])
 }
@@ -1415,6 +1501,7 @@ model PitstopEvent {
   threads       Thread[]
   // Action points raised from this activity
   actionPoints  ActionPoint[]
+  caregiverObservations CaregiverPracticeObservation[]
 
   // Activities-page + planner queries sort + range-filter on scheduledAt.
   // Partial index (active + non-cancelled) backs the most common UI filter.

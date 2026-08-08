@@ -9,6 +9,8 @@ import {
 import { SurfaceProvider } from "@/components/rbac/RbacProviders";
 import { ActivityCard } from "@/app/(app)/home/_shared/ActivityCard";
 import type { Activity, ChecklistItem } from "@/app/(app)/home/_lib/types";
+import { CaregiverPracticeCapture } from "@/components/caregiver/CaregiverPracticeCapture";
+import { CAREGIVER_PRACTICES_LAUNCHER_KEY } from "@/lib/caregiverPractices";
 
 // A tagged checklist and its activities (the completion units). Materialised post-arrival.
 type Checklist = {
@@ -194,9 +196,13 @@ export default function VisitPage({ params }: { params: Promise<{ goalId: string
                     </button>
                     {isOpen && (
                       <div className="border-t border-stone-100 p-2 space-y-2.5">
-                        {cat.checklists.map((cl) => (
-                          <ChecklistBlock key={cl.key} checklist={cl} onChanged={load} />
-                        ))}
+                        {cat.checklists.map((cl) =>
+                          cl.key === CAREGIVER_PRACTICES_LAUNCHER_KEY && visitId ? (
+                            <CaregiverPracticeLauncher key={cl.key} goalId={goalId} visitId={visitId} checklist={cl} onChanged={load} />
+                          ) : (
+                            <ChecklistBlock key={cl.key} checklist={cl} onChanged={load} />
+                          ),
+                        )}
 
                         {/* Add an off-catalog item — opens a pending approval; materialises on reload. */}
                         {addingCat === cat.key ? (
@@ -338,5 +344,51 @@ function ChecklistBlock({ checklist, onChanged }: { checklist: Checklist; onChan
         ))}
       </div>
     </div>
+  );
+}
+
+/**
+ * The "Caregiver practices" catalog task. Renders as a single visit task that
+ * opens the Category→Subcategory→Practice drill; saving marks its underlying
+ * activity Done so it counts toward the visit + honours blocksSignoff.
+ */
+function CaregiverPracticeLauncher({
+  goalId, visitId, checklist, onChanged,
+}: {
+  goalId: string; visitId: string; checklist: Checklist; onChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const done = checklist.totalCount > 0 && checklist.doneCount === checklist.totalCount;
+  const activityId = checklist.activities[0]?.id ?? null;
+
+  const onSaved = async () => {
+    if (activityId) {
+      await fetch(`/api/pitstop-events/${activityId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "Done" }),
+      }).catch(() => {});
+    }
+    setOpen(false);
+    onChanged();
+  };
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-stone-200 bg-white text-left hover:border-stone-300"
+      >
+        {done
+          ? <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+          : <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />}
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-stone-800">Caregiver practices</p>
+          <p className="text-[11px] text-stone-400">Observe & flag deficient practices</p>
+        </div>
+        <ChevronRight className="w-4 h-4 text-stone-300 shrink-0" />
+      </button>
+      {open && (
+        <CaregiverPracticeCapture goalId={goalId} visitEventId={visitId} onClose={() => setOpen(false)} onSaved={onSaved} />
+      )}
+    </>
   );
 }

@@ -141,6 +141,9 @@ export const RESOURCE_ACTIONS: Record<string, readonly string[]> = {
   // Read-only surface; geographic scope is resolved server-side per designation
   // (resolveCommandScope in lib/operations/command.ts), the grant gates entry.
   command_center: ["list", "read"],
+  // Caregiver practices — gates the admin TAXONOMY editor + phase-2 reads.
+  // On-visit CAPTURE reuses pitstop_event.update (it's a visit action).
+  caregiver_practice: [...STANDARD_ACTIONS],
 };
 
 export type RoleGrant = Record<string, ScopeRule>; // "resource.action" → rule
@@ -348,6 +351,11 @@ const MEMBER_GRANTS: RoleGrant = {
   // designation (RP/Other resolve to no zones and are redirected).
   "command_center.list": TEAM,
   "command_center.read": TEAM,
+
+  // Caregiver practices: all-authenticated read (RPs need the taxonomy to
+  // capture); taxonomy mutation is admin-only (via ADMIN_GRANTS = ALL).
+  "caregiver_practice.list": ALL,
+  "caregiver_practice.read": ALL,
 
   // Needs assessment + actuals: all-authenticated read, admin mutate.
   "needs_assessment.list": ALL,

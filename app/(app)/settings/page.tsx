@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Copy, Check, RefreshCw, Users, KeyRound, CalendarDays, Target, ChevronRight, ShieldCheck, Map, Languages, LayoutTemplate, Layers, Bell, BellOff, BellRing, Activity, Cloud, ScrollText, Briefcase } from "lucide-react";
+import { Copy, Check, RefreshCw, Users, KeyRound, CalendarDays, Target, ChevronRight, ShieldCheck, Map, Languages, LayoutTemplate, Layers, Bell, BellOff, BellRing, Activity, Cloud, ScrollText, Briefcase, ListChecks } from "lucide-react";
 import Link from "next/link";
 import Avatar from "@/components/Avatar";
 import { useSession } from "next-auth/react";
@@ -22,6 +22,7 @@ export default function SettingsPage() {
   const canGeography            = useHasGrant("zone",                 "update");
   const canMapFeatures          = useHasGrant("map_data",             "register_settlement");
   const canFacilityIndicators   = useHasGrant("facility_indicator",   "update");
+  const canCaregiverPractices   = useHasGrant("caregiver_practice",   "update");
   const canMisProviders         = useHasGrant("mis_provider",         "update");
   const canJourneyOutcomePacks  = useHasGrant("journey_outcome_pack", "update");
   const canFacilityLayers       = useHasGrant("facility_layer",       "update");
@@ -438,6 +439,19 @@ export default function SettingsPage() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-stone-800">Facility Indicators (Layer 2)</p>
                   <p className="text-xs text-stone-400">Utilization · enrollment · saturation per facility</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-stone-300" />
+              </Link>
+            )}
+            {canCaregiverPractices && (
+              <Link
+                href="/settings/caregiver-practices"
+                className="flex items-center gap-3 px-4 py-3 bg-white border border-stone-200 rounded-xl hover:bg-stone-50 hover:border-stone-300 transition-colors"
+              >
+                <ListChecks className="w-4 h-4 text-teal-500" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-stone-800">Caregiver Practices</p>
+                  <p className="text-xs text-stone-400">Creche visit observation taxonomy · category → subcategory → practice</p>
                 </div>
                 <ChevronRight className="w-4 h-4 text-stone-300" />
               </Link>

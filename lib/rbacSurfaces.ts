@@ -68,6 +68,10 @@ export const SURFACES: ReadonlyArray<SurfaceDef> = [
   // ── Command center ────────────────────────────────────────────────────────
   { id: "command.view",             label: "Command center",         description: "Leader operational drill-down: zone→cluster→settlement rollup with visits, follow-ups, indicators and setup progress" },
 
+  // ── Caregiver practices ───────────────────────────────────────────────────
+  { id: "operations.caregiver_practices", label: "Caregiver practice capture", description: "RP's on-visit Category→Subcategory→Practice observation drill + carry-forward re-verify" },
+  { id: "settings.caregiver_practices",   label: "Caregiver practices settings", description: "Admin taxonomy editor for caregiver-practice categories + practices" },
+
   // ── Pitstop ──────────────────────────────────────────────────────────────
   { id: "pitstop.list",          label: "Pitstops list" },
   { id: "pitstop.detail",        label: "Pitstop detail page", description: "Full-screen pitstop view" },
