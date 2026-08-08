@@ -113,7 +113,23 @@ export async function GET(req: NextRequest) {
     v.childEvents.map((c) => c.checklistItemId).filter((id): id is string => !!id),
   );
 
-  const [threads, captures, visitAps, seriesPoints, openAps, closedAps] = await Promise.all([
+  // Open caregiver-practice flags for this creche: latest observation per
+  // practice with an open status (NeedsImprovement / NotPracticed).
+  const caregiverFlagsP = facilityId
+    ? prisma.$queryRaw<{ shortLabel: string; code: string; category: string; status: string; remarks: string | null; lastCapturedAt: Date; hasFollowup: boolean }[]>`
+        SELECT DISTINCT ON (o."practiceId")
+          pr."shortLabel", pr.code, cat.name AS category,
+          o.status::text AS status, o.remarks, o."capturedAt" AS "lastCapturedAt",
+          (o."actionPointId" IS NOT NULL) AS "hasFollowup"
+        FROM "CaregiverPracticeObservation" o
+        JOIN "CaregiverPractice" pr ON pr.id = o."practiceId"
+        JOIN "CaregiverPracticeCategory" cat ON cat.id = pr."categoryId"
+        WHERE o."facilityId" = ${facilityId} AND pr."isActive" = true
+        ORDER BY o."practiceId", o."capturedAt" DESC, o.id DESC
+      `
+    : Promise.resolve([] as { shortLabel: string; code: string; category: string; status: string; remarks: string | null; lastCapturedAt: Date; hasFollowup: boolean }[]);
+
+  const [threads, captures, visitAps, seriesPoints, openAps, closedAps, caregiverFlagsRaw] = await Promise.all([
     allEventIds.length > 0
       ? prisma.thread.findMany({
           where: { eventId: { in: allEventIds }, deletedAt: null },
@@ -210,7 +226,22 @@ export async function GET(req: NextRequest) {
         completedBy: { select: { name: true } },
       },
     }),
+    caregiverFlagsP,
   ]);
+
+  // Open caregiver-practice flags (latest-per-practice already filtered to the
+  // facility; keep only the ones still in an open status).
+  const caregiverFlags = caregiverFlagsRaw
+    .filter((f) => f.status === "NeedsImprovement" || f.status === "NotPracticed")
+    .map((f) => ({
+      shortLabel: f.shortLabel,
+      code: f.code,
+      category: f.category,
+      status: f.status,
+      remarks: f.remarks,
+      lastCapturedAt: f.lastCapturedAt.toISOString(),
+      hasFollowup: f.hasFollowup,
+    }));
 
   // Setup WBS plan — setup goals only (live centres link to the plan page instead).
   const plan = goal.mode === "setup" ? await loadCentrePlan(goalId) : null;
@@ -340,5 +371,6 @@ export async function GET(req: NextRequest) {
         completedBy: a.completedBy?.name ?? null,
       })),
     },
+    caregiverFlags,
   });
 }

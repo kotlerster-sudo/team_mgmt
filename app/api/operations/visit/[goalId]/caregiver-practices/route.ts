@@ -126,10 +126,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ goa
     return Response.json({ error: "visitEventId + observations required" }, { status: 400 });
   }
 
-  const { written } = await captureCaregiverPractices({
+  const { written, escalated } = await captureCaregiverPractices({
     visitEventId,
     capturedById: session.user.id,
     observations,
   });
-  return Response.json({ ok: true, written });
+  return Response.json({ ok: true, written, escalated });
 }

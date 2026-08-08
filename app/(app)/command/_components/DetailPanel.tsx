@@ -73,6 +73,7 @@ type CommandDetail = {
     open: DetailAp[];
     recentClosed: { id: string; title: string; closureNote: string | null; completedAt: string | null; completedBy: string | null }[];
   };
+  caregiverFlags: { shortLabel: string; code: string; category: string; status: string; remarks: string | null; lastCapturedAt: string; hasFollowup: boolean }[];
 };
 
 function fmtDate(iso: string | null): string {
@@ -264,6 +265,29 @@ export function DetailPanel({ row, onClose }: { row: CommandRow; onClose: () => 
                   </div>
                 )}
               </Section>
+
+              {/* Caregiver-practice flags (open, needing improvement / not practiced) */}
+              {detail.caregiverFlags.length > 0 && (
+                <Section title={`Caregiver practices flagged · ${detail.caregiverFlags.length}`}>
+                  <div className="space-y-1.5">
+                    {detail.caregiverFlags.map((f) => (
+                      <div key={f.code} className="rounded-lg border border-stone-100 px-2.5 py-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${f.status === "NotPracticed" ? "bg-red-500" : "bg-amber-400"}`} />
+                          <p className="text-[11px] font-medium text-stone-800 flex-1 truncate">{f.shortLabel}</p>
+                          <span className="text-[10px] text-stone-400 shrink-0">
+                            {f.status === "NotPracticed" ? "Not done" : "Needs impr."}
+                            {f.hasFollowup && <span className="text-red-500 font-semibold"> · AP</span>}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-stone-400 mt-0.5">
+                          {f.category}{f.remarks ? ` · ${f.remarks}` : ""} · {fmtDate(f.lastCapturedAt)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </Section>
+              )}
 
               {/* Visit timeline + observations */}
               {detail.visits.length > 0 && (

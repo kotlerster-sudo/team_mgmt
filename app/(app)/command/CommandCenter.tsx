@@ -10,7 +10,8 @@
  */
 
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { Radar } from "lucide-react";
+import Link from "next/link";
+import { Radar, GraduationCap } from "lucide-react";
 import type { CommandRollup, CommandZoneOption } from "@/lib/operations/command";
 import { useCommandState } from "./useCommandState";
 import { ScopeBar } from "./_components/ScopeBar";
@@ -76,6 +77,10 @@ function CommandCenterInner({ zones }: { zones: CommandZoneOption[] }) {
         <div className="flex items-center gap-2">
           <Radar className="w-4 h-4 text-sky-600 shrink-0" />
           <h1 className="text-lg font-semibold text-stone-900">Command Center</h1>
+          <span className="flex-1" />
+          <Link href="/operations/training-demand" className="inline-flex items-center gap-1 text-[11px] font-medium text-teal-600 hover:text-teal-700">
+            <GraduationCap className="w-3.5 h-3.5" /> Training demand
+          </Link>
         </div>
         {stats && (
           <p className="text-sm text-stone-500 mt-0.5">

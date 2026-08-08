@@ -1117,19 +1117,24 @@ model CaregiverPracticeObservation {
   remarks      String?
   action       CaregiverPracticeAction?
   photoUrl     String?
+  // Follow-up ActionPoint raised when action = EscalateToSupervisor (phase 2).
+  // 1:1 — cleared (SetNull) if the AP is deleted; cancelled if the flag is un-escalated.
+  actionPointId String?                 @unique
   capturedById String
   capturedAt   DateTime                 @default(now())
 
-  practice   CaregiverPractice @relation(fields: [practiceId], references: [id], onDelete: Restrict)
-  facility   LayerFeature      @relation(fields: [facilityId], references: [id], onDelete: Cascade)
-  settlement Settlement        @relation(fields: [settlementId], references: [id], onDelete: Cascade)
-  goal       Goal              @relation(fields: [goalId], references: [id], onDelete: Cascade)
-  visit      PitstopEvent      @relation(fields: [visitEventId], references: [id], onDelete: Cascade)
-  capturedBy User              @relation("CaregiverObservationCapturer", fields: [capturedById], references: [id])
+  practice    CaregiverPractice @relation(fields: [practiceId], references: [id], onDelete: Restrict)
+  facility    LayerFeature      @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  settlement  Settlement        @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  goal        Goal              @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  visit       PitstopEvent      @relation(fields: [visitEventId], references: [id], onDelete: Cascade)
+  capturedBy  User              @relation("CaregiverObservationCapturer", fields: [capturedById], references: [id])
+  actionPoint ActionPoint?      @relation(fields: [actionPointId], references: [id], onDelete: SetNull)
 
+  // One row per practice per visit (enables upsert + AP reconciliation).
+  @@unique([visitEventId, practiceId])
   // Carry-forward: "latest observation per (facility, practice)".
   @@index([facilityId, practiceId, capturedAt])
-  @@index([visitEventId])
   @@index([facilityId, status]) // phase-2 command-center facility rollup
   @@index([practiceId, status]) // phase-2 training-module demand
 }
@@ -3740,6 +3745,7 @@ model ActionPoint {
   createdBy     User         @relation("ActionPointCreator", fields: [createdById], references: [id])
   lastUpdatedBy User?        @relation("ActionPointLastUpdater", fields: [lastUpdatedById], references: [id])
   completedBy   User?        @relation("ActionPointCompleter", fields: [completedById], references: [id])
+  caregiverObservation CaregiverPracticeObservation?
 
   @@index([ownerId, status, dueDate])
   @@index([pitstopEventId])
