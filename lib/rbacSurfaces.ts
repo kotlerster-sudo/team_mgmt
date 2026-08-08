@@ -64,6 +64,7 @@ export const SURFACES: ReadonlyArray<SurfaceDef> = [
   { id: "operations.dashboard",     label: "Cluster health dashboard", description: "Cross-cluster composite standing (overdue + cadence + approvals) for ZL/PM/Leader" },
   { id: "operations.shelf",         label: "Catalog shelf (deploy)", description: "Supervisor deploys catalog items to an RP's live centre" },
   { id: "operations.visit",         label: "Live-centre visit",      description: "RP's per-visit checklist/activity completion (voice/upload/done)" },
+  { id: "operations.tasks",         label: "Tasks",                  description: "Ad-hoc work outside the goal hierarchy — your own tasks, ones handed to you, and ones you handed out" },
 
   // ── Command center ────────────────────────────────────────────────────────
   { id: "command.view",             label: "Command center",         description: "Leader operational drill-down: zone→cluster→settlement rollup with visits, follow-ups, indicators and setup progress" },

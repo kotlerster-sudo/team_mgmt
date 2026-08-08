@@ -35,8 +35,9 @@ export function MarkAPDoneModal({
     try {
       const fd = new FormData();
       fd.append("file", file);
-      // Anchor to the pitstop so the Attachment row has a sensible parent.
-      fd.append("pitstopId", ap.pitstopId);
+      // Anchor to the pitstop so the Attachment row has a sensible parent. An
+      // ad-hoc task has none; /api/upload leaves the parent unset in that case.
+      if (ap.pitstopId) fd.append("pitstopId", ap.pitstopId);
       const res = await fetch("/api/upload", { method: "POST", body: fd });
       if (!res.ok) {
         setErr((await res.json().catch(() => ({})))?.error ?? "Upload failed");

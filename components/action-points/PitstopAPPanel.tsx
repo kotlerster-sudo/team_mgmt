@@ -56,7 +56,9 @@ export function PitstopAPPanel({
   // Group by raising activity. An activity with zero APs simply doesn't appear
   // in this view — it stays on the checklist row above.
   const grouped = (rows ?? []).reduce<Map<string, { title: string; scheduledAt?: string; items: ActionPoint[] }>>((m, r) => {
-    const key = r.pitstopEventId;
+    // This panel is fetched by pitstopId, so every row is activity-parented; the
+    // fallback only exists because the id is nullable on the model at large.
+    const key = r.pitstopEventId ?? "unparented";
     const existing = m.get(key);
     if (existing) existing.items.push(r);
     else m.set(key, {

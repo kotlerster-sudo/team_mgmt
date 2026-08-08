@@ -360,47 +360,6 @@ export async function loadPendingApprovals(reportIds: string[]): Promise<Pending
   }));
 }
 
-export type OpenActionPoint = {
-  id: string;
-  title: string;
-  detail: string | null;
-  priority: string;
-  dueDate: string | null;
-  goalTitle: string | null; // null for an ad-hoc task that names no goal
-  clusterName: string | null;
-  ownerName: string | null;
-};
-
-/** Open action points (visit follow-ups) across the supervised scope, soonest-due first. */
-export async function loadOpenActionPoints(userIds: string[]): Promise<OpenActionPoint[]> {
-  const rows = await prisma.actionPoint.findMany({
-    where: { status: "open", goal: goalOwnedByAnyOf(userIds) },
-    select: {
-      id: true, title: true, detail: true, priority: true, dueDate: true,
-      owner: { select: { name: true } },
-      goal: {
-        select: {
-          title: true,
-          needsCluster: { select: { name: true } },
-          needsSettlement: { select: { cluster: { select: { name: true } } } },
-        },
-      },
-    },
-    orderBy: { dueDate: "asc" },
-  });
-
-  return rows.map((r) => ({
-    id: r.id,
-    title: r.title,
-    detail: r.detail,
-    priority: r.priority,
-    dueDate: r.dueDate ? r.dueDate.toISOString() : null,
-    goalTitle: r.goal?.title ?? null,
-    clusterName: r.goal?.needsCluster?.name ?? r.goal?.needsSettlement?.cluster?.name ?? null,
-    ownerName: r.owner?.name ?? null,
-  }));
-}
-
 /** Look up an added item's display text from a centre's overrides/snapshot by key. */
 function resolveItemText(
   centre: { snapshot: unknown; overrides: unknown } | null,

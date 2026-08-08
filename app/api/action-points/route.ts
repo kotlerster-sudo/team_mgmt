@@ -84,11 +84,17 @@ export async function GET(req: NextRequest) {
   const statusArg = url.searchParams.get("status"); // open|done|cancelled|null
   const pitstopId = url.searchParams.get("pitstopId");
   const goalId    = url.searchParams.get("goalId");
+  const source    = url.searchParams.get("source"); // activity|adhoc|null (both)
+  // "tasks I handed to someone else" — the other half of an assigner's view,
+  // since those rows are owned by the assignee and so miss scope=mine.
+  const assignedByMe = url.searchParams.get("assignedByMe") === "1";
 
   // "mine" → just my own APs (ownerId=me). "team" → use RBAC team scope
   // (TEAM expands to reportsToId tree, which is what ZL/PM/Leader want).
   let where: Record<string, unknown> = {};
-  if (scope === "team") {
+  if (assignedByMe) {
+    where = { assignedById: ctx.userId };
+  } else if (scope === "team") {
     const rbacWhere = await scopeWhere(ctx, "action_point", "list");
     if (rbacWhere === null) return Response.json([], { status: 200 });
     where = { ...rbacWhere };
@@ -98,6 +104,7 @@ export async function GET(req: NextRequest) {
 
   if (pitstopId) where.pitstopId = pitstopId;
   if (goalId)    where.goalId    = goalId;
+  if (source === "activity" || source === "adhoc") where.source = source;
 
   // Bucket filter: shapes status + dueDate range together so the four Home
   // panels (Overdue/Today/Week/Done) map to one query each.

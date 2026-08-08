@@ -27,10 +27,11 @@ export default async function OperationsHomePage({
   const userId = ctx.userId;
   const preview = ctx.viewingAs;
 
-  const [clusters, me, candidates] = await Promise.all([
+  const [clusters, me, candidates, openTasks] = await Promise.all([
     getUserClusters([userId]),
     prisma.user.findUnique({ where: { id: userId }, select: { designation: true } }),
     ctx.isAdmin && !preview ? loadViewAsCandidates() : Promise.resolve([]),
+    prisma.actionPoint.count({ where: { ownerId: userId, source: "adhoc", status: "open" } }),
   ]);
   const selected = clusterParam ? clusters.find((c) => c.id === clusterParam) ?? null : null;
 
@@ -90,7 +91,12 @@ export default async function OperationsHomePage({
             </div>
           )}
 
-          {!preview && <PlanMonthLink withParams={withParams} />}
+          {!preview && (
+            <div className="space-y-3">
+              <TasksLink count={openTasks} />
+              <PlanMonthLink withParams={withParams} />
+            </div>
+          )}
         </div>
       </SurfaceProvider>
     );
@@ -168,6 +174,28 @@ export default async function OperationsHomePage({
         </TileSection>
       </div>
     </SurfaceProvider>
+  );
+}
+
+function TasksLink({ count }: { count: number }) {
+  return (
+    <Link
+      href="/operations/tasks"
+      className="flex items-center justify-between rounded-xl border border-stone-200 bg-white px-4 py-3 hover:border-stone-300 hover:shadow-sm transition-all"
+    >
+      <div className="flex items-center gap-2.5">
+        <CheckCircle2 className="w-4 h-4 text-stone-400" />
+        <span className="text-sm font-medium text-stone-700">Tasks</span>
+      </div>
+      <div className="flex items-center gap-1.5">
+        {count > 0 && (
+          <span className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-100 rounded px-1.5 py-0.5 tabular-nums">
+            {count} open
+          </span>
+        )}
+        <ChevronRight className="w-4 h-4 text-stone-300" />
+      </div>
+    </Link>
   );
 }
 

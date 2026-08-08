@@ -46,6 +46,21 @@ const toneClasses = {
   later:   "text-stone-500 bg-stone-50 border-stone-200",
 } as const;
 
+/**
+ * A visit follow-up sits under goal › pitstop › activity and can deep-link to it.
+ * An ad-hoc task has none of that, so it falls back to the place it was pointed
+ * at — and only offers a link when it named a goal.
+ */
+function describeContext(ap: ActionPoint): { trail: string | null; place: string | null; href: string | null } {
+  const trail = [ap.goal?.title, ap.pitstop?.title, ap.pitstopEvent?.title].filter(Boolean).join(" › ") || null;
+  const place =
+    ap.needsSettlement?.name ?? ap.needsCluster?.name ?? ap.needsZone?.name ?? ap.needsCity?.name ?? null;
+  const href = ap.goalId
+    ? ap.pitstopId ? `/goals/${ap.goalId}#pitstop-${ap.pitstopId}` : `/goals/${ap.goalId}`
+    : null;
+  return { trail, place, href };
+}
+
 export function ActionPointCard({
   ap, currentUserId,
   showContext = true,
@@ -71,7 +86,10 @@ export function ActionPointCard({
   const [menuOpen, setMenuOpen] = useState(false);
 
   const due = dueLabel(ap.dueDate);
+  const context = describeContext(ap);
   const isOwner = ap.ownerId === currentUserId;
+  // Someone else's ask: closeable, but the terms of it aren't yours to change.
+  const delegatedToMe = isOwner && !!ap.assignedById && ap.assignedById !== currentUserId;
   const isOpen  = ap.status === "open";
   const isDone  = ap.status === "done";
 
@@ -167,24 +185,30 @@ export function ActionPointCard({
             </a>
           )}
 
-          {/* Context (goal + pitstop + activity) */}
-          {showContext && (ap.goal || ap.pitstop || ap.pitstopEvent) && (
+          {/* Context. A visit follow-up shows its goal › pitstop › activity trail; an ad-hoc
+              task has no trail, so it shows wherever it was pointed at instead. */}
+          {showContext && (context.trail || context.place) && (
             <p className="text-[11px] text-stone-400 mt-1.5 truncate">
-              {[
-                ap.goal?.title,
-                ap.pitstop?.title,
-                ap.pitstopEvent?.title,
-              ].filter(Boolean).join(" › ")}
-              {" · "}
-              <Link href={`/goals/${ap.goalId}#pitstop-${ap.pitstopId}`} className="text-sky-600 hover:underline">
-                open
-              </Link>
+              {context.trail ?? context.place}
+              {context.href && (
+                <>
+                  {" · "}
+                  <Link href={context.href} className="text-sky-600 hover:underline">
+                    open
+                  </Link>
+                </>
+              )}
             </p>
           )}
 
           {/* Raised-by line — surfaces the supervisor case (creator != owner is rare in v1) */}
           {!isOwner && ap.owner && (
             <p className="text-[11px] text-stone-400 mt-0.5">For {ap.owner.name ?? "—"}</p>
+          )}
+          {isOwner && ap.assignedBy && ap.assignedById !== ap.ownerId && (
+            <p className="text-[11px] text-stone-400 mt-0.5">
+              Asked by {ap.assignedBy.name ?? "—"} · you can close this, not change it
+            </p>
           )}
         </div>
 
@@ -221,7 +245,7 @@ export function ActionPointCard({
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
                   <div className="absolute right-0 top-full mt-1 z-20 bg-white border border-stone-200 rounded-lg shadow-lg py-1 min-w-[140px]">
-                    {isOpen && onOpenEdit && (
+                    {isOpen && !delegatedToMe && onOpenEdit && (
                       <button
                         onClick={() => { setMenuOpen(false); onOpenEdit(ap); }}
                         className="w-full px-3 py-1.5 text-left text-xs text-stone-700 hover:bg-stone-50 flex items-center gap-2"
@@ -229,7 +253,7 @@ export function ActionPointCard({
                         <Pencil className="w-3 h-3" /> Edit
                       </button>
                     )}
-                    {isOpen && (
+                    {isOpen && !delegatedToMe && (
                       <button
                         onClick={cancel}
                         disabled={busy}
@@ -237,6 +261,11 @@ export function ActionPointCard({
                       >
                         <XCircle className="w-3 h-3" /> Cancel
                       </button>
+                    )}
+                    {isOpen && delegatedToMe && (
+                      <p className="px-3 py-1.5 text-[11px] text-stone-400 leading-snug">
+                        Only {ap.assignedBy?.name ?? "the person who asked"} can change or cancel this.
+                      </p>
                     )}
                     {isDone && reopenAllowed && (
                       <button

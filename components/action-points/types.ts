@@ -9,11 +9,28 @@ export type APUser = { id: string; name: string | null; image: string | null };
 export type APStatus = "open" | "done" | "cancelled";
 export type APPriority = "routine" | "urgent";
 
+/** 'activity' = a visit follow-up, parented to an event. 'adhoc' = a free-standing task. */
+export type APSource = "activity" | "adhoc";
+
+export type APPlace = { id: string; name: string };
+
 export type ActionPoint = {
   id: string;
-  goalId: string;
-  pitstopId: string;
-  pitstopEventId: string;
+  source: APSource;
+
+  // All three are null on an ad-hoc task, which hangs off nothing.
+  goalId: string | null;
+  pitstopId: string | null;
+  pitstopEventId: string | null;
+
+  // Where the task applies, when it names no goal. Mirrors Goal's four levels.
+  needsSettlementId: string | null;
+  needsClusterId: string | null;
+  needsZoneId: string | null;
+  needsCityId: string | null;
+
+  // Who asked for it, as distinct from createdById. Null unless delegated.
+  assignedById: string | null;
 
   title: string;
   detail: string | null;
@@ -35,9 +52,14 @@ export type ActionPoint = {
   owner?: APUser;
   createdBy?: APUser;
   completedBy?: APUser | null;
-  pitstop?: { id: string; title: string; goalId?: string };
-  goal?: { id: string; title: string };
-  pitstopEvent?: { id: string; title: string; scheduledAt?: string; status?: string };
+  assignedBy?: APUser | null;
+  pitstop?: { id: string; title: string; goalId?: string } | null;
+  goal?: { id: string; title: string } | null;
+  pitstopEvent?: { id: string; title: string; scheduledAt?: string; status?: string } | null;
+  needsSettlement?: APPlace | null;
+  needsCluster?: APPlace | null;
+  needsZone?: APPlace | null;
+  needsCity?: APPlace | null;
 };
 
 /** Input shape for a single AP being created via the close-out modal. */
