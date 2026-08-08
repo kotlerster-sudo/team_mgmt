@@ -19,6 +19,7 @@ import { viewerForbidden } from "@/lib/roleGuard";
 import { buildRbacContext, scopeWhere, can } from "@/lib/rbac";
 import { getVisibleUserIds } from "@/lib/visibilityScope";
 import { auditLog } from "@/lib/auditLog";
+import { notifyTaskAssigned } from "@/lib/notify/taskNotify";
 
 const selectFull = {
   id: true,
@@ -323,6 +324,14 @@ export async function POST(req: NextRequest) {
       entityType: "ActionPoint", entityId: row.id, userId: actorId,
       action: "created", newValue: row.title,
     });
+    if (row.assignedById) {
+      notifyTaskAssigned({
+        ownerId: row.ownerId,
+        assignedById: row.assignedById,
+        title: row.title,
+        dueDate: row.dueDate,
+      }).catch(() => {});
+    }
   }
 
   return Response.json(created, { status: 201 });

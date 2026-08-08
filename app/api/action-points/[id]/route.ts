@@ -20,6 +20,7 @@ import { viewerForbidden } from "@/lib/roleGuard";
 import { buildRbacContext, scopeWhere, can } from "@/lib/rbac";
 import { getVisibleUserIds } from "@/lib/visibilityScope";
 import { auditLog, diffAudit, auditLogMany } from "@/lib/auditLog";
+import { notifyTaskAssigned } from "@/lib/notify/taskNotify";
 
 /** True when the actor merely holds the task rather than having asked for it. */
 function isDelegatedTo(
@@ -113,6 +114,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ownerId: data.ownerId,
     },
   ));
+
+  // Only on a hand-off. Editing the title of a task you already hold is not
+  // news; landing in someone else's list is.
+  if (updated.assignedById && updated.ownerId !== before.ownerId) {
+    notifyTaskAssigned({
+      ownerId: updated.ownerId,
+      assignedById: updated.assignedById,
+      title: updated.title,
+      dueDate: updated.dueDate,
+    }).catch(() => {});
+  }
 
   return Response.json(updated);
 }

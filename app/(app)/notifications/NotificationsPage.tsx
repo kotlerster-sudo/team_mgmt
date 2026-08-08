@@ -27,6 +27,8 @@ const typeLabel: Record<string, string> = {
   WeeklyPlanNudge: "Planning",
   EscalationAlert: "Escalation",
   BroadcastUpdate: "Update",
+  TaskAssigned: "Task",
+  CatalogItemDeployed: "Centre",
 };
 
 type FollowupState = "idle" | "loading" | "done" | "cancelled" | "rescheduling" | "rescheduled" | "no";

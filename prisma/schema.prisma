@@ -551,6 +551,8 @@ enum NotificationType {
   BudgetDraftShared
   BudgetDraftSubmitted
   BudgetDraftSentBack
+  TaskAssigned
+  CatalogItemDeployed
 }
 
 model Notification {

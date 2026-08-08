@@ -7,6 +7,7 @@ import { getVisibleUserIds } from "@/lib/visibilityScope";
 import { goalOwnedByAnyOf } from "@/lib/ownership";
 import { slugifyChecklistText } from "@/lib/templateDb";
 import { auditLog } from "@/lib/auditLog";
+import { notifyItemsDeployed } from "@/lib/notify/taskNotify";
 import type { CatalogCategory, CatalogItem, CentreCatalogOverrides } from "@/lib/catalogDb";
 
 /**
@@ -120,6 +121,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ goa
     entityType: "Goal", entityId: goalId, userId: ctx.userId,
     action: "catalog_items_deployed", field: "count", newValue: String(toAdd.length),
   });
+
+  notifyItemsDeployed({ goalId, deployedById: ctx.userId, count: toAdd.length }).catch(() => {});
 
   return Response.json({ ok: true, added: toAdd.length });
 }
