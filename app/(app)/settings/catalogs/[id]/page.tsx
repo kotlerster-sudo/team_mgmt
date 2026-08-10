@@ -12,6 +12,7 @@ import { slugifyChecklistText } from "@/lib/templateDb";
 import type { CatalogCategory, CatalogItem } from "@/lib/catalogDb";
 import { SurfaceProvider } from "@/components/rbac/RbacProviders";
 import { TemplatePicker } from "./TemplatePicker";
+import { PushToLiveCentres } from "./PushToLiveCentres";
 
 const COMPLETION_TYPES = [
   { value: "", label: "Checkbox" },
@@ -354,6 +355,7 @@ export default function CatalogEditorPage({ params }: { params: Promise<{ id: st
             </h1>
             {!isNew && cat.slug && <p className="text-xs text-stone-400 font-mono">{cat.slug}</p>}
           </div>
+          {!isNew && <PushToLiveCentres catalogId={id} disabled={isNew} />}
           <button
             onClick={handleSave}
             disabled={saving}

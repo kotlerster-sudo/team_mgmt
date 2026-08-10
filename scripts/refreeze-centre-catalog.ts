@@ -14,12 +14,8 @@
 import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 import { prisma } from "../lib/prisma";
-import {
-  normalizeCategories,
-  resolveEffectiveCatalog,
-  type CatalogCategory,
-  type CentreCatalogOverrides,
-} from "../lib/catalogDb";
+import { resolveEffectiveCatalog, type CatalogCategory, type CentreCatalogOverrides } from "../lib/catalogDb";
+import { computeRefreeze } from "../lib/operations/refreeze";
 
 const titleMatch = process.argv[2];
 const APPLY = process.argv.includes("--apply");
@@ -56,15 +52,12 @@ async function main() {
         : null);
     if (!def) { console.log(`SKIP "${g.title}": no active def for slug=${cc.catalogSlug} / domain=${g.needsDomain}`); continue; }
 
-    const newSnapshot = normalizeCategories(def.categories as unknown as CatalogCategory[]);
-    const snapKeys = new Set(newSnapshot.flatMap((c) => c.items.map((i) => i.key)));
-
-    // Prune addedItems that now duplicate a snapshot key (would render twice). Keep everything else.
-    const ov = { ...(cc.overrides as CentreCatalogOverrides) };
-    const beforeAdded = ov.addedItems ?? [];
-    const prunedAdded = beforeAdded.filter((a) => !snapKeys.has(a.item.key));
-    const removedDupes = beforeAdded.filter((a) => snapKeys.has(a.item.key));
-    if (ov.addedItems) ov.addedItems = prunedAdded;
+    const { snapshot: newSnapshot, overrides: ov, result } = computeRefreeze(
+      cc.snapshot,
+      cc.overrides,
+      def.categories as unknown as CatalogCategory[],
+    );
+    const prunedAdded = ov.addedItems ?? [];
 
     const before = resolveEffectiveCatalog(asCats(cc.snapshot), cc.overrides as CentreCatalogOverrides);
     const after = resolveEffectiveCatalog(newSnapshot, ov);
@@ -75,8 +68,8 @@ async function main() {
     menuLines(before).forEach((l) => console.log(l));
     console.log(" AFTER (effective menu):");
     menuLines(after).forEach((l) => console.log(l));
-    if (removedDupes.length)
-      console.log(` overrides.addedItems pruned (now in snapshot): ${removedDupes.map((a) => a.item.text).join(", ")}`);
+    if (result.prunedOverrides.length)
+      console.log(` overrides.addedItems pruned (now in snapshot): ${result.prunedOverrides.join(", ")}`);
     console.log(` overrides.addedItems kept: ${prunedAdded.length}  | hiddenKeys: ${(ov.hiddenKeys ?? []).length}  | edits: ${Object.keys(ov.edits ?? {}).length}`);
 
     if (APPLY) {
