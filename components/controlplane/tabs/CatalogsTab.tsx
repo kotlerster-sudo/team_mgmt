@@ -6,6 +6,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { EditableText, EditableSelect, EditableCheckbox, RowDelete, AddRow, ExpandChevron } from "@/components/controlplane/cells";
+import { CAREGIVER_PRACTICES_LAUNCHER_KEY } from "@/lib/caregiverPractices";
 
 type Ref = { templateSlug: string; checklistKey: string };
 type Item = { key?: string; text: string; completionType?: string; blocksSignoff?: boolean; ref?: Ref };
@@ -77,16 +78,20 @@ export default function CatalogsTab() {
                             <EditableText value={it.text} onSave={(v) => patch(c.id, (x) => { x.categories[gi].items[ii].text = v; })} />
                             <EditableSelect value={it.completionType ?? "Activity"} options={CT} onSave={(v) => patch(c.id, (x) => { x.categories[gi].items[ii].completionType = v ?? "Activity"; })} />
                             <EditableCheckbox value={it.blocksSignoff ?? true} onSave={(v) => patch(c.id, (x) => { x.categories[gi].items[ii].blocksSignoff = v; })} />
-                            <EditableSelect
-                              value={it.ref ? `${it.ref.templateSlug}::${it.ref.checklistKey}` : null}
-                              options={keyOpts}
-                              allowEmpty
-                              onSave={(v) => patch(c.id, (x) => {
-                                const item = x.categories[gi].items[ii];
-                                if (!v) delete item.ref;
-                                else { const [templateSlug, checklistKey] = v.split("::"); item.ref = { templateSlug, checklistKey }; }
-                              })}
-                            />
+                            {it.key === CAREGIVER_PRACTICES_LAUNCHER_KEY ? (
+                              <span className="text-[11px] text-teal-700 bg-teal-50 border border-teal-200 rounded-md px-2 py-1 truncate" title="This item opens the Caregiver Practices drill (managed in the Caregiver practices tab)">→ Caregiver Practices</span>
+                            ) : (
+                              <EditableSelect
+                                value={it.ref ? `${it.ref.templateSlug}::${it.ref.checklistKey}` : null}
+                                options={keyOpts}
+                                allowEmpty
+                                onSave={(v) => patch(c.id, (x) => {
+                                  const item = x.categories[gi].items[ii];
+                                  if (!v) delete item.ref;
+                                  else { const [templateSlug, checklistKey] = v.split("::"); item.ref = { templateSlug, checklistKey }; }
+                                })}
+                              />
+                            )}
                             <RowDelete onDelete={() => patch(c.id, (x) => { x.categories[gi].items.splice(ii, 1); })} />
                           </div>
                         ))}
