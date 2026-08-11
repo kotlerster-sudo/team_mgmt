@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { isAdminUser } from "@/lib/roleGuard";
 import { normalizeCategories, type CatalogCategory } from "@/lib/catalogDb";
+import { syncCatalogDefs } from "@/lib/controlplane/sync";
 
 export async function GET(
   _req: NextRequest,
@@ -31,17 +32,25 @@ export async function PUT(
 
     if (!name) return Response.json({ error: "name is required" }, { status: 400 });
 
+    const normalized = normalizeCategories((categories ?? []) as CatalogCategory[]);
     await prisma.catalogTemplateDef.update({
       where: { id },
       data: {
         name,
         needsDomain: needsDomain ?? null,
-        categories: normalizeCategories((categories ?? []) as CatalogCategory[]) as object[],
+        categories: normalized as object[],
         defaultCadenceCount: defaultCadenceCount ?? null,
         defaultCadencePeriod: defaultCadencePeriod ?? null,
         isActive: isActive ?? true,
       },
     });
+
+    // Dual-write: mirror categories into the relational config-graph tables (P2). Non-blocking.
+    try {
+      await syncCatalogDefs(id, normalized);
+    } catch (syncErr) {
+      console.error("[admin/catalogs PUT] control-plane dual-write failed:", syncErr);
+    }
 
     return Response.json({ ok: true });
   } catch (e) {

@@ -2,6 +2,8 @@ import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { isAdminUser } from "@/lib/roleGuard";
+import { syncTemplateDefs } from "@/lib/controlplane/sync";
+import type { DbPitstop } from "@/lib/templateDb";
 
 export async function GET(
   _req: NextRequest,
@@ -54,6 +56,14 @@ export async function PUT(
         "updatedAt" = NOW()
       WHERE id = ${id}
     `;
+
+    // Dual-write: mirror pitstops JSON into the relational config-graph tables (P2). Non-blocking —
+    // a sync failure never fails the save; drift is recoverable via scripts/backfill-control-plane-defs.
+    try {
+      await syncTemplateDefs(id, (pitstops ?? []) as DbPitstop[]);
+    } catch (syncErr) {
+      console.error("[admin/templates PUT] control-plane dual-write failed:", syncErr);
+    }
 
     return Response.json({ ok: true });
   } catch (e) {

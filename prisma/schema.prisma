@@ -1015,8 +1015,10 @@ model ActivityIndicatorBinding {
   catalogItemDefId String?
 
   def            FacilityIndicatorDef  @relation(fields: [defId], references: [id], onDelete: Cascade)
-  checklistDef   TemplateChecklistDef? @relation(fields: [checklistDefId], references: [id], onDelete: Cascade)
-  catalogItemDef CatalogItemDef?       @relation(fields: [catalogItemDefId], references: [id], onDelete: Cascade)
+  // SetNull, not Cascade: if a checklist/catalog item is deleted, the binding SURVIVES and shows as
+  // broken (re-pointable in the graph) rather than being silently destroyed.
+  checklistDef   TemplateChecklistDef? @relation(fields: [checklistDefId], references: [id], onDelete: SetNull)
+  catalogItemDef CatalogItemDef?       @relation(fields: [catalogItemDefId], references: [id], onDelete: SetNull)
 
   @@unique([defId, templateSlug, checklistKey])
   @@index([templateSlug, checklistKey])

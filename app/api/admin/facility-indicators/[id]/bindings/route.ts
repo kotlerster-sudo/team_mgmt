@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { isAdminUser } from "@/lib/roleGuard";
 import { randomUUID } from "crypto";
+import { resolveBindingAnchor } from "@/lib/controlplane/sync";
 
 type BindingRow = {
   id: string;
@@ -59,6 +60,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return Response.json({ error: "This checklist item is already bound to this indicator" }, { status: 409 });
     }
     return Response.json({ error: msg }, { status: 500 });
+  }
+
+  // Dual-write: set the FK-clean anchor (template checklist def or catalog-native item). Non-blocking.
+  try {
+    const anchor = await resolveBindingAnchor(templateSlug, checklistKey);
+    await prisma.activityIndicatorBinding.update({ where: { id: bindingId }, data: anchor });
+  } catch (anchorErr) {
+    console.error("[admin/bindings POST] anchor resolve failed:", anchorErr);
   }
 
   return Response.json({ id: bindingId, defId: id, templateSlug, checklistKey, numericField }, { status: 201 });
