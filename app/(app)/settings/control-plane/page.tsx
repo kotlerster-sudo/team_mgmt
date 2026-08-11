@@ -11,11 +11,13 @@ import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { SurfaceProvider } from "@/components/rbac/RbacProviders";
 import GraphTab from "@/components/controlplane/tabs/GraphTab";
+import IndicatorsTab from "@/components/controlplane/tabs/IndicatorsTab";
 import CaregiverPracticesTab from "@/components/controlplane/tabs/CaregiverPracticesTab";
 import FacilityLayersTab from "@/components/controlplane/tabs/FacilityLayersTab";
 import LabelsTab from "@/components/controlplane/tabs/LabelsTab";
 
 const TABS: { key: string; label: string; Component: ComponentType }[] = [
+  { key: "indicators", label: "Indicators", Component: IndicatorsTab },
   { key: "caregiver", label: "Caregiver practices", Component: CaregiverPracticesTab },
   { key: "layers", label: "Facility layers", Component: FacilityLayersTab },
   { key: "labels", label: "Labels", Component: LabelsTab },
