@@ -7,13 +7,20 @@ export type CpNodeKind =
   | "checklist"
   | "catalogItem"
   | "indicator"
-  | "journeyOutcome";
+  | "journeyOutcome"
+  | "domain" // programme domain (Creche, ChildrenCentre…) — the organizing hub
+  | "facilityLayer"; // facility layer type (creches, children_centres…) — the bridge to the geography canvas
 
 export type CpEdgeKind =
   | "templateChecklist" // template → its checklist item (structural)
   | "catalogRef" // catalog item → the template checklist it tags
   | "indicatorBinding" // checklist item → facility indicator (ActivityIndicatorBinding)
-  | "outcomeBinding"; // checklist item → programme-journey outcome
+  | "outcomeBinding" // checklist item → programme-journey outcome
+  | "templateDomain" // template → its programme domain
+  | "indicatorDomain" // indicator → its programme domain
+  | "templateLayer" // template → the facility layer it targets (linkedFacilityLayerKey)
+  | "indicatorLayer" // indicator → the facility layer it measures (facilityLayerKey)
+  | "layerDomain"; // facility layer → its programme domain
 
 export type CpNode = {
   id: string;

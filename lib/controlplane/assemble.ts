@@ -11,16 +11,18 @@ const ckNodeId = (id: string) => `ck:${id}`;
 const catNodeId = (id: string) => `cat:${id}`;
 const indNodeId = (id: string) => `ind:${id}`;
 const outNodeId = (id: string) => `out:${id}`;
+const domNodeId = (d: string) => `dom:${d}`;
+const flcNodeId = (k: string) => `flc:${k}`;
 
 export async function assembleControlPlaneGraph(
   domainFilter?: string | null,
   opts: { connectedOnly?: boolean } = {},
 ): Promise<CpGraph> {
-  const [templates, catalogs, indicators, bindings, outcomes] = await Promise.all([
+  const [templates, catalogs, indicators, bindings, outcomes, layers] = await Promise.all([
     prisma.goalTemplateDef.findMany({
       where: { isActive: true },
       select: {
-        id: true, name: true, slug: true, needsDomain: true,
+        id: true, name: true, slug: true, needsDomain: true, linkedFacilityLayerKey: true,
         pitstopDefs: { orderBy: { order: "asc" }, select: { title: true, checklist: { orderBy: { order: "asc" }, select: { id: true, text: true } } } },
       },
       orderBy: { name: "asc" },
@@ -32,12 +34,13 @@ export async function assembleControlPlaneGraph(
         categoryDefs: { orderBy: { order: "asc" }, select: { label: true, items: { orderBy: { order: "asc" }, select: { id: true, text: true, checklistDefId: true } } } },
       },
     }),
-    prisma.facilityIndicatorDef.findMany({ where: { isActive: true }, select: { id: true, key: true, label: true, domain: true } }),
+    prisma.facilityIndicatorDef.findMany({ where: { isActive: true }, select: { id: true, key: true, label: true, domain: true, facilityLayerKey: true } }),
     prisma.activityIndicatorBinding.findMany({ select: { id: true, defId: true, checklistDefId: true, catalogItemDefId: true, templateSlug: true, checklistKey: true } }),
     prisma.programmeJourneyOutcome.findMany({
       where: { isActive: true, OR: [{ bindingChecklistDefId: { not: null } }, { bindingCatalogItemDefId: { not: null } }] },
       select: { id: true, label: true, journeyId: true, bindingChecklistDefId: true, bindingCatalogItemDefId: true, journey: { select: { primaryDomain: true } } },
     }),
+    prisma.facilityLayerConfig.findMany({ where: { isActive: true }, select: { layerKey: true, label: true, needsDomain: true } }),
   ]);
 
   const nodes = new Map<string, CpNode>();
@@ -87,6 +90,37 @@ export async function assembleControlPlaneGraph(
     put({ id: outNodeId(o.id), kind: "journeyOutcome", label: o.label, sublabel: "journey outcome", domain: o.journey?.primaryDomain ?? null, href: `/programmes/${o.journeyId}` });
     const from = o.bindingChecklistDefId ? ckNodeId(o.bindingChecklistDefId) : o.bindingCatalogItemDefId ? catNodeId(o.bindingCatalogItemDefId) : null;
     if (from) edges.push({ id: `e:outbind:${o.id}`, from, to: outNodeId(o.id), kind: "outcomeBinding" });
+  }
+
+  // Bridge layer: domain hubs + facility-layer nodes (the link to the geography canvas). Domains
+  // organize templates/indicators/layers; facility layers are the types LayerFeatures instantiate
+  // on the map.
+  const layerByKey = new Map(layers.map((l) => [l.layerKey, l]));
+  const ensureDomain = (d: string | null | undefined) => {
+    if (!d) return null;
+    const id = domNodeId(d);
+    put({ id, kind: "domain", label: d, sublabel: "programme domain", domain: d });
+    return id;
+  };
+  const ensureLayer = (key: string | null | undefined) => {
+    if (!key) return null;
+    const cfg = layerByKey.get(key);
+    const id = flcNodeId(key);
+    put({ id, kind: "facilityLayer", label: cfg?.label ?? key, sublabel: `facility layer · ${key}`, domain: cfg?.needsDomain ?? null, href: `/settings/geo` });
+    if (cfg?.needsDomain) { const d = ensureDomain(cfg.needsDomain); if (d) edges.push({ id: `e:ld:${key}`, from: id, to: d, kind: "layerDomain" }); }
+    return id;
+  };
+  for (const t of templates) {
+    const d = ensureDomain(t.needsDomain);
+    if (d) edges.push({ id: `e:td:${t.id}`, from: tplNodeId(t.id), to: d, kind: "templateDomain" });
+    const l = ensureLayer(t.linkedFacilityLayerKey);
+    if (l) edges.push({ id: `e:tl:${t.id}`, from: tplNodeId(t.id), to: l, kind: "templateLayer" });
+  }
+  for (const ind of indicators) {
+    const d = ensureDomain(ind.domain);
+    if (d) edges.push({ id: `e:id:${ind.id}`, from: indNodeId(ind.id), to: d, kind: "indicatorDomain" });
+    const l = ensureLayer(ind.facilityLayerKey);
+    if (l) edges.push({ id: `e:il:${ind.id}`, from: indNodeId(ind.id), to: l, kind: "indicatorLayer" });
   }
 
   let outNodes = [...nodes.values()];

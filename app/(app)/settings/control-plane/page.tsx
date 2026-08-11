@@ -19,6 +19,8 @@ const KIND_STYLE: Record<CpNodeKind, NodeStyle & { label: string }> = {
   catalogItem: { bg: "#e0f2fe", border: "#7dd3fc", label: "Catalog item" },
   indicator: { bg: "#dcfce7", border: "#86efac", label: "Facility indicator" },
   journeyOutcome: { bg: "#e0e7ff", border: "#a5b4fc", label: "Journey outcome" },
+  domain: { bg: "#e2e8f0", border: "#475569", label: "Programme domain" },
+  facilityLayer: { bg: "#ccfbf1", border: "#5eead4", label: "Facility layer (geography)" },
 };
 
 export default function ControlPlanePage() {
