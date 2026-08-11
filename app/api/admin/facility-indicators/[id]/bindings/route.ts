@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { isAdminUser } from "@/lib/roleGuard";
 import { randomUUID } from "crypto";
 import { resolveBindingAnchor } from "@/lib/controlplane/sync";
+import { isValidChecklistKey } from "@/lib/controlplane/keys";
 
 type BindingRow = {
   id: string;
@@ -44,6 +45,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   if (!templateSlug || !checklistKey) {
     return Response.json({ error: "templateSlug and checklistKey required" }, { status: 400 });
+  }
+
+  // Integrity: reject a binding on a key that exists in no template and no catalog — it would be a
+  // silent orphan (never fires at runtime, shows broken in the control-plane graph).
+  if (!(await isValidChecklistKey(templateSlug, checklistKey))) {
+    return Response.json({ error: `No checklist item "${checklistKey}" in template "${templateSlug}" (or any catalog). Fix the key first.` }, { status: 400 });
   }
 
   const bindingId = randomUUID();
