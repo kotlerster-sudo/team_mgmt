@@ -29,6 +29,8 @@ export default function ControlPlanePage() {
   const [graph, setGraph] = useState<CpGraph | null>(null);
   const [domain, setDomain] = useState<string>("");
   const [connectedOnly, setConnectedOnly] = useState(true);
+  const [editMode, setEditMode] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<CpNode | null>(null);
 
@@ -47,6 +49,32 @@ export default function ControlPlanePage() {
   useEffect(() => { if (session && !isAdmin) router.replace("/settings"); }, [session, isAdmin, router]);
 
   const nodeById = useMemo(() => new Map((graph?.nodes ?? []).map((n) => [n.id, n])), [graph]);
+
+  const onConnect = useCallback(async (a: string, b: string) => {
+    const na = nodeById.get(a); const nb = nodeById.get(b);
+    if (!na || !nb) return;
+    const ind = [na, nb].find((n) => n.kind === "indicator");
+    const anchor = [na, nb].find((n) => n.kind === "checklist" || n.kind === "catalogItem");
+    if (!ind || !anchor) { setMsg({ ok: false, text: "Connect a checklist or catalog item to an indicator." }); return; }
+    const res = await fetch("/api/admin/control-plane/binding", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ indicatorDefId: ind.id.replace(/^ind:/, ""), anchorNodeId: anchor.id }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setMsg(res.ok ? { ok: true, text: `Bound "${anchor.label}" → ${ind.label}` } : { ok: false, text: data.error ?? "Failed to bind" });
+    await load();
+  }, [nodeById, load]);
+
+  const onDeleteEdge = useCallback(async (edgeId: string) => {
+    if (!edgeId.startsWith("e:bind:")) { setMsg({ ok: false, text: "Only indicator bindings can be removed here." }); return; }
+    if (!confirm("Remove this indicator binding?")) return;
+    await fetch("/api/admin/control-plane/binding", {
+      method: "DELETE", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bindingId: edgeId.slice("e:bind:".length) }),
+    });
+    setMsg({ ok: true, text: "Binding removed" });
+    await load();
+  }, [load]);
 
   if (!isAdmin) return null;
 
@@ -73,6 +101,12 @@ export default function ControlPlanePage() {
             <input type="checkbox" checked={connectedOnly} onChange={(e) => setConnectedOnly(e.target.checked)} className="accent-stone-700" />
             Connected only
           </label>
+          <button
+            onClick={() => { setEditMode((v) => !v); setMsg(null); }}
+            className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${editMode ? "bg-stone-900 text-white border-stone-900" : "text-stone-600 border-stone-200 hover:bg-stone-50"}`}
+          >
+            {editMode ? "Editing" : "Edit"}
+          </button>
           <select value={domain} onChange={(e) => setDomain(e.target.value)} className="px-2.5 py-1.5 text-sm border border-stone-200 rounded-lg bg-white">
             <option value="">All domains</option>
             {(graph?.domains ?? []).map((d) => <option key={d} value={d}>{d}</option>)}
@@ -80,6 +114,16 @@ export default function ControlPlanePage() {
           <button onClick={load} className="p-2 border border-stone-200 rounded-lg hover:bg-stone-50" title="Refresh"><RefreshCw className={`w-4 h-4 text-stone-500 ${loading ? "animate-spin" : ""}`} /></button>
         </div>
 
+        {editMode && (
+          <div className="mb-2 px-4 py-2 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+            Editing on — drag from a checklist/catalog item&apos;s right handle onto an indicator to bind it; click a binding edge to remove it. Structural edges can&apos;t be changed here.
+          </div>
+        )}
+        {msg && (
+          <div className={`mb-2 px-4 py-2 rounded-xl text-sm border ${msg.ok ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-red-50 border-red-200 text-red-700"}`}>
+            {msg.text}
+          </div>
+        )}
         {graph && graph.brokenCount > 0 && (
           <div className="mb-3 flex items-center gap-2 px-4 py-2.5 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
             <AlertTriangle className="w-4 h-4 shrink-0" />
@@ -105,8 +149,10 @@ export default function ControlPlanePage() {
             nodeStyle={(n) => KIND_STYLE[n.kind as CpNodeKind] ?? { bg: "#fafaf9", border: "#d6d3d1" }}
             onSelectNode={(id) => setSelected(nodeById.get(id) ?? null)}
             selectedId={selected?.id}
+            onConnect={editMode ? onConnect : undefined}
+            onDeleteEdge={editMode ? onDeleteEdge : undefined}
             minHeight={520}
-            hint="Read-only · click a node to inspect · editing arrives in the next phase"
+            hint={editMode ? "Drag a checklist/catalog handle onto an indicator to bind · click a binding edge to remove" : "Click a node to inspect · toggle Edit to wire bindings"}
           />
 
           {/* Inspector */}

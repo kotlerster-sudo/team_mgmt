@@ -2146,6 +2146,11 @@ model CatalogItemDef {
   // Real FK replacing CatalogItem.ref.(templateSlug, checklistKey). Null = catalog-native/free-text
   // item (its own concept). Set = this item TAGS an existing template checklist item.
   checklistDefId String?
+  // The (templateSlug, checklistKey) this item MATERIALISES on a visit (from CatalogItem.ref). Kept
+  // even when checklistDefId is null (catalog-native), so a binding created against this item can set
+  // the legacy string keys that runtime capture still reads. Null = free-text item with no ref.
+  refTemplateSlug String?
+  refChecklistKey String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

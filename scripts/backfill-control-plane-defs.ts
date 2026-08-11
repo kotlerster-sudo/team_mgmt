@@ -101,12 +101,14 @@ async function main() {
         const it = items[ii];
         const itemKey = k(it.key, it.text);
         const checklistDefId = it.ref ? checklistByKey.get(`${it.ref.templateSlug}::${it.ref.checklistKey}`) ?? null : null;
+        const refTemplateSlug = it.ref?.templateSlug ?? null;
+        const refChecklistKey = it.ref?.checklistKey ?? null;
         let itemId = `${categoryDefId}:${itemKey}`;
         if (APPLY) {
           const row = await prisma.catalogItemDef.upsert({
             where: { categoryDefId_key: { categoryDefId, key: itemKey } },
-            create: { categoryDefId, key: itemKey, order: ii, text: it.text, completionType: it.completionType ?? "Activity", blocksSignoff: it.blocksSignoff ?? true, checklistDefId },
-            update: { order: ii, text: it.text, completionType: it.completionType ?? "Activity", blocksSignoff: it.blocksSignoff ?? true, checklistDefId },
+            create: { categoryDefId, key: itemKey, order: ii, text: it.text, completionType: it.completionType ?? "Activity", blocksSignoff: it.blocksSignoff ?? true, checklistDefId, refTemplateSlug, refChecklistKey },
+            update: { order: ii, text: it.text, completionType: it.completionType ?? "Activity", blocksSignoff: it.blocksSignoff ?? true, checklistDefId, refTemplateSlug, refChecklistKey },
             select: { id: true },
           });
           itemId = row.id;
