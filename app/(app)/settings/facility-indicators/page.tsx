@@ -382,6 +382,16 @@ function IndicatorForm({
   const formula = draft.targetFormula;
   const formulaType = formula?.type ?? "none";
 
+  // Editable capture-source labels (de-hardcoded via EnumLabelConfig; fallback to built-ins).
+  const [sourceLabels, setSourceLabels] = useState<Record<string, string>>({});
+  useEffect(() => {
+    fetch("/api/enum-labels?enumKey=FacilityIndicatorSource")
+      .then((r) => r.json())
+      .then((rows: { code: string; label: string }[]) => setSourceLabels(Object.fromEntries((rows ?? []).map((r) => [r.code, r.label]))))
+      .catch(() => {});
+  }, []);
+  const sourceLabel = (s: string) => sourceLabels[s] ?? (s === "MIS_API" ? "MIS API" : s === "RP_ACTIVITY" ? "RP Activity" : "Manual Admin");
+
   const setFormulaType = (t: string) => {
     if (t === "none") setDraft({ ...draft, targetFormula: null });
     else if (t === "fixed") setDraft({ ...draft, targetFormula: { type: "fixed", value: 0 } });
@@ -575,7 +585,7 @@ function IndicatorForm({
               {s === "MIS_API" && <Cloud className="w-3 h-3" />}
               {s === "RP_ACTIVITY" && <Activity className="w-3 h-3" />}
               {s === "MANUAL_ADMIN" && <User className="w-3 h-3" />}
-              {s === "MIS_API" ? "MIS API" : s === "RP_ACTIVITY" ? "RP Activity" : "Manual Admin"}
+              {sourceLabel(s)}
             </button>
           ))}
         </div>
