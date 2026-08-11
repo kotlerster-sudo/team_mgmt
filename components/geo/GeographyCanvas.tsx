@@ -32,6 +32,16 @@ export type GeoSettlement = { id: string; name: string; polygon: unknown };
 type FC = GeoJSON.FeatureCollection;
 const emptyFC = (): FC => ({ type: "FeatureCollection", features: [] });
 
+// First ring of a (Multi)Polygon as [lng,lat][] with the closing duplicate dropped.
+function firstRing(polygon: unknown): number[][] {
+  const coords = (polygon as { coordinates?: number[][][] } | null)?.coordinates?.[0];
+  if (!Array.isArray(coords) || coords.length < 4) return [];
+  const ring = coords.map((c) => [c[0], c[1]]);
+  const a = ring[0], b = ring[ring.length - 1];
+  if (a && b && a[0] === b[0] && a[1] === b[1]) ring.pop();
+  return ring;
+}
+
 export default function GeographyCanvas({
   city,
   editable,
@@ -45,6 +55,7 @@ export default function GeographyCanvas({
   onSelectSettlement,
   onMoveFacility,
   onDrawnPolygon,
+  onPolygonEdited,
 }: {
   city: string;
   editable: boolean;
@@ -58,14 +69,16 @@ export default function GeographyCanvas({
   onSelectSettlement: (id: string) => void;
   onMoveFacility: (id: string, lat: number, lng: number) => void;
   onDrawnPolygon: (ring: number[][]) => void;
+  onPolygonEdited: (id: string, polygon: unknown) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const loadedRef = useRef(false);
   // Latest props for use inside stable map event handlers.
-  const stateRef = useRef({ editable, drawMode, facilities, onSelectFacility, onSelectSettlement, onMoveFacility, onDrawnPolygon });
-  stateRef.current = { editable, drawMode, facilities, onSelectFacility, onSelectSettlement, onMoveFacility, onDrawnPolygon };
+  const stateRef = useRef({ editable, drawMode, selectedId, facilities, settlements, onSelectFacility, onSelectSettlement, onMoveFacility, onDrawnPolygon, onPolygonEdited });
+  stateRef.current = { editable, drawMode, selectedId, facilities, settlements, onSelectFacility, onSelectSettlement, onMoveFacility, onDrawnPolygon, onPolygonEdited };
   const draftRef = useRef<number[][]>([]);
+  const editRingRef = useRef<number[][]>([]); // vertices of the selected settlement being edited
 
   const facilitiesFC = (list: GeoFacility[]): FC => ({
     type: "FeatureCollection",
@@ -102,6 +115,9 @@ export default function GeographyCanvas({
       map.addSource("draft", { type: "geojson", data: emptyFC() });
       map.addLayer({ id: "draft-fill", type: "fill", source: "draft", paint: { "fill-color": "#10b981", "fill-opacity": 0.25 } });
       map.addLayer({ id: "draft-line", type: "line", source: "draft", paint: { "line-color": "#059669", "line-width": 2, "line-dasharray": [2, 1] } });
+      // Editable polygon vertices for the selected settlement.
+      map.addSource("verts", { type: "geojson", data: emptyFC() });
+      map.addLayer({ id: "verts-pts", type: "circle", source: "verts", paint: { "circle-radius": 5, "circle-color": "#059669", "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
       // Facilities (editable points)
       map.addSource("facilities", { type: "geojson", data: facilitiesFC(facilities) });
       map.addLayer({ id: "facilities-pts", type: "circle", source: "facilities", paint: { "circle-radius": 6, "circle-color": ["case", ["==", ["get", "id"], selectedId ?? ""], "#0ea5e9", "#7c3aed"], "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
@@ -146,6 +162,33 @@ export default function GeographyCanvas({
       });
       map.on("mouseenter", "facilities-pts", () => { if (stateRef.current.editable) map.getCanvas().style.cursor = "grab"; });
       map.on("mouseleave", "facilities-pts", () => { map.getCanvas().style.cursor = ""; });
+
+      // Drag a settlement polygon vertex.
+      const vertsPoints = (ring: number[][]): FC => ({ type: "FeatureCollection", features: ring.map((c, idx) => ({ type: "Feature", geometry: { type: "Point", coordinates: c }, properties: { idx } })) });
+      map.on("mousedown", "verts-pts", (e) => {
+        const s = stateRef.current;
+        if (!s.editable || s.drawMode) return;
+        e.preventDefault();
+        const idx = Number(e.features?.[0]?.properties?.idx);
+        const ring = editRingRef.current;
+        const settId = s.selectedId;
+        if (!ring[idx] || !settId) return;
+        map.getCanvas().style.cursor = "grabbing";
+        const onMove = (ev: maplibregl.MapMouseEvent) => {
+          ring[idx] = [ev.lngLat.lng, ev.lngLat.lat];
+          (map.getSource("verts") as maplibregl.GeoJSONSource).setData(vertsPoints(ring));
+          const closed = [...ring, ring[0]];
+          const cur = stateRef.current.settlements.map((x) => (x.id === settId ? { ...x, polygon: { type: "Polygon", coordinates: [closed] } } : x));
+          (map.getSource("settlements") as maplibregl.GeoJSONSource).setData(settlementsFC(cur));
+        };
+        map.on("mousemove", onMove);
+        map.once("mouseup", () => {
+          map.off("mousemove", onMove);
+          map.getCanvas().style.cursor = "";
+          s.onPolygonEdited(settId, { type: "Polygon", coordinates: [[...ring, ring[0]]] });
+        });
+      });
+      map.on("mouseenter", "verts-pts", () => { if (stateRef.current.editable) map.getCanvas().style.cursor = "grab"; });
     });
 
     return () => { map.remove(); mapRef.current = null; loadedRef.current = false; };
@@ -168,6 +211,16 @@ export default function GeographyCanvas({
     if (map.getLayer("facilities-pts")) map.setPaintProperty("facilities-pts", "circle-color", ["case", ["==", ["get", "id"], selectedId ?? ""], "#0ea5e9", "#7c3aed"]);
     if (map.getLayer("settlements-fill")) map.setPaintProperty("settlements-fill", "fill-opacity", ["case", ["==", ["get", "id"], selectedId ?? ""], 0.35, 0.12]);
   }, [selectedId]);
+
+  // Populate editable vertices for the selected settlement (edit mode, not drawing).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loadedRef.current || !map.getSource("verts")) return;
+    const sel = settlements.find((s) => s.id === selectedId);
+    const ring = editable && !drawMode && sel?.polygon ? firstRing(sel.polygon) : [];
+    editRingRef.current = ring;
+    (map.getSource("verts") as maplibregl.GeoJSONSource).setData({ type: "FeatureCollection", features: ring.map((c, idx) => ({ type: "Feature", geometry: { type: "Point", coordinates: c }, properties: { idx } })) });
+  }, [selectedId, settlements, editable, drawMode]);
 
   // Finish/clear draft when leaving draw mode: emit the ring if it's a valid polygon.
   useEffect(() => {

@@ -62,6 +62,12 @@ export default function GeographyCanvasPage() {
     setMsg("Saved new boundary");
   }, [selected]);
 
+  const onPolygonEdited = useCallback(async (id: string, polygon: unknown) => {
+    setSettlements((prev) => prev.map((s) => (s.id === id ? { ...s, polygon } : s)));
+    await fetch(`/api/admin/settlements/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ polygon }) });
+    setMsg("Boundary updated");
+  }, []);
+
   const saveFacility = useCallback(async (id: string, data: Partial<{ name: string; settlementId: string | null }>) => {
     setFacilities((prev) => prev.map((f) => (f.id === id ? { ...f, ...data } as GeoFacility : f)));
     await fetch(`/api/admin/layer-features/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
@@ -138,6 +144,7 @@ export default function GeographyCanvasPage() {
               onSelectSettlement={(id) => setSelected({ kind: "settlement", id })}
               onMoveFacility={onMoveFacility}
               onDrawnPolygon={onDrawnPolygon}
+              onPolygonEdited={onPolygonEdited}
             />
           </div>
 
@@ -166,6 +173,7 @@ export default function GeographyCanvasPage() {
                   </button>
                 ) : <p className="text-[11px] text-stone-400">Turn on Edit to redraw the boundary.</p>}
                 {drawMode && <p className="text-[11px] text-emerald-700">Click on the map to place boundary points, then click “Finish drawing”.</p>}
+                {editable && !drawMode && selSet.polygon != null && <p className="text-[11px] text-stone-400">Drag the green vertices on the map to fine-tune the boundary.</p>}
               </div>
             ) : (
               <p className="text-xs text-stone-400">Select a facility or settlement — from the list or the map — to edit it.</p>
