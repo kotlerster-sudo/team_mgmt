@@ -2,6 +2,8 @@ import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { isAdminUser } from "@/lib/roleGuard";
+import { syncTemplateDefs } from "@/lib/controlplane/sync";
+import type { DbPitstop } from "@/lib/templateDb";
 
 export async function GET() {
   const session = await auth();
@@ -53,6 +55,13 @@ export async function POST(req: NextRequest) {
       },
       select: { id: true },
     });
+
+    // Dual-write the relational config-graph tables (critical: reads may be on relational).
+    try {
+      await syncTemplateDefs(created.id, (pitstops ?? []) as DbPitstop[]);
+    } catch (syncErr) {
+      console.error("[admin/templates POST] control-plane dual-write failed:", syncErr);
+    }
 
     return Response.json({ id: created.id }, { status: 201 });
   } catch (e) {

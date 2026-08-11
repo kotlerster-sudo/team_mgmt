@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { isAdminUser } from "@/lib/roleGuard";
 import { normalizeCategories, type CatalogCategory } from "@/lib/catalogDb";
+import { syncCatalogDefs } from "@/lib/controlplane/sync";
 
 // Domain-default visit catalogs (CatalogTemplateDef). Authored in /settings/catalogs.
 
@@ -33,18 +34,26 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: "A catalog with this slug already exists" }, { status: 409 });
     }
 
+    const normalized = normalizeCategories((categories ?? []) as CatalogCategory[]);
     const created = await prisma.catalogTemplateDef.create({
       data: {
         slug,
         name,
         needsDomain: needsDomain ?? null,
-        categories: normalizeCategories((categories ?? []) as CatalogCategory[]) as object[],
+        categories: normalized as object[],
         defaultCadenceCount: defaultCadenceCount ?? null,
         defaultCadencePeriod: defaultCadencePeriod ?? null,
         isActive: true,
       },
       select: { id: true },
     });
+
+    // Dual-write the relational config-graph tables (critical: reads may be on relational).
+    try {
+      await syncCatalogDefs(created.id, normalized);
+    } catch (syncErr) {
+      console.error("[admin/catalogs POST] control-plane dual-write failed:", syncErr);
+    }
 
     return Response.json({ id: created.id }, { status: 201 });
   } catch (e) {

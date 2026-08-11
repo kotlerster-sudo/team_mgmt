@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { isAdminUser } from "@/lib/roleGuard";
 import { slugifyChecklistText, normalizeActivities, type DbPitstop, type DbChecklistItem } from "@/lib/templateDb";
+import { syncTemplateDefs } from "@/lib/controlplane/sync";
 
 // Powers the catalog editor's "tag from template" picker + "add new activity" flow.
 //
@@ -92,6 +93,13 @@ export async function POST(req: NextRequest) {
     where: { id: def.id },
     data: { pitstops: pitstops as unknown as object[] },
   });
+
+  // Dual-write the relational config-graph tables (critical: reads may be on relational).
+  try {
+    await syncTemplateDefs(def.id, pitstops);
+  } catch (syncErr) {
+    console.error("[admin/template-items POST] control-plane dual-write failed:", syncErr);
+  }
 
   return Response.json({ templateSlug, checklistKey, text, completionType });
 }
