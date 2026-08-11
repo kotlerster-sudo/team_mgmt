@@ -7,6 +7,7 @@
 
 import prisma from "@/lib/prisma";
 import { normalizeCategories, type CatalogCategory } from "@/lib/catalogDb";
+import { RELATIONAL_READS, catalogCategoriesFromRelational } from "@/lib/controlplane/read";
 import { OPERATIONS_PITSTOP_TITLE } from "./anchor";
 
 export type GoLiveResult = {
@@ -48,7 +49,8 @@ export async function setCentreLive(goalId: string): Promise<GoLiveResult> {
       })
     : null;
 
-  const snapshot = normalizeCategories((def?.categories ?? []) as unknown as CatalogCategory[]);
+  const rawCategories = RELATIONAL_READS && def ? await catalogCategoriesFromRelational(def.id) : ((def?.categories ?? []) as unknown as CatalogCategory[]);
+  const snapshot = normalizeCategories(rawCategories);
   const catalogSlug = def?.slug ?? goal.centreCatalog?.catalogSlug ?? null;
 
   // 2. Ensure the dedicated recurring "Operations" pitstop exists to anchor visits. NOTE: we match

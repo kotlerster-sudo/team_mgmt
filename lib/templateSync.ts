@@ -24,6 +24,7 @@ import { slugifyChecklistText, normalizeActivities } from "./templateDb";
 import { snapToWeekday, addDaysUTC, dayDeltaUTC, scheduleActivitiesInWindow } from "./scheduleActivities";
 import { auditLog } from "./auditLog";
 import { sendPushToUsers } from "./push";
+import { RELATIONAL_READS, templatePitstopsFromRelational } from "./controlplane/read";
 
 // ── Public types ────────────────────────────────────────────────────────────
 
@@ -671,6 +672,9 @@ async function loadTemplate(templateId: string): Promise<DbTemplate | null> {
     where: { id: templateId },
   });
   if (!row) return null;
+  const pitstops = RELATIONAL_READS
+    ? ((await templatePitstopsFromRelational(row.id)) as unknown as DbTemplate["pitstops"])
+    : ((row.pitstops as unknown as DbTemplate["pitstops"]) ?? []);
   return {
     id: row.id,
     slug: row.slug,
@@ -682,7 +686,7 @@ async function loadTemplate(templateId: string): Promise<DbTemplate | null> {
     linkedFacilityLayerKey: row.linkedFacilityLayerKey,
     sortOrder: row.sortOrder,
     parameters: (row.parameters as unknown as DbTemplate["parameters"]) ?? [],
-    pitstops: (row.pitstops as unknown as DbTemplate["pitstops"]) ?? [],
+    pitstops,
     isActive: row.isActive,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

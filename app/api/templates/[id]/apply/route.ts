@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { DbPitstop, interpolatePitstops, normalizeActivities, slugifyChecklistText } from "@/lib/templateDb";
 import { attachGoalToProgrammeJourney } from "@/lib/programmeJourneys";
 import { setCentreLive } from "@/lib/operations/goLive";
+import { RELATIONAL_READS, templatePitstopsFromRelationalBySlug } from "@/lib/controlplane/read";
 import {
   buildScheduleConfig,
   getWorkingDays,
@@ -99,7 +100,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!title) return Response.json({ error: "Title required" }, { status: 400 });
   if (!startDate) return Response.json({ error: "Start date required" }, { status: 400 });
 
-  const rawPitstops = rows[0].pitstops as DbPitstop[];
+  const rawPitstops = RELATIONAL_READS ? await templatePitstopsFromRelationalBySlug(id) : (rows[0].pitstops as DbPitstop[]);
   const pitstopTemplates = interpolatePitstops(rawPitstops, templateParams ?? {});
   const goalStart = new Date(startDate);
   const goalOwnerId = ownerId ?? session.user.id;

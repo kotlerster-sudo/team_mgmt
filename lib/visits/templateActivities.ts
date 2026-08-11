@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { slugifyChecklistText, normalizeActivities, type DbPitstop, type DbChecklistItem } from "@/lib/templateDb";
+import { RELATIONAL_READS, templatePitstopsFromRelationalBySlug } from "@/lib/controlplane/read";
 
 export type TemplateActivity = { key: string; title: string; completionType: string };
 export type TemplateChecklist = { key: string; text: string; completionType: string; activities: TemplateActivity[] };
@@ -14,10 +15,12 @@ const actKey = (a: { key?: string; title: string }) => a.key || slugifyChecklist
  */
 export async function loadTemplateChecklists(templateSlug: string): Promise<Map<string, TemplateChecklist>> {
   const out = new Map<string, TemplateChecklist>();
-  const def = await prisma.goalTemplateDef.findUnique({ where: { slug: templateSlug }, select: { pitstops: true } });
-  if (!def) return out;
+  const pitstops = RELATIONAL_READS
+    ? await templatePitstopsFromRelationalBySlug(templateSlug)
+    : ((await prisma.goalTemplateDef.findUnique({ where: { slug: templateSlug }, select: { pitstops: true } }))?.pitstops as unknown as DbPitstop[] | undefined);
+  if (!pitstops) return out;
 
-  for (const p of (def.pitstops ?? []) as unknown as DbPitstop[]) {
+  for (const p of pitstops) {
     for (const c of p.checklist ?? []) {
       const acts = normalizeActivities(c).map((a) => ({
         key: actKey(a),

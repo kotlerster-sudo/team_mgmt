@@ -51,8 +51,8 @@ async function main() {
         if (APPLY) {
           const row = await prisma.templateChecklistDef.upsert({
             where: { pitstopDefId_key: { pitstopDefId, key: ckey } },
-            create: { pitstopDefId, key: ckey, order: ci, text: it.text, completionType: it.completionType ?? "Activity" },
-            update: { order: ci, text: it.text, completionType: it.completionType ?? "Activity" },
+            create: { pitstopDefId, key: ckey, order: ci, text: it.text, completionType: it.completionType ?? "" },
+            update: { order: ci, text: it.text, completionType: it.completionType ?? "" },
             select: { id: true },
           });
           checklistDefId = row.id;
