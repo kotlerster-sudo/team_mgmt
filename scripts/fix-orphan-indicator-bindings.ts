@@ -8,6 +8,7 @@
 import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 import { prisma } from "../lib/prisma";
+import { slugifyChecklistText, type DbPitstop } from "../lib/templateDb";
 import type { CatalogCategory } from "../lib/catalogDb";
 
 const APPLY = process.argv.includes("--apply");
@@ -30,6 +31,13 @@ const DELETES: { id: string; why: string }[] = [
   },
 ];
 
+// Genuinely-dead bindings to remove — their (templateSlug, checklistKey) exists in NO template and
+// NO catalog, so there is no RP capture path. Deleted after re-verifying they are anchorless.
+const DEAD_DELETES: { id: string; why: string }[] = [
+  { id: "61de9118-de59-42c5-a21f-6d18945ba486", why: "IFA supplementation: no template item, no catalog item — anchorless" },
+  { id: "339fbe29-86ba-4826-8634-dab9eed4f005", why: "issues-flagged-to-supervisor-immediately: no template item, no catalog item — anchorless" },
+];
+
 async function main() {
   // Build the live catalog-ref key universe to validate targets.
   const catalogs = await prisma.catalogTemplateDef.findMany({ where: { isActive: true }, select: { categories: true } });
@@ -38,6 +46,14 @@ async function main() {
     for (const cat of (c.categories as unknown as CatalogCategory[]) ?? [])
       for (const it of cat.items ?? [])
         if (it.ref) catRefKeys.add(`${it.ref.templateSlug}::${it.ref.checklistKey}`);
+
+  const templates = await prisma.goalTemplateDef.findMany({ where: { isActive: true }, select: { slug: true, pitstops: true } });
+  const tplKeys = new Set<string>();
+  for (const t of templates)
+    for (const pt of (t.pitstops as unknown as DbPitstop[]) ?? [])
+      for (const it of pt.checklist ?? [])
+        tplKeys.add(`${t.slug}::${(it.key ?? "").trim() || slugifyChecklistText(it.text)}`);
+  const anchorless = (slug: string, key: string) => !tplKeys.has(`${slug}::${key}`) && !catRefKeys.has(`${slug}::${key}`);
 
   console.log(APPLY ? "[APPLY]" : "[DRY RUN]", "\n");
   for (const r of REPOINTS) {
@@ -90,10 +106,25 @@ async function main() {
     }
   }
 
-  console.log("Not fixed (need a domain decision — no anchor exists anywhere):");
-  console.log("  • Creche IFA supplementation compliance  ← ifa-supplementation-tracking-verified");
-  console.log("  • Creche issues flagged this round        ← issues-flagged-to-supervisor-immediately");
-  console.log("  → either add a catalog item for it, or remove the indicator binding.");
+  for (const d of DEAD_DELETES) {
+    const b = await prisma.activityIndicatorBinding.findUnique({
+      where: { id: d.id },
+      select: { id: true, templateSlug: true, checklistKey: true, def: { select: { label: true } } },
+    });
+    if (!b) { console.log(`DEAD-DELETE ${d.id}: not found (already removed)\n`); continue; }
+    const isAnchorless = anchorless(b.templateSlug, b.checklistKey);
+    console.log(`${b.def.label} — DROP dead binding`);
+    console.log(`  ${b.templateSlug} :: ${b.checklistKey}`);
+    console.log(`  anchorless (no template item, no catalog item): ${isAnchorless ? "✓ confirmed" : "✗ has an anchor — REFUSING"}`);
+    console.log(`  reason: ${d.why}`);
+    if (!isAnchorless) { console.log("  skipped (unexpectedly has an anchor)\n"); continue; }
+    if (APPLY) {
+      await prisma.activityIndicatorBinding.delete({ where: { id: b.id } });
+      console.log("  ✅ deleted\n");
+    } else {
+      console.log("  (dry run)\n");
+    }
+  }
 }
 
 main().finally(() => prisma.$disconnect());
