@@ -11,13 +11,19 @@ import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { SurfaceProvider } from "@/components/rbac/RbacProviders";
 import GraphTab from "@/components/controlplane/tabs/GraphTab";
+import TemplatesTab from "@/components/controlplane/tabs/TemplatesTab";
+import CatalogsTab from "@/components/controlplane/tabs/CatalogsTab";
 import IndicatorsTab from "@/components/controlplane/tabs/IndicatorsTab";
+import OutcomesTab from "@/components/controlplane/tabs/OutcomesTab";
 import CaregiverPracticesTab from "@/components/controlplane/tabs/CaregiverPracticesTab";
 import FacilityLayersTab from "@/components/controlplane/tabs/FacilityLayersTab";
 import LabelsTab from "@/components/controlplane/tabs/LabelsTab";
 
 const TABS: { key: string; label: string; Component: ComponentType }[] = [
+  { key: "templates", label: "Templates", Component: TemplatesTab },
+  { key: "catalogs", label: "Catalogs", Component: CatalogsTab },
   { key: "indicators", label: "Indicators", Component: IndicatorsTab },
+  { key: "outcomes", label: "Outcomes", Component: OutcomesTab },
   { key: "caregiver", label: "Caregiver practices", Component: CaregiverPracticesTab },
   { key: "layers", label: "Facility layers", Component: FacilityLayersTab },
   { key: "labels", label: "Labels", Component: LabelsTab },
