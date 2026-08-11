@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Copy, Check, RefreshCw, Users, KeyRound, CalendarDays, Target, ChevronRight, ShieldCheck, Map, Languages, LayoutTemplate, Layers, Bell, BellOff, BellRing, Activity, Cloud, ScrollText, Briefcase, ListChecks } from "lucide-react";
+import { Copy, Check, RefreshCw, Users, KeyRound, CalendarDays, Target, ChevronRight, ShieldCheck, Map, Languages, LayoutTemplate, Layers, Bell, BellOff, BellRing, Activity, Cloud, ScrollText, Briefcase, ListChecks, Network } from "lucide-react";
 import Link from "next/link";
 import Avatar from "@/components/Avatar";
 import { useSession } from "next-auth/react";
@@ -492,6 +492,19 @@ export default function SettingsPage() {
           <h2 className="text-sm font-semibold text-stone-700 mb-1">Administration</h2>
           <p className="text-xs text-stone-500 mb-3">Per-role configurable via Roles &amp; Permissions.</p>
           <div className="space-y-2">
+            {canTemplates && (
+              <Link
+                href="/settings/control-plane"
+                className="flex items-center gap-3 px-4 py-3 bg-white border border-stone-200 rounded-xl hover:bg-stone-50 hover:border-stone-300 transition-colors"
+              >
+                <Network className="w-4 h-4 text-fuchsia-500" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-stone-800">Backend Control Plane</p>
+                  <p className="text-xs text-stone-400">Live graph of templates · checklists · catalog · indicators · outcomes — with broken-connection alerts</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-stone-300" />
+              </Link>
+            )}
             {canUsers && (
               <Link
                 href="/settings/users"
