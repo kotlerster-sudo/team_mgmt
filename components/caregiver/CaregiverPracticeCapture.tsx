@@ -199,8 +199,8 @@ export function CaregiverPracticeCapture({
                           </div>
                           <span className="text-[9px] text-stone-400 shrink-0">{new Date(f.lastCapturedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>
                         </div>
-                        <div className="mt-2"><StatusPicker value={answers[f.practiceId]?.status} onChange={(v) => setStatus(f.practiceId, v)} /></div>
-                        {answers[f.practiceId]?.status && <SubForm pid={f.practiceId} answer={answers[f.practiceId]} patch={patch} onPhoto={uploadPhoto} uploading={uploadingFor === f.practiceId} />}
+                        <div className="mt-2"><StatusPicker value={answers[f.practiceId]?.status} onChange={(v) => setStatus(f.practiceId, v)} opts={statusOpts} /></div>
+                        {answers[f.practiceId]?.status && <SubForm pid={f.practiceId} answer={answers[f.practiceId]} patch={patch} onPhoto={uploadPhoto} uploading={uploadingFor === f.practiceId} actionOpts={actionOpts} />}
                       </div>
                     ))}
                   </div>
