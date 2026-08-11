@@ -2164,6 +2164,24 @@ model CatalogItemDef {
   @@index([categoryDefId, order])
 }
 
+// De-hardcoded display labels for behavior-bearing enums. `code` is the STABLE enum value that code
+// branches on (never edited); only `label`/`color`/`meta`/order are admin-editable. One row per
+// (enumKey, code). Reusable for any enum whose labels should be editable without a code change.
+model EnumLabelConfig {
+  id        String   @id @default(cuid())
+  enumKey   String // e.g. "CaregiverPracticeStatus"
+  code      String // the enum value, e.g. "OK" — stable behavior key
+  label     String
+  color     String? // optional tailwind class or hex
+  meta      Json     @default("{}") // enum-specific flags, e.g. { flag: true }
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([enumKey, code])
+  @@index([enumKey, sortOrder])
+}
+
 model UserLoginEvent {
   id        String   @id @default(cuid())
   userId    String

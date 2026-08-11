@@ -596,6 +596,19 @@ export default function SettingsPage() {
                 <ChevronRight className="w-4 h-4 text-stone-300" />
               </Link>
             )}
+            {canTemplates && (
+              <Link
+                href="/settings/enum-labels"
+                className="flex items-center gap-3 px-4 py-3 bg-white border border-stone-200 rounded-xl hover:bg-stone-50 hover:border-stone-300 transition-colors"
+              >
+                <ListChecks className="w-4 h-4 text-teal-500" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-stone-800">Labels</p>
+                  <p className="text-xs text-stone-400">Rename fixed system options (practice statuses/actions, indicator sources)</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-stone-300" />
+              </Link>
+            )}
             {canFacilityLayers && (
               <Link
                 href="/settings/facility-layers"

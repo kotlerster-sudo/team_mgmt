@@ -33,7 +33,6 @@ const ACTION_OPTS = [
   { v: "RefresherPlanned", label: "Refresher" },
   { v: "EscalateToSupervisor", label: "Escalate" },
 ];
-const statusLabel = (v: string) => STATUS_OPTS.find((s) => s.v === v)?.label ?? v;
 const isFlag = (v?: string) => STATUS_OPTS.find((s) => s.v === v)?.flag ?? false;
 
 export function CaregiverPracticeCapture({
@@ -55,6 +54,26 @@ export function CaregiverPracticeCapture({
   const [uploadingFor, setUploadingFor] = useState<string | null>(null);
   const [catId, setCatId] = useState<string | null>(null);
   const [subLabel, setSubLabel] = useState<string | null>(null);
+  // Editable display labels (de-hardcoded). Falls back to the built-in labels if the fetch fails.
+  const [labelMap, setLabelMap] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      fetch("/api/enum-labels?enumKey=CaregiverPracticeStatus").then((r) => r.json()).catch(() => []),
+      fetch("/api/enum-labels?enumKey=CaregiverPracticeAction").then((r) => r.json()).catch(() => []),
+    ]).then(([st, ac]) => {
+      if (cancelled) return;
+      const m: Record<string, string> = {};
+      for (const row of [...(st ?? []), ...(ac ?? [])]) if (row?.code && row?.label) m[row.code] = row.label;
+      setLabelMap(m);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const statusOpts = STATUS_OPTS.map((s) => ({ ...s, label: labelMap[s.v] ?? s.label }));
+  const actionOpts = ACTION_OPTS.map((a) => ({ ...a, label: labelMap[a.v] ?? a.label }));
+  const statusLabel = (v: string) => labelMap[v] ?? STATUS_OPTS.find((s) => s.v === v)?.label ?? v;
 
   useEffect(() => {
     let cancelled = false;
@@ -229,8 +248,8 @@ export function CaregiverPracticeCapture({
                 <div key={p.id} className="rounded-xl border border-stone-200 bg-white p-3">
                   <p className="text-sm font-medium text-stone-800">{p.shortLabel}</p>
                   <p className="text-[11px] text-stone-500 mt-0.5">{p.fullText}</p>
-                  <div className="mt-2"><StatusPicker value={answers[p.id]?.status} onChange={(v) => setStatus(p.id, v)} /></div>
-                  {answers[p.id]?.status && <SubForm pid={p.id} answer={answers[p.id]} patch={patch} onPhoto={uploadPhoto} uploading={uploadingFor === p.id} />}
+                  <div className="mt-2"><StatusPicker value={answers[p.id]?.status} onChange={(v) => setStatus(p.id, v)} opts={statusOpts} /></div>
+                  {answers[p.id]?.status && <SubForm pid={p.id} answer={answers[p.id]} patch={patch} onPhoto={uploadPhoto} uploading={uploadingFor === p.id} actionOpts={actionOpts} />}
                 </div>
               ))}
             </div>
@@ -241,10 +260,10 @@ export function CaregiverPracticeCapture({
   );
 }
 
-function StatusPicker({ value, onChange }: { value?: string; onChange: (v: string) => void }) {
+function StatusPicker({ value, onChange, opts }: { value?: string; onChange: (v: string) => void; opts: typeof STATUS_OPTS }) {
   return (
     <div className="flex flex-wrap gap-1.5">
-      {STATUS_OPTS.map((s) => (
+      {opts.map((s) => (
         <button
           key={s.v}
           onClick={() => onChange(s.v)}
@@ -258,10 +277,10 @@ function StatusPicker({ value, onChange }: { value?: string; onChange: (v: strin
 }
 
 function SubForm({
-  pid, answer, patch, onPhoto, uploading,
+  pid, answer, patch, onPhoto, uploading, actionOpts,
 }: {
   pid: string; answer: Answer; patch: (pid: string, p: Partial<Answer>) => void;
-  onPhoto: (pid: string, file: File) => void; uploading: boolean;
+  onPhoto: (pid: string, file: File) => void; uploading: boolean; actionOpts: typeof ACTION_OPTS;
 }) {
   // Remarks + action + photo only really matter for a flag, but allow on any status.
   const showDetail = isFlag(answer.status) || answer.remarks || answer.action || answer.photoUrl;
@@ -276,7 +295,7 @@ function SubForm({
         className="w-full text-xs rounded-lg border border-stone-200 px-2.5 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-sky-300"
       />
       <div className="flex items-center gap-1.5 flex-wrap">
-        {ACTION_OPTS.map((a) => (
+        {actionOpts.map((a) => (
           <button
             key={a.v}
             onClick={() => patch(pid, { action: answer.action === a.v ? undefined : a.v })}
