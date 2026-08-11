@@ -33,6 +33,7 @@ export default function ControlPlanePage() {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<CpNode | null>(null);
+  const [editText, setEditText] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -47,6 +48,7 @@ export default function ControlPlanePage() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (session && !isAdmin) router.replace("/settings"); }, [session, isAdmin, router]);
+  useEffect(() => { setEditText(selected?.label ?? ""); }, [selected]);
 
   const nodeById = useMemo(() => new Map((graph?.nodes ?? []).map((n) => [n.id, n])), [graph]);
 
@@ -64,6 +66,16 @@ export default function ControlPlanePage() {
     setMsg(res.ok ? { ok: true, text: `Bound "${anchor.label}" → ${ind.label}` } : { ok: false, text: data.error ?? "Failed to bind" });
     await load();
   }, [nodeById, load]);
+
+  const saveNodeText = useCallback(async (nodeId: string, text: string) => {
+    const res = await fetch("/api/admin/control-plane/node", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nodeId, text }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setMsg(res.ok ? { ok: true, text: "Saved" } : { ok: false, text: data.error ?? "Failed to save" });
+    if (res.ok) await load();
+  }, [load]);
 
   const onDeleteEdge = useCallback(async (edgeId: string) => {
     if (!edgeId.startsWith("e:bind:")) { setMsg({ ok: false, text: "Only indicator bindings can be removed here." }); return; }
@@ -160,7 +172,25 @@ export default function ControlPlanePage() {
             {selected ? (
               <div className="space-y-2">
                 <div className="text-[10px] uppercase tracking-wider text-stone-400">{KIND_STYLE[selected.kind].label}</div>
-                <div className="text-sm font-medium text-stone-900">{selected.label}</div>
+                {editMode ? (
+                  <div className="space-y-1.5">
+                    <textarea
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      rows={2}
+                      className="w-full px-2 py-1.5 text-sm border border-stone-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-stone-300 bg-white resize-none"
+                    />
+                    <button
+                      onClick={() => saveNodeText(selected.id, editText)}
+                      disabled={!editText.trim() || editText.trim() === selected.label}
+                      className="px-3 py-1 text-xs font-medium bg-stone-900 text-white rounded-lg hover:bg-stone-700 disabled:opacity-40"
+                    >
+                      Save text
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-sm font-medium text-stone-900">{selected.label}</div>
+                )}
                 {selected.sublabel && <div className="text-xs text-stone-500">{selected.sublabel}</div>}
                 {selected.domain && <div className="text-[11px] text-stone-400">domain: {selected.domain}</div>}
                 {selected.broken && <div className="text-xs text-red-600 flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> Referenced but missing from its template — fix the binding or restore the checklist key.</div>}
