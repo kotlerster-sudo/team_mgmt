@@ -56,6 +56,20 @@ export async function assembleControlPlaneGraph(
   const templateDomain = new Map<string, string | null>(); // slug -> domain
   const indicatorLabel = new Map<string, string>(); // defId -> label
 
+  // A catalog item with a `ref` also materialises a visit ChecklistItem stamped with that
+  // (templateSlug, checklistKey) — so an indicator/outcome binding on that key is functional
+  // even when the template no longer contains the item. The valid key universe is therefore
+  // TEMPLATE keys ∪ CATALOG-REF keys; only a key in NEITHER is truly broken.
+  const catRefKeys = new Set<string>();
+  for (const c of catalogs) {
+    for (const cat of (c.categories as unknown as CatalogCategory[]) ?? []) {
+      for (const item of cat.items ?? []) {
+        if (item.ref) catRefKeys.add(`${item.ref.templateSlug}::${item.ref.checklistKey}`);
+      }
+    }
+  }
+  const keyIsValid = (slug: string, key: string) => keyToNode.has(`${slug}::${key}`) || catRefKeys.has(`${slug}::${key}`);
+
   for (const t of templates) {
     templateDomain.set(t.slug, t.needsDomain);
     put({ id: tplNodeId(t.slug), kind: "template", label: t.name, sublabel: t.slug, domain: t.needsDomain, href: `/settings/templates/${t.id}` });
@@ -72,13 +86,21 @@ export async function assembleControlPlaneGraph(
     }
   }
 
-  // Resolve a (slug, key) reference to a checklist node; if absent, mint a phantom broken node so
-  // the dangling edge still has an endpoint the user can see.
+  // Resolve a (slug, key) reference to a checklist node. Three cases:
+  //  - present in a template  → the real checklist node
+  //  - catalog-anchored only  → a valid node (not broken), materialised via the catalog
+  //  - neither                → a phantom BROKEN node so the dangling edge is still visible
   const resolveChecklist = (slug: string, key: string): string => {
     const hit = keyToNode.get(`${slug}::${key}`);
     if (hit) return hit;
     const id = ckNodeId(slug, key);
-    put({ id, kind: "checklist", label: key, sublabel: `missing in ${slug}`, domain: templateDomain.get(slug) ?? null, broken: true });
+    const catalogAnchored = catRefKeys.has(`${slug}::${key}`);
+    put({
+      id, kind: "checklist", label: key,
+      sublabel: catalogAnchored ? `catalog-anchored (${slug})` : `missing in ${slug}`,
+      domain: templateDomain.get(slug) ?? null,
+      broken: !catalogAnchored,
+    });
     return id;
   };
 
@@ -97,7 +119,7 @@ export async function assembleControlPlaneGraph(
         const nodeId = catItemNodeId(c.slug, cat.key ?? "", key);
         put({ id: nodeId, kind: "catalogItem", label: item.text, sublabel: `${c.name} · ${cat.label}`, domain: c.needsDomain, href: `/settings/catalogs/${c.id}` });
         const target = resolveChecklist(item.ref.templateSlug, item.ref.checklistKey);
-        const broken = !keyToNode.has(`${item.ref.templateSlug}::${item.ref.checklistKey}`);
+        const broken = !keyIsValid(item.ref.templateSlug, item.ref.checklistKey);
         edges.push({ id: `e:catref:${nodeId}`, from: nodeId, to: target, kind: "catalogRef", broken });
       }
     }
@@ -107,7 +129,7 @@ export async function assembleControlPlaneGraph(
   for (const b of bindings) {
     if (!indicatorLabel.has(b.defId)) continue; // inactive/removed indicator
     const src = resolveChecklist(b.templateSlug, b.checklistKey);
-    const broken = !keyToNode.has(`${b.templateSlug}::${b.checklistKey}`);
+    const broken = !keyIsValid(b.templateSlug, b.checklistKey);
     edges.push({ id: `e:bind:${b.id}`, from: src, to: indNodeId(b.defId), kind: "indicatorBinding", broken });
   }
 
@@ -116,7 +138,7 @@ export async function assembleControlPlaneGraph(
     if (!o.bindingTemplateSlug || !o.bindingChecklistKey) continue;
     put({ id: outNodeId(o.id), kind: "journeyOutcome", label: o.label, sublabel: "journey outcome", domain: o.journey?.primaryDomain ?? null, href: `/programmes/${o.journeyId}` });
     const src = resolveChecklist(o.bindingTemplateSlug, o.bindingChecklistKey);
-    const broken = !keyToNode.has(`${o.bindingTemplateSlug}::${o.bindingChecklistKey}`);
+    const broken = !keyIsValid(o.bindingTemplateSlug, o.bindingChecklistKey);
     edges.push({ id: `e:outbind:${o.id}`, from: src, to: outNodeId(o.id), kind: "outcomeBinding", broken });
   }
 
