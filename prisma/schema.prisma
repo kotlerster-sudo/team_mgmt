@@ -2181,6 +2181,8 @@ model FacilityLayerConfig {
   label       String
   color       String   @default("#6366f1")
   needsDomain String? // links to NeedsFormulaConfig.domain — ties this layer to a field-coverage need
+  // Editable centre-type suggestions for this layer (de-hardcoded from map-features CENTRE_TYPES).
+  centreTypes Json     @default("[]")
   sortOrder   Int      @default(0)
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())

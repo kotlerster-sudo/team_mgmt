@@ -21,7 +21,7 @@ const CENTRE_TYPES: Record<string, string[]> = {
 
 interface GeoRef { id: string; name: string }
 
-interface LayerKey { key: string; label: string }
+interface LayerKey { key: string; label: string; centreTypes?: string[] }
 
 interface LayerFeatureRow {
   id: string;
@@ -113,6 +113,9 @@ function LFForm({
   // Partner list comes straight from the DB now.
   const allPartners = partners;
 
+  // Centre-type suggestions come from the layer config (de-hardcoded), with a fallback default.
+  const ctByLayer: Record<string, string[]> = Object.fromEntries(layerKeys.map((l) => [l.key, (l.centreTypes && l.centreTypes.length ? l.centreTypes : CENTRE_TYPES[l.key]) ?? []]));
+
   // Zone → filter clusters; cluster → infer zone
   const visibleClusters = form.zoneId
     ? clusters.filter(c => c.zoneId === form.zoneId)
@@ -128,7 +131,7 @@ function LFForm({
         })
       : settlements;
 
-  const knownCentreTypes = CENTRE_TYPES[form.layerKey] ?? [];
+  const knownCentreTypes = ctByLayer[form.layerKey] ?? [];
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 bg-indigo-50 border border-indigo-200 rounded-xl">
@@ -140,7 +143,7 @@ function LFForm({
         <label className="label">Layer type *</label>
         <select className="input" value={form.layerKey} onChange={e => {
           const lk = e.target.value;
-          setForm(f => ({ ...f, layerKey: lk, centreType: CENTRE_TYPES[lk]?.[0] ?? "" }));
+          setForm(f => ({ ...f, layerKey: lk, centreType: ctByLayer[lk]?.[0] ?? "" }));
         }}>
           {layerKeys.map(l => <option key={l.key} value={l.key}>{l.label}</option>)}
         </select>
@@ -416,9 +419,9 @@ export default function MapFeaturesSettingsPage() {
   useEffect(() => {
     fetch("/api/admin/facility-layers")
       .then(r => r.json())
-      .then((rows: { layerKey: string; label: string }[]) => {
+      .then((rows: { layerKey: string; label: string; centreTypes?: string[] }[]) => {
         if (rows.length > 0) {
-          const lks = rows.map(r => ({ key: r.layerKey, label: r.label }));
+          const lks = rows.map(r => ({ key: r.layerKey, label: r.label, centreTypes: r.centreTypes ?? [] }));
           setLayerKeys(lks);
           // Keep lkFilter valid; reset to first key if current filter no longer exists
           setLkFilter(f => lks.some(l => l.key === f) ? f : (lks[0]?.key ?? f));

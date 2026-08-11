@@ -14,6 +14,7 @@ interface FacilityLayer {
   color: string;
   needsDomain: string | null;
   sortOrder: number;
+  centreTypes: string[];
 }
 
 type EditState = {
@@ -23,6 +24,7 @@ type EditState = {
   color: string;
   needsDomain: string;
   sortOrder: number;
+  centreTypes: string; // comma-separated in the form
 } | null;
 
 const inputCls = "px-2.5 py-1.5 text-sm border border-stone-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-stone-300 bg-white";
@@ -71,6 +73,7 @@ export default function FacilityLayersPage() {
         color: edit.color || "#6366f1",
         needsDomain: edit.needsDomain || null,
         sortOrder: edit.sortOrder,
+        centreTypes: edit.centreTypes.split(",").map((s) => s.trim()).filter(Boolean),
       };
       const res = edit.id
         ? await fetch(`/api/admin/facility-layers/${edit.id}`, {
@@ -167,6 +170,15 @@ export default function FacilityLayersPage() {
               ))}
             </select>
           </div>
+          <div>
+            <label className="block text-[10px] font-semibold text-stone-400 uppercase tracking-wide mb-0.5">Centre-type suggestions (comma-separated — shown in the facility form)</label>
+            <input
+              className={inputCls + " w-full"}
+              value={edit.centreTypes}
+              onChange={e => setEdit({ ...edit, centreTypes: e.target.value })}
+              placeholder="e.g. Creche, Mini Creche"
+            />
+          </div>
         </div>
         {error && <span className="text-xs text-red-500 self-center">{error}</span>}
         <div className="flex flex-col gap-1 shrink-0 self-center">
@@ -232,6 +244,7 @@ export default function FacilityLayersPage() {
                         color: layer.color || "#6366f1",
                         needsDomain: layer.needsDomain ?? "",
                         sortOrder: layer.sortOrder,
+                        centreTypes: (layer.centreTypes ?? []).join(", "),
                       })}
                       className="p-1.5 hover:bg-stone-50 rounded text-stone-400 hover:text-stone-600 transition-colors"
                     >
@@ -258,7 +271,7 @@ export default function FacilityLayersPage() {
         <EditRow isNew />
       ) : (
         <button
-          onClick={() => setEdit({ layerKey: "", label: "", color: "#6366f1", needsDomain: "", sortOrder: layers.length })}
+          onClick={() => setEdit({ layerKey: "", label: "", color: "#6366f1", needsDomain: "", sortOrder: layers.length, centreTypes: "" })}
           className="flex items-center gap-2 w-full px-4 py-3 border-2 border-dashed border-stone-200 rounded-xl text-sm text-stone-500 hover:border-stone-300 hover:text-stone-700 transition-colors"
         >
           <Plus className="w-4 h-4" /> Add facility type
