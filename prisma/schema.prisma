@@ -232,38 +232,38 @@ model Goal {
   needsZoneId       String?
   needsCityId       String?
 
-  owner            User                    @relation(fields: [ownerId], references: [id])
-  pitstops         Pitstop[]
-  threads          Thread[]
-  attachments      Attachment[]
-  followers        GoalFollow[]
-  programs         ProgramGoal[]
+  owner                 User                           @relation(fields: [ownerId], references: [id])
+  pitstops              Pitstop[]
+  threads               Thread[]
+  attachments           Attachment[]
+  followers             GoalFollow[]
+  programs              ProgramGoal[]
   // Co-ownership
-  coOwners         GoalCoOwner[]
+  coOwners              GoalCoOwner[]
   // Decisions, risks, broadcasts
-  decisions        Decision[]
-  risks            Risk[]
-  broadcasts       GoalBroadcast[]
+  decisions             Decision[]
+  risks                 Risk[]
+  broadcasts            GoalBroadcast[]
   // Metrics/KPIs
-  metrics          GoalMetric[]
+  metrics               GoalMetric[]
   // Strategic tags
-  themes           GoalTheme[]
-  quarters         GoalQuarter[]
+  themes                GoalTheme[]
+  quarters              GoalQuarter[]
   // Needs geography
-  needsSettlement  Settlement?             @relation("GoalNeedsSettlement", fields: [needsSettlementId], references: [id])
-  needsCluster     Cluster?                @relation("GoalNeedsCluster", fields: [needsClusterId], references: [id])
-  needsZone        Zone?                   @relation("GoalNeedsZone", fields: [needsZoneId], references: [id])
-  needsCity        City?                   @relation("GoalNeedsCity", fields: [needsCityId], references: [id])
-  linkedFacility   LayerFeature?           @relation("GoalLinkedFacility", fields: [linkedFacilityId], references: [id], onDelete: SetNull)
+  needsSettlement       Settlement?                    @relation("GoalNeedsSettlement", fields: [needsSettlementId], references: [id])
+  needsCluster          Cluster?                       @relation("GoalNeedsCluster", fields: [needsClusterId], references: [id])
+  needsZone             Zone?                          @relation("GoalNeedsZone", fields: [needsZoneId], references: [id])
+  needsCity             City?                          @relation("GoalNeedsCity", fields: [needsCityId], references: [id])
+  linkedFacility        LayerFeature?                  @relation("GoalLinkedFacility", fields: [linkedFacilityId], references: [id], onDelete: SetNull)
   // Settlement-level outcome attribution on completion
-  outcomes         GoalOutcome[]
+  outcomes              GoalOutcome[]
   // Layer 3 programme journey phase (this goal fulfilling a phase)
-  journeyPhases    ProgrammeJourneyPhase[]
+  journeyPhases         ProgrammeJourneyPhase[]
   // Action points (denormalized — always nested under a PitstopEvent under this Goal)
-  actionPoints     ActionPoint[]
+  actionPoints          ActionPoint[]
   // Live-centre visit catalog (present once Goal.mode = "live")
-  centreCatalog    CentreCatalog?
-  catalogApprovals CatalogItemApproval[]
+  centreCatalog         CentreCatalog?
+  catalogApprovals      CatalogItemApproval[]
   caregiverObservations CaregiverPracticeObservation[]
 }
 
@@ -1003,17 +1003,25 @@ model MISProviderSyncLog {
 // Binds a checklist item (in a template) to an indicator — when an RP completes
 // that activity, a FacilityIndicatorPoint is written from a numeric form field.
 model ActivityIndicatorBinding {
-  id           String   @id @default(cuid())
-  defId        String
-  templateSlug String // GoalTemplateDef.slug
-  checklistKey String // slugified text of the checklist item (stable enough for v1)
-  numericField String   @default("value") // form field name expected on the activity completion payload
-  createdAt    DateTime @default(now())
+  id               String   @id @default(cuid())
+  defId            String
+  templateSlug     String // GoalTemplateDef.slug — legacy string join, kept during dual-write, dropped in P3
+  checklistKey     String // slugified text of the checklist item — legacy string join
+  numericField     String   @default("value") // form field name expected on the activity completion payload
+  createdAt        DateTime @default(now())
+  // P1b: FK-clean anchor. Exactly one of the two is set once backfilled — the tickable thing that
+  // feeds this indicator is either a template checklist item OR a catalog-native item.
+  checklistDefId   String?
+  catalogItemDefId String?
 
-  def FacilityIndicatorDef @relation(fields: [defId], references: [id], onDelete: Cascade)
+  def            FacilityIndicatorDef  @relation(fields: [defId], references: [id], onDelete: Cascade)
+  checklistDef   TemplateChecklistDef? @relation(fields: [checklistDefId], references: [id], onDelete: Cascade)
+  catalogItemDef CatalogItemDef?       @relation(fields: [catalogItemDefId], references: [id], onDelete: Cascade)
 
   @@unique([defId, templateSlug, checklistKey])
   @@index([templateSlug, checklistKey])
+  @@index([checklistDefId])
+  @@index([catalogItemDefId])
 }
 
 // Scored checklist items attachable to any indicator def (creche 24-point
@@ -1110,21 +1118,21 @@ model CaregiverPractice {
 }
 
 model CaregiverPracticeObservation {
-  id           String                   @id @default(cuid())
-  practiceId   String
-  facilityId   String // the creche (goal's LayerFeature)
-  settlementId String
-  goalId       String
-  visitEventId String // parent Visit PitstopEvent
-  status       CaregiverPracticeStatus
-  remarks      String?
-  action       CaregiverPracticeAction?
-  photoUrl     String?
+  id            String                   @id @default(cuid())
+  practiceId    String
+  facilityId    String // the creche (goal's LayerFeature)
+  settlementId  String
+  goalId        String
+  visitEventId  String // parent Visit PitstopEvent
+  status        CaregiverPracticeStatus
+  remarks       String?
+  action        CaregiverPracticeAction?
+  photoUrl      String?
   // Follow-up ActionPoint raised when action = EscalateToSupervisor (phase 2).
   // 1:1 — cleared (SetNull) if the AP is deleted; cancelled if the flag is un-escalated.
-  actionPointId String?                 @unique
-  capturedById String
-  capturedAt   DateTime                 @default(now())
+  actionPointId String?                  @unique
+  capturedById  String
+  capturedAt    DateTime                 @default(now())
 
   practice    CaregiverPractice @relation(fields: [practiceId], references: [id], onDelete: Restrict)
   facility    LayerFeature      @relation(fields: [facilityId], references: [id], onDelete: Cascade)
@@ -1185,12 +1193,12 @@ model City {
   deletedAt        DateTime?
   createdAt        DateTime  @default(now())
 
-  zones         Zone[]
-  settlements   Settlement[]
-  needsGoals    Goal[]         @relation("GoalNeedsCity")
-  needsActionPoints ActionPoint[] @relation("ActionPointNeedsCity")
-  users         User[]         @relation("UserCity")
-  grantingUnits GrantingUnit[]
+  zones             Zone[]
+  settlements       Settlement[]
+  needsGoals        Goal[]         @relation("GoalNeedsCity")
+  needsActionPoints ActionPoint[]  @relation("ActionPointNeedsCity")
+  users             User[]         @relation("UserCity")
+  grantingUnits     GrantingUnit[]
 }
 
 // Polygon for this zone is derived live by the `zone_geometry` view
@@ -1206,14 +1214,14 @@ model Zone {
   deletedAt DateTime?
   createdAt DateTime  @default(now())
 
-  city          City?                @relation(fields: [cityId], references: [id], onDelete: SetNull)
-  lead          User?                @relation("ZoneLead", fields: [leadId], references: [id], onDelete: SetNull)
-  clusters      Cluster[]
-  needsGoals    Goal[]               @relation("GoalNeedsZone")
-  needsActionPoints ActionPoint[]     @relation("ActionPointNeedsZone")
-  needsPitstops Pitstop[]            @relation("PitstopNeedsZone")
-  layerFeatures LayerFeature[]
-  wikiCircles   WikiPracticeCircle[]
+  city              City?                @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  lead              User?                @relation("ZoneLead", fields: [leadId], references: [id], onDelete: SetNull)
+  clusters          Cluster[]
+  needsGoals        Goal[]               @relation("GoalNeedsZone")
+  needsActionPoints ActionPoint[]        @relation("ActionPointNeedsZone")
+  needsPitstops     Pitstop[]            @relation("PitstopNeedsZone")
+  layerFeatures     LayerFeature[]
+  wikiCircles       WikiPracticeCircle[]
 }
 
 // Polygon for this cluster is derived live by the `cluster_geometry`
@@ -1233,14 +1241,14 @@ model Cluster {
   // migration — previously inferred from each settlement's partner.
   partnerOrgId    String?
 
-  zone          Zone           @relation(fields: [zoneId], references: [id], onDelete: Cascade)
-  settlements   Settlement[]
-  needsGoals    Goal[]         @relation("GoalNeedsCluster")
-  needsActionPoints ActionPoint[] @relation("ActionPointNeedsCluster")
-  needsPitstops Pitstop[]      @relation("PitstopNeedsCluster")
-  layerFeatures LayerFeature[]
-  rps           User[]         @relation("RPClusters")
-  partnerOrg    Org?           @relation("ClusterPartnerOrg", fields: [partnerOrgId], references: [id], onDelete: SetNull)
+  zone              Zone           @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  settlements       Settlement[]
+  needsGoals        Goal[]         @relation("GoalNeedsCluster")
+  needsActionPoints ActionPoint[]  @relation("ActionPointNeedsCluster")
+  needsPitstops     Pitstop[]      @relation("PitstopNeedsCluster")
+  layerFeatures     LayerFeature[]
+  rps               User[]         @relation("RPClusters")
+  partnerOrg        Org?           @relation("ClusterPartnerOrg", fields: [partnerOrgId], references: [id], onDelete: SetNull)
 
   @@index([partnerOrgId])
 }
@@ -1265,13 +1273,13 @@ model LayerFeature {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  settlement  Settlement? @relation(fields: [settlementId], references: [id], onDelete: SetNull)
-  cluster     Cluster?    @relation(fields: [clusterId], references: [id], onDelete: SetNull)
-  zone        Zone?       @relation(fields: [zoneId], references: [id], onDelete: SetNull)
-  linkedGoals Goal[]      @relation("GoalLinkedFacility")
-  partnerOrg  Org?        @relation("LayerFeaturePartnerOrg", fields: [partnerOrgId], references: [id], onDelete: SetNull)
+  settlement            Settlement?                    @relation(fields: [settlementId], references: [id], onDelete: SetNull)
+  cluster               Cluster?                       @relation(fields: [clusterId], references: [id], onDelete: SetNull)
+  zone                  Zone?                          @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  linkedGoals           Goal[]                         @relation("GoalLinkedFacility")
+  partnerOrg            Org?                           @relation("LayerFeaturePartnerOrg", fields: [partnerOrgId], references: [id], onDelete: SetNull)
   // Per-facility Layer-2 indicators captured against this facility.
-  facilityIndicators FacilityIndicator[]
+  facilityIndicators    FacilityIndicator[]
   caregiverObservations CaregiverPracticeObservation[]
 
   @@index([partnerOrgId])
@@ -1298,26 +1306,26 @@ model Settlement {
   partnerId    String?
   partnerOrgId String?
 
-  cluster            Cluster                  @relation(fields: [clusterId], references: [id], onDelete: Cascade)
-  city               City?                    @relation(fields: [cityId], references: [id])
-  partner            MapPartner?              @relation(fields: [partnerId], references: [id])
-  partnerOrg         Org?                     @relation("SettlementPartnerOrg", fields: [partnerOrgId], references: [id], onDelete: SetNull)
-  assessments        SettlementAssessment[]
-  profile            SettlementProfile?
-  note               SettlementNote?
-  civicData          SettlementCivicData?
+  cluster               Cluster                        @relation(fields: [clusterId], references: [id], onDelete: Cascade)
+  city                  City?                          @relation(fields: [cityId], references: [id])
+  partner               MapPartner?                    @relation(fields: [partnerId], references: [id])
+  partnerOrg            Org?                           @relation("SettlementPartnerOrg", fields: [partnerOrgId], references: [id], onDelete: SetNull)
+  assessments           SettlementAssessment[]
+  profile               SettlementProfile?
+  note                  SettlementNote?
+  civicData             SettlementCivicData?
   // Needs geography back-relations
-  needsGoals         Goal[]                   @relation("GoalNeedsSettlement")
-  needsActionPoints  ActionPoint[]             @relation("ActionPointNeedsSettlement")
-  needsPitstops      Pitstop[]                @relation("PitstopNeedsSettlement")
-  goalOutcomes       GoalOutcome[]
-  schools            SettlementSchool[]
-  healthCentres      SettlementHealthCentre[]
-  layerFeatures      LayerFeature[]
+  needsGoals            Goal[]                         @relation("GoalNeedsSettlement")
+  needsActionPoints     ActionPoint[]                  @relation("ActionPointNeedsSettlement")
+  needsPitstops         Pitstop[]                      @relation("PitstopNeedsSettlement")
+  goalOutcomes          GoalOutcome[]
+  schools               SettlementSchool[]
+  healthCentres         SettlementHealthCentre[]
+  layerFeatures         LayerFeature[]
   // Layer 2 facility indicators
-  facilityIndicators FacilityIndicator[]
+  facilityIndicators    FacilityIndicator[]
   // Layer 3 programme journeys
-  programmeJourneys  ProgrammeJourney[]
+  programmeJourneys     ProgrammeJourney[]
   caregiverObservations CaregiverPracticeObservation[]
 
   @@index([partnerOrgId])
@@ -1499,20 +1507,20 @@ model PitstopEvent {
   // Null = manually scheduled activity (sync leaves alone).
   templateKey String?
 
-  createdBy     User                   @relation("PitstopEventCreator", fields: [createdById], references: [id])
-  lastUpdatedBy User?                  @relation("PitstopEventLastUpdater", fields: [lastUpdatedById], references: [id])
-  completedBy   User?                  @relation("PitstopEventCompleter", fields: [completedById], references: [id])
-  arrivedBy     User?                  @relation("PitstopEventArriver", fields: [arrivedById], references: [id])
-  checklistItem ChecklistItem?         @relation("ChecklistActivity", fields: [checklistItemId], references: [id], onDelete: SetNull)
+  createdBy             User                           @relation("PitstopEventCreator", fields: [createdById], references: [id])
+  lastUpdatedBy         User?                          @relation("PitstopEventLastUpdater", fields: [lastUpdatedById], references: [id])
+  completedBy           User?                          @relation("PitstopEventCompleter", fields: [completedById], references: [id])
+  arrivedBy             User?                          @relation("PitstopEventArriver", fields: [arrivedById], references: [id])
+  checklistItem         ChecklistItem?                 @relation("ChecklistActivity", fields: [checklistItemId], references: [id], onDelete: SetNull)
   // Visit grouping: a Visit event owns the child events created when its catalog items are ticked.
-  visitEvent    PitstopEvent?          @relation("VisitChildren", fields: [visitEventId], references: [id], onDelete: SetNull)
-  childEvents   PitstopEvent[]         @relation("VisitChildren")
-  attendees     PitstopEventAttendee[]
-  pitstops      PitstopEventPitstop[]
-  followups     PitstopEventFollowup[]
-  threads       Thread[]
+  visitEvent            PitstopEvent?                  @relation("VisitChildren", fields: [visitEventId], references: [id], onDelete: SetNull)
+  childEvents           PitstopEvent[]                 @relation("VisitChildren")
+  attendees             PitstopEventAttendee[]
+  pitstops              PitstopEventPitstop[]
+  followups             PitstopEventFollowup[]
+  threads               Thread[]
   // Action points raised from this activity
-  actionPoints  ActionPoint[]
+  actionPoints          ActionPoint[]
   caregiverObservations CaregiverPracticeObservation[]
 
   // Activities-page + planner queries sort + range-filter on scheduledAt.
@@ -1980,10 +1988,12 @@ model GoalTemplateDef {
   linkedFacilityLayerKey String? // e.g. "creches" | "children_centres" | "youth_centres" — shows facility picker on goal creation
   sortOrder              Int      @default(0)
   parameters             Json     @default("[]")
-  pitstops               Json     @default("[]")
+  pitstops               Json     @default("[]") // legacy source of truth; shredded into pitstopDefs (P1b), dropped in P3
   isActive               Boolean  @default(true)
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
+
+  pitstopDefs TemplatePitstopDef[]
 }
 
 // Domain-default visit catalog for LIVE centres. One (or a few) per programme domain.
@@ -1995,13 +2005,15 @@ model CatalogTemplateDef {
   slug                 String   @unique
   name                 String
   needsDomain          String? // matches Goal.needsDomain — the domain this catalog is the default for
-  categories           Json     @default("[]")
+  categories           Json     @default("[]") // legacy source of truth; shredded into categoryDefs (P1b), dropped in P3
   // Default visit cadence seeded onto a centre at go-live. period ∈ {"week","month"}.
   defaultCadenceCount  Int?
   defaultCadencePeriod String?
   isActive             Boolean  @default(true)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
+
+  categoryDefs CatalogCategoryDef[]
 }
 
 // Per-centre live catalog: a frozen snapshot of the domain default + sparse per-centre overrides,
@@ -2036,6 +2048,113 @@ model CatalogItemApproval {
   addedBy User @relation("CatalogItemAdder", fields: [addedById], references: [id])
 
   @@unique([goalId, itemKey])
+}
+
+// ─── Relational config graph (P1b) ────────────────────────────────────────────
+// Shredded from GoalTemplateDef.pitstops / CatalogTemplateDef.categories JSON so the config
+// becomes a real ERD with FK integrity. Populated additively (dual-write) alongside the JSON;
+// reads cut over in P2, JSON columns dropped in P3. `key` stays as the stable slug (matches the
+// JSON slug) so runtime materialisation + external bindings keep working during the transition.
+
+model TemplatePitstopDef {
+  id           String   @id @default(cuid())
+  templateId   String
+  order        Int      @default(0)
+  key          String // stable slug within template (matches DbPitstop.key)
+  title        String
+  type         String   @default("Discussion")
+  notes        String   @default("")
+  slaDays      Int      @default(0)
+  startSlaDays Int      @default(0)
+  recurrence   String   @default("None")
+  repeatCount  Int      @default(1)
+  progressTag  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  template  GoalTemplateDef        @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  checklist TemplateChecklistDef[]
+
+  @@unique([templateId, key])
+  @@index([templateId, order])
+}
+
+model TemplateChecklistDef {
+  id             String   @id @default(cuid())
+  pitstopDefId   String
+  order          Int      @default(0)
+  key            String // stable slug within template (matches DbChecklistItem.key / ChecklistItem.key)
+  text           String
+  completionType String   @default("Activity")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  pitstop           TemplatePitstopDef         @relation(fields: [pitstopDefId], references: [id], onDelete: Cascade)
+  activities        TemplateActivityDef[]
+  // Real FK targets that replace the (templateSlug, checklistKey) string joins:
+  catalogItems      CatalogItemDef[]           @relation("CatalogItemChecklist")
+  indicatorBindings ActivityIndicatorBinding[]
+  journeyOutcomes   ProgrammeJourneyOutcome[]
+
+  @@unique([pitstopDefId, key])
+  @@index([pitstopDefId, order])
+}
+
+model TemplateActivityDef {
+  id             String   @id @default(cuid())
+  checklistDefId String
+  order          Int      @default(0)
+  key            String // stable slug within checklist (matches DbActivity.key / PitstopEvent.templateKey)
+  title          String
+  completionType String   @default("Activity")
+  dayOffset      Int?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  checklist TemplateChecklistDef @relation(fields: [checklistDefId], references: [id], onDelete: Cascade)
+
+  @@unique([checklistDefId, key])
+  @@index([checklistDefId, order])
+}
+
+model CatalogCategoryDef {
+  id        String   @id @default(cuid())
+  catalogId String
+  order     Int      @default(0)
+  key       String
+  label     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  catalog CatalogTemplateDef @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  items   CatalogItemDef[]
+
+  @@unique([catalogId, key])
+  @@index([catalogId, order])
+}
+
+model CatalogItemDef {
+  id             String   @id @default(cuid())
+  categoryDefId  String
+  order          Int      @default(0)
+  key            String
+  text           String
+  completionType String   @default("Activity")
+  blocksSignoff  Boolean  @default(true)
+  // Real FK replacing CatalogItem.ref.(templateSlug, checklistKey). Null = catalog-native/free-text
+  // item (its own concept). Set = this item TAGS an existing template checklist item.
+  checklistDefId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  category          CatalogCategoryDef         @relation(fields: [categoryDefId], references: [id], onDelete: Cascade)
+  checklist         TemplateChecklistDef?      @relation("CatalogItemChecklist", fields: [checklistDefId], references: [id], onDelete: SetNull)
+  // A catalog-native item can itself be an indicator/outcome anchor (e.g. creche Caregiver Practices):
+  indicatorBindings ActivityIndicatorBinding[]
+  journeyOutcomes   ProgrammeJourneyOutcome[]
+
+  @@unique([categoryDefId, key])
+  @@index([categoryDefId, order])
 }
 
 model UserLoginEvent {
@@ -2952,28 +3071,35 @@ model ProgrammeJourneyPhaseEdge {
 }
 
 model ProgrammeJourneyOutcome {
-  id                  String   @id @default(cuid())
-  journeyId           String
-  key                 String // unique within journey
-  label               String
-  description         String?
-  unit                String?
+  id                      String   @id @default(cuid())
+  journeyId               String
+  key                     String // unique within journey
+  label                   String
+  description             String?
+  unit                    String?
   // MANUAL_ADMIN | RP_ACTIVITY (mirrors FacilityIndicatorSource)
-  captureSource       String   @default("MANUAL_ADMIN")
-  // For RP_ACTIVITY: bind to a checklist key (one binding per outcome in v1)
-  bindingTemplateSlug String?
-  bindingChecklistKey String?
-  targetValue         Float?
-  targetCadence       String? // "annual" | "quarterly" | "monthly"
-  sortOrder           Int      @default(0)
-  isActive            Boolean  @default(true)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  captureSource           String   @default("MANUAL_ADMIN")
+  // For RP_ACTIVITY: bind to a checklist key (one binding per outcome in v1) — legacy string join
+  bindingTemplateSlug     String?
+  bindingChecklistKey     String?
+  // P1b: FK-clean anchor (either a template checklist item or a catalog-native item)
+  bindingChecklistDefId   String?
+  bindingCatalogItemDefId String?
+  targetValue             Float?
+  targetCadence           String? // "annual" | "quarterly" | "monthly"
+  sortOrder               Int      @default(0)
+  isActive                Boolean  @default(true)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
-  journey ProgrammeJourney               @relation(fields: [journeyId], references: [id], onDelete: Cascade)
-  points  ProgrammeJourneyOutcomePoint[]
+  journey               ProgrammeJourney               @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  points                ProgrammeJourneyOutcomePoint[]
+  bindingChecklistDef   TemplateChecklistDef?          @relation(fields: [bindingChecklistDefId], references: [id], onDelete: SetNull)
+  bindingCatalogItemDef CatalogItemDef?                @relation(fields: [bindingCatalogItemDefId], references: [id], onDelete: SetNull)
 
   @@unique([journeyId, key])
+  @@index([bindingChecklistDefId])
+  @@index([bindingCatalogItemDefId])
 }
 
 model ProgrammeJourneyOutcomePoint {
@@ -3743,12 +3869,12 @@ model ActionPoint {
   partnerStaffLabel String? // free-text — "creche supervisor", "ZL Ravi", etc.
 
   // Ownership / lifecycle
-  ownerId  String // = who carries it. Self at creation, except when delegated downward.
+  ownerId      String // = who carries it. Self at creation, except when delegated downward.
   // Who asked, when delegated. Null on a self-raised task. When set and different
   // from ownerId the owner may close the task but not edit it.
   assignedById String?
-  dueDate  DateTime
-  priority String   @default("routine") // routine | urgent
+  dueDate      DateTime
+  priority     String   @default("routine") // routine | urgent
 
   status          String    @default("open") // open | done | cancelled
   closureNote     String?
@@ -3763,18 +3889,18 @@ model ActionPoint {
   lastUpdatedById String?
 
   // Relations
-  goal          Goal?         @relation(fields: [goalId], references: [id], onDelete: Cascade)
-  pitstop       Pitstop?      @relation(fields: [pitstopId], references: [id], onDelete: Cascade)
-  pitstopEvent  PitstopEvent? @relation(fields: [pitstopEventId], references: [id], onDelete: Cascade)
-  owner         User          @relation("ActionPointOwner", fields: [ownerId], references: [id])
-  assignedBy    User?         @relation("ActionPointAssigner", fields: [assignedById], references: [id])
-  createdBy     User          @relation("ActionPointCreator", fields: [createdById], references: [id])
-  lastUpdatedBy User?         @relation("ActionPointLastUpdater", fields: [lastUpdatedById], references: [id])
-  completedBy   User?         @relation("ActionPointCompleter", fields: [completedById], references: [id])
-  needsSettlement Settlement? @relation("ActionPointNeedsSettlement", fields: [needsSettlementId], references: [id])
-  needsCluster    Cluster?    @relation("ActionPointNeedsCluster", fields: [needsClusterId], references: [id])
-  needsZone       Zone?       @relation("ActionPointNeedsZone", fields: [needsZoneId], references: [id])
-  needsCity       City?       @relation("ActionPointNeedsCity", fields: [needsCityId], references: [id])
+  goal                 Goal?                         @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  pitstop              Pitstop?                      @relation(fields: [pitstopId], references: [id], onDelete: Cascade)
+  pitstopEvent         PitstopEvent?                 @relation(fields: [pitstopEventId], references: [id], onDelete: Cascade)
+  owner                User                          @relation("ActionPointOwner", fields: [ownerId], references: [id])
+  assignedBy           User?                         @relation("ActionPointAssigner", fields: [assignedById], references: [id])
+  createdBy            User                          @relation("ActionPointCreator", fields: [createdById], references: [id])
+  lastUpdatedBy        User?                         @relation("ActionPointLastUpdater", fields: [lastUpdatedById], references: [id])
+  completedBy          User?                         @relation("ActionPointCompleter", fields: [completedById], references: [id])
+  needsSettlement      Settlement?                   @relation("ActionPointNeedsSettlement", fields: [needsSettlementId], references: [id])
+  needsCluster         Cluster?                      @relation("ActionPointNeedsCluster", fields: [needsClusterId], references: [id])
+  needsZone            Zone?                         @relation("ActionPointNeedsZone", fields: [needsZoneId], references: [id])
+  needsCity            City?                         @relation("ActionPointNeedsCity", fields: [needsCityId], references: [id])
   caregiverObservation CaregiverPracticeObservation?
 
   @@index([ownerId, status, dueDate])
