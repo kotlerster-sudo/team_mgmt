@@ -3,7 +3,7 @@ import path from "path";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { UserSearch } from "lucide-react";
-import { getDownloadUrl, list } from "@vercel/blob";
+import { get, list } from "@vercel/blob";
 import { auth } from "@/lib/auth";
 import { isSuperAdmin } from "@/lib/roleGuard";
 import UploadForm from "./UploadForm";
@@ -36,8 +36,9 @@ export default async function RecruitmentPage() {
         .sort((a, b) => +new Date(b.uploadedAt) - +new Date(a.uploadedAt))
         .map(async (b) => {
           const slug = b.pathname.replace(/^recruitment\/docs\//, "").replace(/\.html$/, "");
-          const res = await fetch(getDownloadUrl(b.url));
-          return parseDoc(slug, res.ok ? await res.text() : "");
+          // Private blobs need the store token — a plain fetch of the URL 401s.
+          const got = await get(b.url, { access: "private" });
+          return parseDoc(slug, got?.statusCode === 200 ? await new Response(got.stream).text() : "");
         }),
     );
     docs.push(...generated);

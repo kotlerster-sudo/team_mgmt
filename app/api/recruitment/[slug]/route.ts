@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { readFile } from "fs/promises";
 import path from "path";
-import { getDownloadUrl, list } from "@vercel/blob";
+import { get, list } from "@vercel/blob";
 import { auth } from "@/lib/auth";
 import { isSuperAdmin } from "@/lib/roleGuard";
 
@@ -36,8 +36,9 @@ async function loadDoc(slug: string): Promise<string | null> {
     const { blobs } = await list({ prefix: pathname, limit: 1 });
     const blob = blobs.find((b) => b.pathname === pathname);
     if (!blob) return null;
-    const res = await fetch(getDownloadUrl(blob.url));
-    return res.ok ? await res.text() : null;
+    // Private blobs need the store token — a plain fetch of the URL 401s.
+    const got = await get(blob.url, { access: "private" });
+    return got?.statusCode === 200 ? await new Response(got.stream).text() : null;
   } catch {
     return null;
   }

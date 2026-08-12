@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { access } from "fs/promises";
 import path from "path";
 import Anthropic from "@anthropic-ai/sdk";
-import { del, getDownloadUrl, list, put } from "@vercel/blob";
+import { del, get, list, put } from "@vercel/blob";
 import { auth } from "@/lib/auth";
 import { isSuperAdmin } from "@/lib/roleGuard";
 import { extractCv } from "@/lib/recruitment/extractCv";
@@ -104,9 +104,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   ];
 
   for (let i = 0; i < cvs.length; i++) {
-    const res = await fetch(getDownloadUrl(cvs[i].url));
-    if (!res.ok) return NextResponse.json({ error: `Could not read CV "${cvs[i].name}"` }, { status: 502 });
-    const buffer = Buffer.from(await res.arrayBuffer());
+    // Private blobs need the store token — a plain fetch of the URL 401s.
+    const got = await get(cvs[i].url, { access: "private" });
+    if (got?.statusCode !== 200) {
+      return NextResponse.json({ error: `Could not read CV "${cvs[i].name}"` }, { status: 502 });
+    }
+    const buffer = Buffer.from(await new Response(got.stream).arrayBuffer());
     const { text, images } = await extractCv(buffer);
     userContent.push({ type: "text", text: `=== CV ${i + 1} of ${cvs.length}: ${cvs[i].name} ===\n${text || "(scanned — see page images below)"}` });
     for (const img of images) {
