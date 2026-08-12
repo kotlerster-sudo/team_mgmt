@@ -8,6 +8,7 @@ import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { assertFieldGoalAccess } from "@/lib/field/access";
 import { reconcileScoredFollowups } from "@/lib/field/safety";
+import { computeCloseBlockers } from "@/lib/field/visitClose";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ goalId: string }> }) {
   const session = await auth();
@@ -69,8 +70,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ goa
     case "close": {
       const v = await openVisit();
       if (!v) return Response.json({ error: "No open visit" }, { status: 400 });
-      await prisma.fieldVisit.update({ where: { id: v.id }, data: { closedAt: now, closedById: userId, note: body?.note ?? null } });
-      return Response.json({ ok: true });
+
+      // Gate: mandatory steps done + every non-negotiable safety item rated.
+      const recipe = await prisma.fieldStep.findMany({ where: { goalId, kind: "Visit", deletedAt: null }, select: { id: true, title: true, mandatory: true, formSchema: true } });
+      const states = new Map((await prisma.fieldVisitStep.findMany({ where: { visitId: v.id }, select: { stepId: true, status: true, answers: true } })).map((s) => [s.stepId, s]));
+      const blockers = computeCloseBlockers(
+        recipe.map((r) => { const st = states.get(r.id); return { title: r.title, mandatory: r.mandatory, formSchema: r.formSchema, done: st?.status === "Done", answers: st?.answers ?? null }; }),
+      );
+      const force = !!body?.force;
+      const reason: string = (body?.note ?? "").trim();
+      if (blockers.length && !force) return Response.json({ error: "blocked", blockers }, { status: 400 });
+      if (blockers.length && force && !reason) return Response.json({ error: "reason_required", blockers }, { status: 400 });
+
+      await prisma.fieldVisit.update({ where: { id: v.id }, data: { closedAt: now, closedById: userId, note: reason || null } });
+      return Response.json({ ok: true, forced: blockers.length > 0 });
     }
     default:
       return Response.json({ error: "Unknown action" }, { status: 400 });

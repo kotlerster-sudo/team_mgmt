@@ -7,6 +7,7 @@ import { goalInClusterFilter } from "@/lib/operations/clusters";
 import { monthBounds, requiredVisitsForMonth } from "@/lib/operations/month";
 import { deriveFieldPhase, type FieldPhase } from "@/lib/field/phase";
 import { activeFieldDomains } from "@/lib/field/access";
+import { computeCloseBlockers } from "@/lib/field/visitClose";
 
 export type InterventionRow = {
   id: string;
@@ -171,6 +172,7 @@ export type InterventionDetail = {
   visitDoneThisMonth: number;
   openVisit: { id: string; arrivedAt: Date | null } | null;
   visitSteps: VisitStepView[];
+  closeBlockers: string[]; // reasons the open visit cannot be signed off yet
   followups: FollowupView[];
 };
 
@@ -260,6 +262,9 @@ export async function loadIntervention(goalId: string): Promise<InterventionDeta
     visitDoneThisMonth,
     openVisit: openVisitRow ? { id: openVisitRow.id, arrivedAt: openVisitRow.arrivedAt } : null,
     visitSteps,
+    closeBlockers: openVisitRow
+      ? computeCloseBlockers(visitSteps.map((s) => ({ title: s.title, mandatory: s.mandatory, formSchema: s.formSchema, done: s.done, answers: s.answers })))
+      : [],
     followups,
   };
 }

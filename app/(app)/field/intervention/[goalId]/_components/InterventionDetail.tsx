@@ -22,7 +22,7 @@ type Data = {
   locationName: string; overallSlaAt: string | null; overallOverdue: boolean;
   setupDone: number; setupTotal: number; setupSteps: SetupStep[];
   visitRequired: number; visitDoneThisMonth: number; openVisit: { id: string; arrivedAt: string | null } | null;
-  visitSteps: VisitStep[]; followups: Followup[];
+  visitSteps: VisitStep[]; closeBlockers: string[]; followups: Followup[];
 };
 
 const fmtDate = (iso: string | null) =>
@@ -227,10 +227,36 @@ function LiveView({ data, post, onOpenForm, busy }: { data: Data; post: (u: stri
               </li>
             ))}
           </ul>
-          <div className="flex justify-end border-t border-stone-100 pt-3">
-            <button disabled={busy} onClick={() => post(`/api/field/visit/${data.id}`, { action: "close" })} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50">
-              <ClipboardCheck size={15} /> Close visit
-            </button>
+          <div className="space-y-2 border-t border-stone-100 pt-3">
+            {data.closeBlockers.length > 0 && (
+              <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                <p className="font-medium">Can’t close yet:</p>
+                <ul className="mt-0.5 list-disc pl-4">
+                  {data.closeBlockers.map((b, i) => <li key={i}>{b}</li>)}
+                </ul>
+              </div>
+            )}
+            <div className="flex items-center justify-end gap-3">
+              {data.closeBlockers.length > 0 && (
+                <button
+                  disabled={busy}
+                  onClick={() => {
+                    const reason = window.prompt("Closing with items unaddressed. Add a reason:");
+                    if (reason && reason.trim()) post(`/api/field/visit/${data.id}`, { action: "close", force: true, note: reason.trim() });
+                  }}
+                  className="text-xs font-medium text-stone-500 underline hover:text-stone-700 disabled:opacity-50"
+                >
+                  Close anyway…
+                </button>
+              )}
+              <button
+                disabled={busy || data.closeBlockers.length > 0}
+                onClick={() => post(`/api/field/visit/${data.id}`, { action: "close" })}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-40"
+              >
+                <ClipboardCheck size={15} /> Close visit
+              </button>
+            </div>
           </div>
         </div>
       )}
