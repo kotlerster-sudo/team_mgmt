@@ -10,7 +10,7 @@ import {
 import { CaregiverPracticeCapture } from "@/components/caregiver/CaregiverPracticeCapture";
 
 // ── Types (dates arrive as ISO strings across the server→client boundary) ─────
-type FormField = { key: string; label?: string; text?: string; type?: string; options?: string[] };
+type FormField = { key: string; label?: string; text?: string; type?: string; options?: string[]; category?: string | null };
 type SetupStep = {
   id: string; title: string; status: string; dueDate: string | null; blocked: boolean;
   blockedByTitle: string | null; overdue: boolean; formKind: string | null; formSchema: any; answers: any;
@@ -316,19 +316,7 @@ function StepFormModal({ step, onClose, onSave }: { step: SetupStep | VisitStep;
             Caregiver-practices observation capture opens here. (Full observation grid — salvaged from the existing capture flow — wires in next.) For now, mark the step done once observed.
           </div>
         ) : kind === "checklist" ? (
-          <ul className="space-y-1.5">
-            {(schema.items ?? []).map((it: FormField) => {
-              const checked = !!answers?.checked?.[it.key];
-              return (
-                <li key={it.key}>
-                  <label className="flex items-start gap-2.5 rounded-lg px-1 py-1.5 text-sm text-stone-700 hover:bg-stone-50">
-                    <input type="checkbox" checked={checked} onChange={(e) => setAnswers((a: any) => ({ ...a, checked: { ...(a?.checked ?? {}), [it.key]: e.target.checked } }))} className="mt-0.5" />
-                    <span>{it.text ?? it.label ?? it.key}</span>
-                  </label>
-                </li>
-              );
-            })}
-          </ul>
+          <ChecklistBody items={schema.items ?? []} answers={answers} setAnswers={setAnswers} />
         ) : (
           <div className="space-y-3">
             {(schema.fields ?? schema.items ?? []).map((f: FormField) => (
@@ -356,6 +344,43 @@ function StepFormModal({ step, onClose, onSave }: { step: SetupStep | VisitStep;
           <button onClick={() => onSave(answers, true)} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500">Save & mark done</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Checklist form body — groups items by category (e.g. Fire Safety) when present.
+function ChecklistBody({ items, answers, setAnswers }: { items: FormField[]; answers: any; setAnswers: (fn: (a: any) => any) => void }) {
+  const toggle = (key: string, val: boolean) => setAnswers((a: any) => ({ ...a, checked: { ...(a?.checked ?? {}), [key]: val } }));
+  const groups = new Map<string, FormField[]>();
+  for (const it of items) {
+    const g = it.category ?? "";
+    groups.set(g, [...(groups.get(g) ?? []), it]);
+  }
+  const total = items.length;
+  const done = items.filter((it) => answers?.checked?.[it.key]).length;
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between text-xs text-stone-500">
+        <span>{done} of {total} checked</span>
+        <button onClick={() => setAnswers((a: any) => ({ ...a, checked: Object.fromEntries(items.map((it) => [it.key, true])) }))} className="font-medium text-stone-600 hover:text-stone-900">
+          Mark all
+        </button>
+      </div>
+      {[...groups.entries()].map(([cat, its]) => (
+        <div key={cat || "_"}>
+          {cat && <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-stone-400">{cat}</p>}
+          <ul className="space-y-0.5">
+            {its.map((it) => (
+              <li key={it.key}>
+                <label className="flex items-start gap-2.5 rounded-lg px-1 py-1.5 text-sm text-stone-700 hover:bg-stone-50">
+                  <input type="checkbox" checked={!!answers?.checked?.[it.key]} onChange={(e) => toggle(it.key, e.target.checked)} className="mt-0.5" />
+                  <span>{it.text ?? it.label ?? it.key}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
     </div>
   );
 }

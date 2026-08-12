@@ -92,9 +92,18 @@ async function main() {
     include: { categoryDefs: { orderBy: { order: "asc" }, include: { items: { orderBy: { order: "asc" } } } } },
   });
 
+  // 24-point hygiene & safety checklist items (live in FacilityIndicatorDef
+  // "creche_hygiene_score") — attached as a checklist form on the safety step.
+  const hygieneDef = await prisma.facilityIndicatorDef.findFirst({
+    where: { key: "creche_hygiene_score" },
+    select: { checklistItems: { where: { isActive: true }, orderBy: { sortOrder: "asc" }, select: { itemKey: true, text: true, category: true } } },
+  });
+  const safetyItems = (hygieneDef?.checklistItems ?? []).map((it) => ({ key: it.itemKey, text: it.text, category: it.category ?? null }));
+  const isSafetyStep = (key: string, title: string) => /24-point/i.test(key) || /24-point/i.test(title) || (/hygiene/i.test(key) && /safety/i.test(key));
+
   // Compose the monthly visit recipe: the round checklist items, plus catalog
   // items that carry a form (caregiver practices). De-dup by stepKey.
-  type VisitStep = { stepKey: string; title: string; mandatory: boolean; formKind: string | null };
+  type VisitStep = { stepKey: string; title: string; mandatory: boolean; formKind: string | null; formSchema?: unknown };
   const visitSteps: VisitStep[] = [];
   const seen = new Set<string>();
   const push = (s: VisitStep) => {
@@ -104,8 +113,12 @@ async function main() {
   };
 
   // From "Monthly Creche Rounds" — the operational things an RP does each visit.
+  // The 24-point safety item gets its checklist form attached.
   for (const p of liveTemplate?.pitstopDefs ?? []) {
-    for (const c of p.checklist) push({ stepKey: c.key, title: c.text, mandatory: true, formKind: null });
+    for (const c of p.checklist) {
+      const safety = isSafetyStep(c.key, c.text) && safetyItems.length > 0;
+      push({ stepKey: c.key, title: c.text, mandatory: true, formKind: safety ? "checklist" : null, formSchema: safety ? { items: safetyItems } : undefined });
+    }
   }
   // From the catalog — attach the caregiver-practices form to that item.
   for (const cat of catalog?.categoryDefs ?? []) {
@@ -124,10 +137,11 @@ async function main() {
   for (const s of visitSteps) {
     await prisma.visitStepTemplate.upsert({
       where: { domain_stepKey: { domain: DOMAIN, stepKey: s.stepKey } },
-      create: { domain: DOMAIN, order: vorder, stepKey: s.stepKey, title: s.title, mandatory: s.mandatory, formKind: s.formKind },
-      update: { order: vorder, title: s.title, mandatory: s.mandatory, formKind: s.formKind, isActive: true },
+      create: { domain: DOMAIN, order: vorder, stepKey: s.stepKey, title: s.title, mandatory: s.mandatory, formKind: s.formKind, formSchema: s.formSchema as never },
+      update: { order: vorder, title: s.title, mandatory: s.mandatory, formKind: s.formKind, formSchema: (s.formSchema ?? null) as never, isActive: true },
     });
-    console.log(`  visit[${vorder}] ${s.stepKey}  mandatory=${s.mandatory} form=${s.formKind ?? "-"}`);
+    const nItems = (s.formSchema as { items?: unknown[] })?.items?.length ?? 0;
+    console.log(`  visit[${vorder}] ${s.stepKey}  mandatory=${s.mandatory} form=${s.formKind ?? "-"}${nItems ? ` (${nItems} items)` : ""}`);
     vorder += 1;
   }
 
