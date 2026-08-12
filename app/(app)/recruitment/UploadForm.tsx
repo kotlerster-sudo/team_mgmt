@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { upload } from "@vercel/blob/client";
 import { FileUp, Loader2, Sparkles } from "lucide-react";
 
 type Phase = "idle" | "uploading" | "scouting";
@@ -28,13 +29,23 @@ export default function UploadForm() {
       setPhase("uploading");
       const cvs: { url: string; name: string }[] = [];
       for (let i = 0; i < files.length; i++) {
-        setProgress(`Uploading CV ${i + 1} of ${files.length}…`);
-        const fd = new FormData();
-        fd.append("file", files[i]);
-        const res = await fetch("/api/recruitment/upload-cv", { method: "POST", body: fd });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(json.error || `Upload failed for ${files[i].name}`);
-        cvs.push({ url: json.url, name: json.name });
+        const file = files[i];
+        if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+          throw new Error(`Only PDF CVs are supported — "${file.name}" is not a PDF`);
+        }
+        if (file.size > 15 * 1024 * 1024) {
+          throw new Error(`"${file.name}" is too large (max 15 MB)`);
+        }
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const blob = await upload(`recruitment/cv-tmp/${safeName}`, file, {
+          access: "private",
+          contentType: "application/pdf",
+          handleUploadUrl: "/api/recruitment/upload-cv",
+          multipart: true,
+          onUploadProgress: ({ percentage }) =>
+            setProgress(`Uploading CV ${i + 1} of ${files.length} — ${Math.round(percentage)}%`),
+        });
+        cvs.push({ url: blob.url, name: file.name });
       }
 
       setPhase("scouting");

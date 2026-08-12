@@ -1,29 +1,40 @@
-import { put } from "@vercel/blob";
+import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { isSuperAdmin } from "@/lib/roleGuard";
 
-// Temp holding area for candidate CV PDFs before doc generation. Candidate
-// PII — private store, super-admin only, deleted after the doc is generated.
+const PREFIX = "recruitment/cv-tmp/";
+const MAX_BYTES = 15 * 1024 * 1024;
+
+// Issues a client token so the browser uploads the CV straight to Blob.
+// Routing the file through this function instead would cap it at Vercel's
+// 4.5 MB request-body limit, which scanned CVs routinely exceed.
+//
+// Candidate PII — private store, super-admin only, deleted after doc generation.
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const session = await auth();
-  if (!isSuperAdmin(session)) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const body = (await request.json()) as HandleUploadBody;
 
-  const formData = await request.formData();
-  const file = formData.get("file") as File | null;
-  if (!file) return NextResponse.json({ error: "No file provided" }, { status: 400 });
-
-  if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
-    return NextResponse.json({ error: "Only PDF CVs are supported" }, { status: 400 });
+  try {
+    return NextResponse.json(
+      await handleUpload({
+        body,
+        request,
+        onBeforeGenerateToken: async (pathname) => {
+          const session = await auth();
+          if (!isSuperAdmin(session)) throw new Error("Not found");
+          // generate/route.ts trusts this prefix when validating CV references.
+          if (!pathname.startsWith(PREFIX)) throw new Error("Invalid upload path");
+          return {
+            allowedContentTypes: ["application/pdf"],
+            maximumSizeInBytes: MAX_BYTES,
+            addRandomSuffix: true,
+          };
+        },
+        onUploadCompleted: async () => {},
+      }),
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Upload failed";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
-  if (file.size > 15 * 1024 * 1024) {
-    return NextResponse.json({ error: "File too large (max 15 MB)" }, { status: 413 });
-  }
-
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const blob = await put(`recruitment/cv-tmp/${safeName}`, file, {
-    access: "private",
-    addRandomSuffix: true,
-  });
-  return NextResponse.json({ url: blob.url, name: file.name });
 }
