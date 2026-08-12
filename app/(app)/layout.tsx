@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import SessionProvider from "@/components/SessionProvider";
 import QueryProvider from "@/components/QueryProvider";
 import AppNav from "./AppNav";
+import { fieldEnabledForSession } from "@/lib/field/access";
 import PushSubscriber from "@/components/PushSubscriber";
 import { PWAInstallBanner } from "@/components/PWAInstallButton";
 import NavigationProgress from "@/components/NavigationProgress";
@@ -81,6 +82,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           isViewer={session.user.role === "viewer"}
           designation={me?.designation ?? "Other"}
           allowedNavHrefs={Array.from(allowedNavHrefs)}
+          fieldEnabled={fieldEnabledForSession(session)}
         />
         <main className="relative flex-1 overflow-y-auto pb-16 sm:pb-0">{children}</main>
         <PWAInstallBanner />

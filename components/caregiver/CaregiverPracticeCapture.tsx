@@ -40,12 +40,20 @@ export function CaregiverPracticeCapture({
   visitEventId,
   onClose,
   onSaved,
+  apiBase,
+  idParam = "visitEventId",
 }: {
   goalId: string;
+  /** The visit id — a PitstopEvent id on /operations, a FieldVisit id on /field. */
   visitEventId: string;
   onClose: () => void;
   onSaved: () => void;
+  /** Route base (default = the /operations visit route). /field passes its own. */
+  apiBase?: string;
+  /** Query/body key for the visit id (default "visitEventId"; /field uses "fieldVisitId"). */
+  idParam?: string;
 }) {
+  const base = apiBase ?? `/api/operations/visit/${goalId}/caregiver-practices`;
   const [categories, setCategories] = useState<Category[]>([]);
   const [openFlags, setOpenFlags] = useState<OpenFlag[]>([]);
   const [answers, setAnswers] = useState<Record<string, Answer>>({});
@@ -77,7 +85,7 @@ export function CaregiverPracticeCapture({
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/operations/visit/${goalId}/caregiver-practices?visitEventId=${encodeURIComponent(visitEventId)}`)
+    fetch(`${base}?${idParam}=${encodeURIComponent(visitEventId)}`)
       .then((r) => r.json())
       .then((d) => {
         if (cancelled) return;
@@ -92,7 +100,7 @@ export function CaregiverPracticeCapture({
       })
       .catch(() => !cancelled && setLoading(false));
     return () => { cancelled = true; };
-  }, [goalId, visitEventId]);
+  }, [goalId, visitEventId, base, idParam]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && (catId || subLabel ? goBack() : onClose());
@@ -131,10 +139,10 @@ export function CaregiverPracticeCapture({
       .filter(([, a]) => a.status)
       .map(([practiceId, a]) => ({ practiceId, status: a.status, remarks: a.remarks || null, action: a.action || null, photoUrl: a.photoUrl || null }));
     try {
-      const r = await fetch(`/api/operations/visit/${goalId}/caregiver-practices`, {
+      const r = await fetch(base, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ visitEventId, observations }),
+        body: JSON.stringify({ [idParam]: visitEventId, observations }),
       });
       if (r.ok) onSaved();
       else setSaving(false);

@@ -159,6 +159,11 @@ model User {
   schoolPlanMemberships     SchoolPlanMember[]             @relation("SchoolPlanMemberUser")
   // Shared team state for recruitment scouting docs
   recruitmentScoutUpdates   RecruitmentScoutState[]        @relation("RecruitmentScoutUpdater")
+  // Field-ops surface (/field) — the minimal RP spine
+  fieldStepsCompleted       FieldStep[]                    @relation("FieldStepCompleter")
+  fieldVisitsArrived        FieldVisit[]                   @relation("FieldVisitArriver")
+  fieldVisitsClosed         FieldVisit[]                   @relation("FieldVisitCloser")
+  fieldVisitStepsCompleted  FieldVisitStep[]               @relation("FieldVisitStepCompleter")
 }
 
 model Account {
@@ -232,6 +237,15 @@ model Goal {
   needsZoneId       String?
   needsCityId       String?
 
+  // Field-ops surface (/field) — the minimal RP spine treats Goal AS the intervention.
+  // fieldAnchorAt = day-0 for setup SLA math (falls back to createdAt when null).
+  // overallSlaDays = whole-setup SLA. cadenceCount/cadencePeriod = live visit cadence
+  // (replaces CentreCatalog cadence; period is "week" | "month").
+  fieldAnchorAt  DateTime?
+  overallSlaDays Int?
+  cadenceCount   Int?
+  cadencePeriod  String?
+
   owner                 User                           @relation(fields: [ownerId], references: [id])
   pitstops              Pitstop[]
   threads               Thread[]
@@ -265,6 +279,9 @@ model Goal {
   centreCatalog         CentreCatalog?
   catalogApprovals      CatalogItemApproval[]
   caregiverObservations CaregiverPracticeObservation[]
+  // Field-ops surface (/field)
+  fieldSteps            FieldStep[]
+  fieldVisits           FieldVisit[]
 }
 
 // One row per settlement that received actuals from a completed domain goal.
@@ -1125,7 +1142,10 @@ model CaregiverPracticeObservation {
   facilityId    String // the creche (goal's LayerFeature)
   settlementId  String
   goalId        String
-  visitEventId  String // parent Visit PitstopEvent
+  // Legacy parent Visit PitstopEvent. Kept for existing rows; new /field captures
+  // stamp fieldVisitId instead. Exactly one of the two is set per row going forward.
+  visitEventId  String? // parent Visit PitstopEvent (legacy /operations)
+  fieldVisitId  String? // parent FieldVisit (/field surface)
   status        CaregiverPracticeStatus
   remarks       String?
   action        CaregiverPracticeAction?
@@ -1140,12 +1160,15 @@ model CaregiverPracticeObservation {
   facility    LayerFeature      @relation(fields: [facilityId], references: [id], onDelete: Cascade)
   settlement  Settlement        @relation(fields: [settlementId], references: [id], onDelete: Cascade)
   goal        Goal              @relation(fields: [goalId], references: [id], onDelete: Cascade)
-  visit       PitstopEvent      @relation(fields: [visitEventId], references: [id], onDelete: Cascade)
+  visit       PitstopEvent?     @relation(fields: [visitEventId], references: [id], onDelete: Cascade)
+  fieldVisit  FieldVisit?       @relation(fields: [fieldVisitId], references: [id], onDelete: Cascade)
   capturedBy  User              @relation("CaregiverObservationCapturer", fields: [capturedById], references: [id])
   actionPoint ActionPoint?      @relation(fields: [actionPointId], references: [id], onDelete: SetNull)
 
   // One row per practice per visit (enables upsert + AP reconciliation).
+  // Both nullable — Postgres treats NULLs as distinct, so a row uses exactly one lane.
   @@unique([visitEventId, practiceId])
+  @@unique([fieldVisitId, practiceId])
   // Carry-forward: "latest observation per (facility, practice)".
   @@index([facilityId, practiceId, capturedAt])
   @@index([facilityId, status]) // phase-2 command-center facility rollup
@@ -2136,23 +2159,23 @@ model CatalogCategoryDef {
 }
 
 model CatalogItemDef {
-  id             String   @id @default(cuid())
-  categoryDefId  String
-  order          Int      @default(0)
-  key            String
-  text           String
-  completionType String   @default("Activity")
-  blocksSignoff  Boolean  @default(true)
+  id              String   @id @default(cuid())
+  categoryDefId   String
+  order           Int      @default(0)
+  key             String
+  text            String
+  completionType  String   @default("Activity")
+  blocksSignoff   Boolean  @default(true)
   // Real FK replacing CatalogItem.ref.(templateSlug, checklistKey). Null = catalog-native/free-text
   // item (its own concept). Set = this item TAGS an existing template checklist item.
-  checklistDefId String?
+  checklistDefId  String?
   // The (templateSlug, checklistKey) this item MATERIALISES on a visit (from CatalogItem.ref). Kept
   // even when checklistDefId is null (catalog-native), so a binding created against this item can set
   // the legacy string keys that runtime capture still reads. Null = free-text item with no ref.
   refTemplateSlug String?
   refChecklistKey String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   category          CatalogCategoryDef         @relation(fields: [categoryDefId], references: [id], onDelete: Cascade)
   checklist         TemplateChecklistDef?      @relation("CatalogItemChecklist", fields: [checklistDefId], references: [id], onDelete: SetNull)
@@ -4663,4 +4686,175 @@ model RecruitmentScoutState {
   updatedAt   DateTime @updatedAt
   updatedById String?
   updatedBy   User?    @relation("RecruitmentScoutUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// FIELD-OPS SURFACE (/field) — the minimal RP spine
+//
+// An epoch reset of urban operations & setup. Goal IS the intervention (see the
+// fieldAnchorAt/overallSlaDays/cadence* columns above). The old
+// Pitstop → ChecklistItem → PitstopEvent triple collapses into ONE FieldStep unit.
+// These tables are purely additive; the old spine is left intact and readable so
+// /operations keeps working during the transition. No indicators, no journeys —
+// this is a project/team-management layer, not an M&E layer.
+// ════════════════════════════════════════════════════════════════════════════
+
+enum FieldStepKind {
+  Setup // one-time setup task with an SLA, part of the go-live sequence
+  Visit // recurring task performed on each cadence visit of a live intervention
+}
+
+enum FieldStepStatus {
+  Todo
+  InProgress
+  Blocked // derived-cached: this step's blockedBy predecessor is not yet Done
+  Done
+  Skipped // N/A for this intervention (soft-remove; never hard delete)
+}
+
+// One collapsed step — replaces Pitstop + ChecklistItem + PitstopEvent.
+// kind=Setup: a dated setup task on the go-live sequence (completion lives here).
+// kind=Visit: a RECIPE row ("do this every visit"); per-occurrence completion
+// lives in FieldVisitStep, not here.
+model FieldStep {
+  id     String        @id @default(cuid())
+  goalId String // = the intervention (existing Goal). No separate intervention table.
+  kind   FieldStepKind
+  title  String
+  order  Int           @default(0)
+
+  // Provenance — which template slot this materialised from. (templateSlug, stepKey)
+  // is the stable identity used by template re-sync. Both null = ad-hoc RP-added step.
+  templateSlug String?
+  stepKey      String?
+
+  // ── Setup semantics ──────────────────────────────────────────────────────
+  slaDays      Int? // step SLA in days from its start anchor
+  startSlaDays Int? // days after the intervention anchor that this step may start
+  blockedByKey String? // ONE predecessor step's stepKey (finish-to-start). Null = parallel.
+  dueDate      DateTime? // materialised deadline (anchor + startSlaDays + slaDays)
+
+  // ── Visit semantics ──────────────────────────────────────────────────────
+  mandatory Boolean @default(true) // blocksSignoff equivalent
+
+  // ── Form attachment ───────────────────────────────────────────────────────
+  formKind   String? // null | "questionnaire" | "caregiver_practices"
+  formSchema Json? // questionnaire field defs (null for caregiver_practices — uses its own tables)
+
+  // ── Completion (setup steps only; Visit recipes stay Todo) ─────────────────
+  status        FieldStepStatus @default(Todo)
+  answers       Json? // questionnaire answers blob for a Setup step
+  completedById String?
+  completedAt   DateTime?
+  startedAt     DateTime?
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  goal        Goal             @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  completedBy User?            @relation("FieldStepCompleter", fields: [completedById], references: [id], onDelete: SetNull)
+  visitSteps  FieldVisitStep[]
+
+  @@index([goalId, kind, order])
+  @@index([goalId, status])
+  @@index([templateSlug, stepKey])
+}
+
+// One occurrence of a cadence visit to a live intervention. Replaces the parent
+// PitstopEvent(type=Visit). Cadence compliance counts these per month.
+model FieldVisit {
+  id           String    @id @default(cuid())
+  goalId       String
+  scheduledFor DateTime // the month/period bucket this visit belongs to
+  arrivedAt    DateTime? // "I have reached" stamp
+  arrivedById  String?
+  closedAt     DateTime? // visit signed off
+  closedById   String?
+  note         String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  goal                  Goal                           @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  arrivedBy             User?                          @relation("FieldVisitArriver", fields: [arrivedById], references: [id], onDelete: SetNull)
+  closedBy              User?                          @relation("FieldVisitCloser", fields: [closedById], references: [id], onDelete: SetNull)
+  steps                 FieldVisitStep[]
+  caregiverObservations CaregiverPracticeObservation[]
+
+  @@index([goalId, scheduledFor])
+}
+
+// Per-visit tick of a Visit-recipe step. Replaces the child PitstopEvent + its tick.
+model FieldVisitStep {
+  id            String          @id @default(cuid())
+  visitId       String
+  stepId        String // → FieldStep(kind=Visit) recipe row
+  status        FieldStepStatus @default(Todo)
+  answers       Json? // questionnaire answers for this occurrence
+  completedById String?
+  completedAt   DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  visit       FieldVisit @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  step        FieldStep  @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  completedBy User?      @relation("FieldVisitStepCompleter", fields: [completedById], references: [id], onDelete: SetNull)
+
+  @@unique([visitId, stepId])
+  @@index([stepId, status])
+}
+
+// ── Templates (flat, one row per step) ───────────────────────────────────────
+
+// Per-domain setup recipe: ordered SLA'd steps materialised into FieldStep(kind=Setup).
+model SetupStepTemplate {
+  id           String   @id @default(cuid())
+  domain       String // matches Goal.needsDomain e.g. "creche"
+  order        Int      @default(0)
+  stepKey      String // stable slug → FieldStep.stepKey
+  title        String
+  slaDays      Int?
+  startSlaDays Int?
+  blockedByKey String? // predecessor stepKey (null = parallel)
+  formKind     String? // null | "questionnaire" | "caregiver_practices"
+  formSchema   Json?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([domain, stepKey])
+  @@index([domain, order])
+}
+
+// Per-domain visit recipe: steps materialised into FieldStep(kind=Visit) at go-live.
+model VisitStepTemplate {
+  id         String   @id @default(cuid())
+  domain     String
+  order      Int      @default(0)
+  stepKey    String
+  title      String
+  mandatory  Boolean  @default(true)
+  formKind   String?
+  formSchema Json?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([domain, stepKey])
+  @@index([domain, order])
+}
+
+// Per-domain config: label, geo grain, overall setup SLA, default live cadence.
+model FieldDomainConfig {
+  domain         String   @id // "creche", "elderly", …
+  label          String
+  unit           String   @default("settlement") // "settlement" | "cluster"
+  overallSlaDays Int?
+  cadenceCount   Int?
+  cadencePeriod  String? // "week" | "month"
+  hasLivePhase   Boolean  @default(true)
+  sortOrder      Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }

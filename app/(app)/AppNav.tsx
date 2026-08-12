@@ -8,13 +8,13 @@ import {
   Target, Search, LogOut, Bell, Settings, Users, GanttChartSquare,
   CalendarClock, MoreHorizontal, X, BookOpen, ClipboardList, MapPin,
   CalendarRange, HelpCircle, BarChart3, MessageSquare, LayoutGrid, Route, TrendingUp,
-  Layers, Library, Calculator, GraduationCap, UserSearch, Radar,
+  Layers, Library, Calculator, GraduationCap, UserSearch, Radar, Compass,
 } from "lucide-react";
 import Avatar from "@/components/Avatar";
 import PWAInstallButton from "@/components/PWAInstallButton";
 
 // Routes that belong to the Operations world
-const OPERATIONS_ROUTES = ["/operations", "/home", "/activities", "/visits", "/threads", "/notifications"];
+const OPERATIONS_ROUTES = ["/field", "/operations", "/home", "/activities", "/visits", "/threads", "/notifications"];
 
 interface User {
   id?: string;
@@ -24,13 +24,15 @@ interface User {
 }
 
 export default function AppNav({
-  user, unreadCount: initialUnreadCount, isAdmin, isViewer, designation, allowedNavHrefs,
+  user, unreadCount: initialUnreadCount, isAdmin, isViewer, designation, allowedNavHrefs, fieldEnabled,
 }: {
   user: User;
   unreadCount: number;
   isAdmin?: boolean;
   isViewer?: boolean;
   designation?: string;
+  /** Show the /field entry (RP surface, dogfood-gated). */
+  fieldEnabled?: boolean;
   /**
    * Hrefs the user is allowed to see in the Setup-mode sidebar. Computed
    * server-side in `app/(app)/layout.tsx` via `computeAllowedNavHrefs()`.
@@ -102,6 +104,7 @@ export default function AppNav({
 
   // ── Operations nav items ───────────────────────────────────────────────────
   const operationsNav = [
+    ...(fieldEnabled ? [{ href: "/field", icon: <Compass className="w-3.5 h-3.5" />, label: "Field (beta)" }] : []),
     { href: "/operations",    icon: <LayoutGrid className="w-3.5 h-3.5" />,    label: "Operations"    },
     ...(isSupervisor ? [{ href: "/operations/oversight", icon: <Layers className="w-3.5 h-3.5" />, label: "Oversight" }] : []),
     { href: "/home",          icon: <CalendarClock className="w-3.5 h-3.5" />, label: "Home"          },
