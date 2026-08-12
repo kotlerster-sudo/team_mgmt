@@ -52,6 +52,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ goa
       let answers = body.answers ?? undefined;
       let followupResult: { opened: number; closed: number } | undefined;
       const marks = answers?.marks as Record<string, string> | undefined;
+
+      // A scored step can't be marked Done until every non-negotiable is rated.
+      const schema = step.formSchema as { scored?: boolean; items?: { key: string; nonNegotiable?: boolean }[] } | null;
+      if (done && schema?.scored) {
+        const unrated = (schema.items ?? []).filter((it) => it.nonNegotiable && !marks?.[it.key]).length;
+        if (unrated > 0) return Response.json({ error: "unrated_non_negotiables", unrated }, { status: 400 });
+      }
+
       if (marks) {
         const prev = await prisma.fieldVisitStep.findUnique({ where: { visitId_stepId: { visitId: v.id, stepId } }, select: { answers: true } });
         const prevRaised = ((prev?.answers as { raised?: Record<string, string> } | null)?.raised) ?? {};

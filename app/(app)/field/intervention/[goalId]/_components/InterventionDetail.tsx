@@ -332,6 +332,12 @@ function StepFormModal({ step, onClose, onSave }: { step: SetupStep | VisitStep;
     step.answers ?? (scored ? { marks: {} } : kind === "checklist" ? { checked: {} } : {}),
   );
 
+  // A scored step can't be marked done until every non-negotiable item is rated.
+  const unratedNonNeg = scored
+    ? (schema.items ?? []).filter((it: FormField) => it.nonNegotiable && !answers?.marks?.[it.key]).length
+    : 0;
+  const canMarkDone = unratedNonNeg === 0;
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={onClose}>
       <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
@@ -366,11 +372,21 @@ function StepFormModal({ step, onClose, onSave }: { step: SetupStep | VisitStep;
           </div>
         )}
 
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="mt-4 flex items-center justify-end gap-2">
+          {!canMarkDone && (
+            <span className="mr-auto text-xs font-medium text-amber-700">{unratedNonNeg} non-negotiable{unratedNonNeg > 1 ? "s" : ""} to rate</span>
+          )}
           {kind !== "caregiver_practices" && (
             <button onClick={() => onSave(answers, false)} className="rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50">Save</button>
           )}
-          <button onClick={() => onSave(answers, true)} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500">Save & mark done</button>
+          <button
+            disabled={!canMarkDone}
+            title={canMarkDone ? undefined : "Rate every non-negotiable item first"}
+            onClick={() => onSave(answers, true)}
+            className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Save &amp; mark done
+          </button>
         </div>
       </div>
     </div>
