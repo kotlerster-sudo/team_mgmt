@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { ChevronRight, MapPin } from "lucide-react";
-import { getFieldSession } from "@/lib/field/access";
+import { ChevronRight, MapPin, Database } from "lucide-react";
+import { getFieldSession, requireFieldAdmin } from "@/lib/field/access";
 import { loadClusterSummaries } from "@/lib/field/queries";
 
 export const dynamic = "force-dynamic";
@@ -10,13 +10,20 @@ export const dynamic = "force-dynamic";
 export default async function FieldHomePage() {
   const sess = await getFieldSession();
   if (!sess) redirect("/operations");
-  const clusters = await loadClusterSummaries(sess.userId);
+  const [clusters, isAdmin] = await Promise.all([loadClusterSummaries(sess.userId), requireFieldAdmin()]);
 
   return (
     <div className="max-w-2xl mx-auto px-5 py-6 space-y-5">
-      <header>
-        <h1 className="text-lg font-semibold text-stone-900">Your clusters</h1>
-        <p className="text-sm text-stone-500 mt-0.5">Pick a cluster to see what needs doing.</p>
+      <header className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold text-stone-900">Your clusters</h1>
+          <p className="text-sm text-stone-500 mt-0.5">Pick a cluster to see what needs doing.</p>
+        </div>
+        {isAdmin && (
+          <Link href="/field/backend" className="inline-flex items-center gap-1 rounded-lg border border-stone-200 px-2.5 py-1.5 text-xs font-medium text-stone-600 hover:bg-stone-50">
+            <Database size={13} /> Backend
+          </Link>
+        )}
       </header>
 
       {clusters.length === 0 ? (

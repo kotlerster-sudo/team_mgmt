@@ -18,6 +18,14 @@ export async function getFieldSession(): Promise<FieldSession | null> {
   return { userId, email: session.user.email ?? null };
 }
 
+/** Require an admin for the /field backend console. Returns userId or null. */
+export async function requireFieldAdmin(): Promise<string | null> {
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId || !isAdminUser(session)) return null;
+  return userId;
+}
+
 /** Whether this session may see /field (env global, admin, or allowlist). Safe to call in the layout. */
 export function fieldEnabledForSession(session: Awaited<ReturnType<typeof auth>>): boolean {
   if (process.env.FIELD_SURFACE_ENABLED === "1") return true;
