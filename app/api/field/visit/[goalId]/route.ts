@@ -7,6 +7,7 @@ import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { assertFieldGoalAccess } from "@/lib/field/access";
+import { reconcileScoredFollowups } from "@/lib/field/safety";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ goalId: string }> }) {
   const session = await auth();
@@ -42,14 +43,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ goa
       if (!v) return Response.json({ error: "No open visit" }, { status: 400 });
       const stepId: string = body?.stepId ?? "";
       const done: boolean = !!body?.done;
-      const step = await prisma.fieldStep.findFirst({ where: { id: stepId, goalId, kind: "Visit", deletedAt: null }, select: { id: true } });
+      const step = await prisma.fieldStep.findFirst({ where: { id: stepId, goalId, kind: "Visit", deletedAt: null }, select: { id: true, formSchema: true } });
       if (!step) return Response.json({ error: "Unknown step" }, { status: 400 });
+
+      // Scored checklist (e.g. 24-point safety): reconcile follow-ups for failed
+      // non-negotiables and persist { marks, raised } so re-saves stay idempotent.
+      let answers = body.answers ?? undefined;
+      let followupResult: { opened: number; closed: number } | undefined;
+      const marks = answers?.marks as Record<string, string> | undefined;
+      if (marks) {
+        const prev = await prisma.fieldVisitStep.findUnique({ where: { visitId_stepId: { visitId: v.id, stepId } }, select: { answers: true } });
+        const prevRaised = ((prev?.answers as { raised?: Record<string, string> } | null)?.raised) ?? {};
+        const { raised, opened, closed } = await reconcileScoredFollowups({ goalId, formSchema: step.formSchema, marks, prevRaised, userId });
+        answers = { marks, raised };
+        followupResult = { opened, closed };
+      }
+
       await prisma.fieldVisitStep.upsert({
         where: { visitId_stepId: { visitId: v.id, stepId } },
-        create: { visitId: v.id, stepId, status: done ? "Done" : "Todo", answers: body.answers ?? undefined, completedById: done ? userId : null, completedAt: done ? now : null },
-        update: { status: done ? "Done" : "Todo", answers: body.answers ?? undefined, completedById: done ? userId : null, completedAt: done ? now : null },
+        create: { visitId: v.id, stepId, status: done ? "Done" : "Todo", answers, completedById: done ? userId : null, completedAt: done ? now : null },
+        update: { status: done ? "Done" : "Todo", answers, completedById: done ? userId : null, completedAt: done ? now : null },
       });
-      return Response.json({ ok: true, visitId: v.id });
+      return Response.json({ ok: true, visitId: v.id, followups: followupResult });
     }
     case "close": {
       const v = await openVisit();

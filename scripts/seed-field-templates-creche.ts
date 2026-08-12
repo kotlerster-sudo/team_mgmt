@@ -96,9 +96,11 @@ async function main() {
   // "creche_hygiene_score") — attached as a checklist form on the safety step.
   const hygieneDef = await prisma.facilityIndicatorDef.findFirst({
     where: { key: "creche_hygiene_score" },
-    select: { checklistItems: { where: { isActive: true }, orderBy: { sortOrder: "asc" }, select: { itemKey: true, text: true, category: true } } },
+    select: { checklistItems: { where: { isActive: true }, orderBy: { sortOrder: "asc" }, select: { itemKey: true, text: true, category: true, nonNegotiable: true, naAllowed: true } } },
   });
-  const safetyItems = (hygieneDef?.checklistItems ?? []).map((it) => ({ key: it.itemKey, text: it.text, category: it.category ?? null }));
+  // scored:true tells the /field form to render pass/fail/NA (not a plain checkbox)
+  // and to auto-raise a follow-up on any failed non-negotiable item.
+  const safetyItems = (hygieneDef?.checklistItems ?? []).map((it) => ({ key: it.itemKey, text: it.text, category: it.category ?? null, nonNegotiable: it.nonNegotiable, naAllowed: it.naAllowed }));
   const isSafetyStep = (key: string, title: string) => /24-point/i.test(key) || /24-point/i.test(title) || (/hygiene/i.test(key) && /safety/i.test(key));
 
   // Compose the monthly visit recipe: the round checklist items, plus catalog
@@ -117,7 +119,7 @@ async function main() {
   for (const p of liveTemplate?.pitstopDefs ?? []) {
     for (const c of p.checklist) {
       const safety = isSafetyStep(c.key, c.text) && safetyItems.length > 0;
-      push({ stepKey: c.key, title: c.text, mandatory: true, formKind: safety ? "checklist" : null, formSchema: safety ? { items: safetyItems } : undefined });
+      push({ stepKey: c.key, title: c.text, mandatory: true, formKind: safety ? "checklist" : null, formSchema: safety ? { scored: true, items: safetyItems } : undefined });
     }
   }
   // From the catalog — attach the caregiver-practices form to that item.

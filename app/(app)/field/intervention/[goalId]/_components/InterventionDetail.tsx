@@ -10,7 +10,7 @@ import {
 import { CaregiverPracticeCapture } from "@/components/caregiver/CaregiverPracticeCapture";
 
 // ── Types (dates arrive as ISO strings across the server→client boundary) ─────
-type FormField = { key: string; label?: string; text?: string; type?: string; options?: string[]; category?: string | null };
+type FormField = { key: string; label?: string; text?: string; type?: string; options?: string[]; category?: string | null; nonNegotiable?: boolean; naAllowed?: boolean };
 type SetupStep = {
   id: string; title: string; status: string; dueDate: string | null; blocked: boolean;
   blockedByTitle: string | null; overdue: boolean; formKind: string | null; formSchema: any; answers: any;
@@ -301,7 +301,10 @@ function FollowUpsPanel({ goalId, followups, post, busy }: { goalId: string; fol
 function StepFormModal({ step, onClose, onSave }: { step: SetupStep | VisitStep; onClose: () => void; onSave: (answers: any, complete: boolean) => void | Promise<void> }) {
   const kind = step.formKind;
   const schema = step.formSchema ?? {};
-  const [answers, setAnswers] = useState<any>(step.answers ?? (kind === "checklist" ? { checked: {} } : {}));
+  const scored = kind === "checklist" && (schema.scored === true || (schema.items ?? []).some((it: FormField) => typeof it.nonNegotiable === "boolean"));
+  const [answers, setAnswers] = useState<any>(
+    step.answers ?? (scored ? { marks: {} } : kind === "checklist" ? { checked: {} } : {}),
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={onClose}>
@@ -316,7 +319,7 @@ function StepFormModal({ step, onClose, onSave }: { step: SetupStep | VisitStep;
             Caregiver-practices observation capture opens here. (Full observation grid — salvaged from the existing capture flow — wires in next.) For now, mark the step done once observed.
           </div>
         ) : kind === "checklist" ? (
-          <ChecklistBody items={schema.items ?? []} answers={answers} setAnswers={setAnswers} />
+          <ChecklistBody items={schema.items ?? []} scored={scored} answers={answers} setAnswers={setAnswers} />
         ) : (
           <div className="space-y-3">
             {(schema.fields ?? schema.items ?? []).map((f: FormField) => (
@@ -348,34 +351,80 @@ function StepFormModal({ step, onClose, onSave }: { step: SetupStep | VisitStep;
   );
 }
 
-// Checklist form body — groups items by category (e.g. Fire Safety) when present.
-function ChecklistBody({ items, answers, setAnswers }: { items: FormField[]; answers: any; setAnswers: (fn: (a: any) => any) => void }) {
-  const toggle = (key: string, val: boolean) => setAnswers((a: any) => ({ ...a, checked: { ...(a?.checked ?? {}), [key]: val } }));
+// Checklist form body, grouped by category (e.g. Fire Safety). Two modes:
+//  • plain    — a checkbox per item (setup step sub-tasks)
+//  • scored   — OK / Fail / N-A per item (24-point safety audit). A failed
+//               NON-NEGOTIABLE item auto-raises a follow-up on save (server-side).
+function ChecklistBody({ items, scored, answers, setAnswers }: { items: FormField[]; scored: boolean; answers: any; setAnswers: (fn: (a: any) => any) => void }) {
   const groups = new Map<string, FormField[]>();
-  for (const it of items) {
-    const g = it.category ?? "";
-    groups.set(g, [...(groups.get(g) ?? []), it]);
+  for (const it of items) groups.set(it.category ?? "", [...(groups.get(it.category ?? "") ?? []), it]);
+
+  if (!scored) {
+    const done = items.filter((it) => answers?.checked?.[it.key]).length;
+    const toggle = (key: string, val: boolean) => setAnswers((a: any) => ({ ...a, checked: { ...(a?.checked ?? {}), [key]: val } }));
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between text-xs text-stone-500">
+          <span>{done} of {items.length} checked</span>
+          <button onClick={() => setAnswers((a: any) => ({ ...a, checked: Object.fromEntries(items.map((it) => [it.key, true])) }))} className="font-medium text-stone-600 hover:text-stone-900">Mark all</button>
+        </div>
+        {[...groups.entries()].map(([cat, its]) => (
+          <div key={cat || "_"}>
+            {cat && <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-stone-400">{cat}</p>}
+            <ul className="space-y-0.5">
+              {its.map((it) => (
+                <li key={it.key}>
+                  <label className="flex items-start gap-2.5 rounded-lg px-1 py-1.5 text-sm text-stone-700 hover:bg-stone-50">
+                    <input type="checkbox" checked={!!answers?.checked?.[it.key]} onChange={(e) => toggle(it.key, e.target.checked)} className="mt-0.5" />
+                    <span>{it.text ?? it.label ?? it.key}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    );
   }
-  const total = items.length;
-  const done = items.filter((it) => answers?.checked?.[it.key]).length;
+
+  // Scored mode
+  const marks: Record<string, string> = answers?.marks ?? {};
+  const setMark = (key: string, v: string) => setAnswers((a: any) => ({ ...a, marks: { ...(a?.marks ?? {}), [key]: v } }));
+  const answered = items.filter((it) => marks[it.key]).length;
+  const fails = items.filter((it) => marks[it.key] === "fail");
+  const nonNegFails = fails.filter((it) => it.nonNegotiable).length;
+  const OPTS: { v: string; label: string; on: string }[] = [
+    { v: "ok", label: "OK", on: "bg-emerald-500 text-white border-emerald-500" },
+    { v: "fail", label: "Fail", on: "bg-red-500 text-white border-red-500" },
+    { v: "na", label: "N/A", on: "bg-stone-400 text-white border-stone-400" },
+  ];
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between text-xs text-stone-500">
-        <span>{done} of {total} checked</span>
-        <button onClick={() => setAnswers((a: any) => ({ ...a, checked: Object.fromEntries(items.map((it) => [it.key, true])) }))} className="font-medium text-stone-600 hover:text-stone-900">
-          Mark all
-        </button>
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-stone-500">{answered} of {items.length} rated</span>
+        {nonNegFails > 0 && <span className="font-medium text-red-600">{nonNegFails} non-negotiable failing → follow-up</span>}
       </div>
       {[...groups.entries()].map(([cat, its]) => (
         <div key={cat || "_"}>
           {cat && <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-stone-400">{cat}</p>}
-          <ul className="space-y-0.5">
+          <ul className="space-y-1.5">
             {its.map((it) => (
-              <li key={it.key}>
-                <label className="flex items-start gap-2.5 rounded-lg px-1 py-1.5 text-sm text-stone-700 hover:bg-stone-50">
-                  <input type="checkbox" checked={!!answers?.checked?.[it.key]} onChange={(e) => toggle(it.key, e.target.checked)} className="mt-0.5" />
-                  <span>{it.text ?? it.label ?? it.key}</span>
-                </label>
+              <li key={it.key} className="flex items-start justify-between gap-2">
+                <span className="text-sm text-stone-700">
+                  {it.text ?? it.label ?? it.key}
+                  {it.nonNegotiable && <span className="ml-1 text-[10px] font-semibold text-red-500">NON-NEG</span>}
+                </span>
+                <span className="flex flex-shrink-0 gap-1">
+                  {OPTS.filter((o) => o.v !== "na" || it.naAllowed).map((o) => (
+                    <button
+                      key={o.v}
+                      onClick={() => setMark(it.key, marks[it.key] === o.v ? "" : o.v)}
+                      className={`rounded-md border px-2 py-0.5 text-xs font-medium transition ${marks[it.key] === o.v ? o.on : "border-stone-200 text-stone-500 hover:border-stone-300"}`}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </span>
               </li>
             ))}
           </ul>
@@ -386,6 +435,10 @@ function ChecklistBody({ items, answers, setAnswers }: { items: FormField[]; ans
 }
 
 function answeredCount(answers: any) {
+  if (answers?.marks) {
+    const done = Object.values(answers.marks).filter(Boolean).length;
+    return done ? <span className="text-stone-400"> ({done} rated)</span> : null;
+  }
   if (!answers?.checked) return null;
   const total = Object.keys(answers.checked).length;
   const done = Object.values(answers.checked).filter(Boolean).length;
