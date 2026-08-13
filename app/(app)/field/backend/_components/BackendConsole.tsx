@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, Plus, Trash2, ArrowUp, ArrowDown, RefreshCw, Database, X, ListChecks, Users } from "lucide-react";
+import { ChevronLeft, Plus, Trash2, ArrowUp, ArrowDown, RefreshCw, Database, X, ListChecks, Users, MapPin } from "lucide-react";
 
 type SetupRow = { id: string; order: number; stepKey: string; title: string; slaDays: number | null; startSlaDays: number | null; blockedByKey: string | null; formKind: string | null; formSchema: any };
 type VisitRow = { id: string; order: number; stepKey: string; title: string; mandatory: boolean; formKind: string | null; formSchema: any };
@@ -76,6 +76,7 @@ export function BackendConsole({ domains, available, pickers }: { domains: Domai
       {/* Shared catalogs / actions */}
       <div className="flex flex-wrap gap-2">
         <Link href="/field/backend/caregiver" className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"><Users size={14} /> Caregiver practices</Link>
+        <Link href="/field/backend/assignments" className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"><MapPin size={14} /> Geography &amp; assignment</Link>
         <button onClick={() => setCreating(true)} className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"><Plus size={14} /> New intervention</button>
       </div>
 
