@@ -1,6 +1,7 @@
 // Create a facility (LayerFeature) so an intervention can be linked to one —
 // e.g. a creche that has no facility record yet. POST { name, layerKey,
-// clusterId?, settlementId?, centreType? }. A settlement implies its cluster.
+// clusterId?, settlementId?, centreType?, lat?, lng? }. A settlement implies its
+// cluster; lat/lng default to the settlement centroid when not given explicitly.
 import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireFieldAdmin } from "@/lib/field/access";
@@ -26,6 +27,9 @@ export async function POST(req: NextRequest) {
     const c = await prisma.cluster.findUnique({ where: { id: clusterId }, select: { zoneId: true } });
     zoneId = c?.zoneId ?? null;
   }
+
+  // Explicit coordinates win over the settlement-centroid default.
+  if (Number.isFinite(b?.lat) && Number.isFinite(b?.lng)) { lat = b.lat; lng = b.lng; }
 
   const f = await prisma.layerFeature.create({
     data: { name, layerKey, centreType: b?.centreType || null, settlementId, clusterId, zoneId, lat, lng },

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft, MapPin, Users, X, Search } from "lucide-react";
+import { NewFacilityModal } from "../../_components/NewFacilityModal";
 
 type Cluster = { id: string; name: string };
 type Rp = { id: string; name: string; designation: string; clusterIds: string[] };
@@ -105,7 +106,9 @@ function GeoEditModal({ intervention, clusters, layerKey, busy, onClose, onSave 
   const [clusterId, setClusterId] = useState(intervention.clusterId ?? "");
   const [settlementId, setSettlementId] = useState(intervention.settlementId ?? "");
   const [facilityId, setFacilityId] = useState(intervention.facilityId ?? "");
-  const [geo, setGeo] = useState<{ settlements: { id: string; name: string }[]; facilities: { id: string; name: string }[] }>({ settlements: [], facilities: [] });
+  const [geo, setGeo] = useState<{ settlements: { id: string; name: string; centroidLat: number | null; centroidLng: number | null }[]; facilities: { id: string; name: string }[] }>({ settlements: [], facilities: [] });
+  const [addingFacility, setAddingFacility] = useState(false);
+  const selSettlement = geo.settlements.find((s) => s.id === settlementId);
 
   const loadGeo = async (cid: string) => {
     if (!cid) return setGeo({ settlements: [], facilities: [] });
@@ -128,12 +131,7 @@ function GeoEditModal({ intervention, clusters, layerKey, busy, onClose, onSave 
           )}
           {layerKey && (
             <label className="block"><span className="mb-1 flex items-center justify-between text-xs font-medium text-stone-500">Facility (optional)
-              <button type="button" disabled={!clusterId} onClick={async () => {
-                const name = prompt("New facility name:")?.trim();
-                if (!name) return;
-                const r = await fetch(`/api/field/admin/facility`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, layerKey, clusterId, settlementId: settlementId || null }) }).then((x) => x.json()).catch(() => null);
-                if (r?.ok) { setGeo((g) => ({ ...g, facilities: [...g.facilities, r.facility] })); setFacilityId(r.facility.id); } else alert(r?.error ?? "Failed");
-              }} className="font-normal text-stone-500 underline disabled:opacity-40 disabled:no-underline">+ new</button>
+              <button type="button" disabled={!clusterId} onClick={() => setAddingFacility(true)} className="font-normal text-stone-500 underline disabled:opacity-40 disabled:no-underline">+ new</button>
             </span>
               <select value={facilityId} onChange={(e) => setFacilityId(e.target.value)} className="inp"><option value="">{intervention.facilityName ?? "—"}</option>{geo.facilities.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</select>
             </label>
@@ -145,6 +143,14 @@ function GeoEditModal({ intervention, clusters, layerKey, busy, onClose, onSave 
         </div>
         <style>{`.inp{height:2.25rem;width:100%;border:1px solid rgb(231 229 228);border-radius:0.5rem;padding:0 0.6rem;font-size:0.875rem;outline:none}.inp:focus{border-color:rgb(168 162 158)}`}</style>
       </div>
+      {addingFacility && layerKey && (
+        <NewFacilityModal
+          layerKey={layerKey} clusterId={clusterId || null} settlementId={settlementId || null}
+          defaultName={intervention.title} defaultLat={selSettlement?.centroidLat ?? null} defaultLng={selSettlement?.centroidLng ?? null}
+          onClose={() => setAddingFacility(false)}
+          onCreated={(f) => { setGeo((g) => ({ ...g, facilities: [...g.facilities, f] })); setFacilityId(f.id); setAddingFacility(false); }}
+        />
+      )}
     </div>
   );
 }

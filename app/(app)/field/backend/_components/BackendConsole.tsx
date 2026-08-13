@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft, Plus, Trash2, ArrowUp, ArrowDown, RefreshCw, Database, X, ListChecks, Users, MapPin } from "lucide-react";
+import { NewFacilityModal } from "./NewFacilityModal";
 
 type SetupRow = { id: string; order: number; stepKey: string; title: string; slaDays: number | null; startSlaDays: number | null; blockedByKey: string | null; formKind: string | null; formSchema: any };
 type VisitRow = { id: string; order: number; stepKey: string; title: string; mandatory: boolean; formKind: string | null; formSchema: any };
@@ -239,10 +240,12 @@ function CreateInterventionModal({ domains, pickers, busy, onClose, onCreate }: 
   const [ownerId, setOwnerId] = useState("");
   const [mode, setMode] = useState<"setup" | "live">("setup");
   const [anchor, setAnchor] = useState(() => new Date().toISOString().slice(0, 10));
-  const [geo, setGeo] = useState<{ settlements: { id: string; name: string }[]; facilities: { id: string; name: string }[] }>({ settlements: [], facilities: [] });
+  const [geo, setGeo] = useState<{ settlements: { id: string; name: string; centroidLat: number | null; centroidLng: number | null }[]; facilities: { id: string; name: string }[] }>({ settlements: [], facilities: [] });
+  const [addingFacility, setAddingFacility] = useState(false);
 
   const layerKey = pickers.layerKeyByDomain[domain];
   const needsSettlement = cfg?.unit === "settlement";
+  const selSettlement = geo.settlements.find((s) => s.id === settlementId);
 
   const loadGeo = async (cid: string) => {
     setSettlementId(""); setFacilityId("");
@@ -264,12 +267,7 @@ function CreateInterventionModal({ domains, pickers, busy, onClose, onCreate }: 
           )}
           {layerKey && clusterId && (
             <label className="block"><span className="mb-1 flex items-center justify-between text-xs font-medium text-stone-500">Facility (optional — links caregiver capture)
-              <button type="button" onClick={async () => {
-                const name = prompt("New facility name:")?.trim() || title.trim();
-                if (!name) return;
-                const r = await fetch(`/api/field/admin/facility`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, layerKey, clusterId, settlementId: settlementId || null }) }).then((x) => x.json()).catch(() => null);
-                if (r?.ok) { setGeo((g) => ({ ...g, facilities: [...g.facilities, r.facility] })); setFacilityId(r.facility.id); } else alert(r?.error ?? "Failed");
-              }} className="font-normal text-stone-500 underline">+ new</button>
+              <button type="button" onClick={() => setAddingFacility(true)} className="font-normal text-stone-500 underline">+ new</button>
             </span>
               <select value={facilityId} onChange={(e) => setFacilityId(e.target.value)} className="inp"><option value="">—</option>{geo.facilities.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</select>
             </label>
@@ -290,6 +288,14 @@ function CreateInterventionModal({ domains, pickers, busy, onClose, onCreate }: 
           <button disabled={busy || !title.trim() || (needsSettlement && !settlementId) || (!needsSettlement && !clusterId)} onClick={() => onCreate({ domain, title, ownerId: ownerId || undefined, mode, anchorAt: anchor, settlementId: settlementId || null, clusterId: clusterId || null, facilityId: facilityId || null })} className="rounded-lg bg-stone-900 px-3 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50">Create</button>
         </div>
       </div>
+      {addingFacility && layerKey && (
+        <NewFacilityModal
+          layerKey={layerKey} clusterId={clusterId || null} settlementId={settlementId || null}
+          defaultName={title} defaultLat={selSettlement?.centroidLat ?? null} defaultLng={selSettlement?.centroidLng ?? null}
+          onClose={() => setAddingFacility(false)}
+          onCreated={(f) => { setGeo((g) => ({ ...g, facilities: [...g.facilities, f] })); setFacilityId(f.id); setAddingFacility(false); }}
+        />
+      )}
     </div>
   );
 }

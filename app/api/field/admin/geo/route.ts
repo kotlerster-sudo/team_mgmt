@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
   if (!clusterId) return Response.json({ settlements: [], facilities: [] });
 
   const [settlements, facilities] = await Promise.all([
-    prisma.settlement.findMany({ where: { clusterId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.settlement.findMany({ where: { clusterId }, orderBy: { name: "asc" }, select: { id: true, name: true, centroidLat: true, centroidLng: true } }),
     layerKey
       ? prisma.layerFeature.findMany({ where: { clusterId, layerKey }, orderBy: { name: "asc" }, select: { id: true, name: true, settlementId: true } })
       : Promise.resolve([]),
