@@ -58,6 +58,7 @@ export function CaregiverPracticeCapture({
   const [openFlags, setOpenFlags] = useState<OpenFlag[]>([]);
   const [answers, setAnswers] = useState<Record<string, Answer>>({});
   const [loading, setLoading] = useState(true);
+  const [facilityLinked, setFacilityLinked] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingFor, setUploadingFor] = useState<string | null>(null);
   const [catId, setCatId] = useState<string | null>(null);
@@ -89,6 +90,7 @@ export function CaregiverPracticeCapture({
       .then((r) => r.json())
       .then((d) => {
         if (cancelled) return;
+        setFacilityLinked(d.facilityLinked !== false);
         setCategories(d.categories ?? []);
         setOpenFlags(d.openFlags ?? []);
         const seed: Record<string, Answer> = {};
@@ -185,6 +187,15 @@ export function CaregiverPracticeCapture({
 
       {loading ? (
         <div className="flex-1 grid place-items-center text-stone-400"><Loader2 className="w-6 h-6 animate-spin" /></div>
+      ) : !facilityLinked ? (
+        <div className="flex-1 grid place-items-center p-6">
+          <div className="max-w-sm text-center space-y-3">
+            <AlertTriangle className="mx-auto h-8 w-8 text-amber-500" />
+            <p className="text-sm text-stone-600">No creche facility is linked to this intervention, so there’s nowhere to record caregiver observations.</p>
+            <p className="text-xs text-stone-400">Link a facility in <span className="font-medium">Backend → Geography &amp; assignment</span> (edit this intervention), then reopen the visit.</p>
+            <button onClick={onSaved} className="mt-1 rounded-lg border border-stone-300 px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50">Mark step done anyway</button>
+          </div>
+        </div>
       ) : (
         <div className="flex-1 overflow-y-auto">
           {/* HOME: open flags + category grid */}
