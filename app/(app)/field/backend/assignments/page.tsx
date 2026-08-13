@@ -8,5 +8,5 @@ export const dynamic = "force-dynamic";
 export default async function AssignmentsPage() {
   if (!(await requireFieldAdmin())) redirect("/field");
   const [data, pickers] = await Promise.all([loadAssignments(), loadCreatePickers()]);
-  return <AssignmentsEditor data={JSON.parse(JSON.stringify(data))} layerKeyByDomain={pickers.layerKeyByDomain} />;
+  return <AssignmentsEditor data={JSON.parse(JSON.stringify(data))} layerKeyByDomain={pickers.layerKeyByDomain} users={pickers.users} />;
 }

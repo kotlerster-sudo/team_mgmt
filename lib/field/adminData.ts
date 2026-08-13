@@ -47,7 +47,7 @@ export async function loadCreatePickers(): Promise<{
 export async function loadAssignments(): Promise<{
   clusters: { id: string; name: string }[];
   rps: { id: string; name: string; designation: string; clusterIds: string[] }[];
-  interventions: { id: string; title: string; domain: string; unit: string; clusterId: string | null; clusterName: string | null; settlementId: string | null; settlementName: string | null; facilityId: string | null; facilityName: string | null }[];
+  interventions: { id: string; title: string; domain: string; unit: string; status: string; mode: string; ownerId: string; ownerName: string; clusterId: string | null; clusterName: string | null; settlementId: string | null; settlementName: string | null; facilityId: string | null; facilityName: string | null }[];
 }> {
   const domains = await activeFieldDomains();
   const [clusters, rps, goals] = await Promise.all([
@@ -56,7 +56,7 @@ export async function loadAssignments(): Promise<{
     prisma.goal.findMany({
       where: { deletedAt: null, needsDomain: { in: [...domains.keys()] } },
       orderBy: { title: "asc" },
-      select: { id: true, title: true, needsDomain: true, needsClusterId: true, needsSettlementId: true, linkedFacilityId: true, needsCluster: { select: { name: true } }, needsSettlement: { select: { name: true } }, linkedFacility: { select: { name: true } } },
+      select: { id: true, title: true, needsDomain: true, status: true, mode: true, ownerId: true, owner: { select: { name: true } }, needsClusterId: true, needsSettlementId: true, linkedFacilityId: true, needsCluster: { select: { name: true } }, needsSettlement: { select: { name: true } }, linkedFacility: { select: { name: true } } },
     }),
   ]);
   return {
@@ -64,6 +64,7 @@ export async function loadAssignments(): Promise<{
     rps: rps.map((u) => ({ id: u.id, name: u.name ?? "—", designation: u.designation, clusterIds: u.rpClusters.map((c) => c.id) })),
     interventions: goals.map((g) => ({
       id: g.id, title: g.title, domain: g.needsDomain ?? "", unit: domains.get(g.needsDomain ?? "")?.unit ?? "settlement",
+      status: g.status, mode: g.mode, ownerId: g.ownerId, ownerName: g.owner?.name ?? "—",
       clusterId: g.needsClusterId, clusterName: g.needsCluster?.name ?? null,
       settlementId: g.needsSettlementId, settlementName: g.needsSettlement?.name ?? null,
       facilityId: g.linkedFacilityId, facilityName: g.linkedFacility?.name ?? null,

@@ -8,10 +8,11 @@ import { NewFacilityModal } from "../../_components/NewFacilityModal";
 
 type Cluster = { id: string; name: string };
 type Rp = { id: string; name: string; designation: string; clusterIds: string[] };
-type Intervention = { id: string; title: string; domain: string; unit: string; clusterId: string | null; clusterName: string | null; settlementId: string | null; settlementName: string | null; facilityId: string | null; facilityName: string | null };
+type Intervention = { id: string; title: string; domain: string; unit: string; status: string; mode: string; ownerId: string; ownerName: string; clusterId: string | null; clusterName: string | null; settlementId: string | null; settlementName: string | null; facilityId: string | null; facilityName: string | null };
+type User = { id: string; name: string; designation: string };
 type Data = { clusters: Cluster[]; rps: Rp[]; interventions: Intervention[] };
 
-export function AssignmentsEditor({ data, layerKeyByDomain }: { data: Data; layerKeyByDomain: Record<string, string> }) {
+export function AssignmentsEditor({ data, layerKeyByDomain, users }: { data: Data; layerKeyByDomain: Record<string, string>; users: User[] }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [expandedRp, setExpandedRp] = useState<string | null>(null);
@@ -82,8 +83,8 @@ export function AssignmentsEditor({ data, layerKeyByDomain }: { data: Data; laye
           {filtered.map((i) => (
             <li key={i.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
               <div className="min-w-0">
-                <p className="truncate text-sm text-stone-800">{i.title}</p>
-                <p className="text-xs text-stone-500">{i.clusterName ?? "—"}{i.settlementName ? ` · ${i.settlementName}` : ""}{i.facilityName ? ` · ${i.facilityName}` : ""}</p>
+                <p className="truncate text-sm text-stone-800">{i.title}{i.status !== "Active" && <span className="ml-1.5 rounded bg-stone-100 px-1 text-[10px] font-medium text-stone-500">{i.status}</span>}</p>
+                <p className="text-xs text-stone-500">{i.clusterName ?? "—"}{i.settlementName ? ` · ${i.settlementName}` : ""}{i.facilityName ? ` · ${i.facilityName}` : ""} · {i.ownerName}</p>
               </div>
               <button onClick={() => setEditGeo(i)} className="flex-shrink-0 rounded-lg border border-stone-300 px-2.5 py-1 text-xs font-medium text-stone-700 hover:bg-stone-50">Edit</button>
             </li>
@@ -93,16 +94,20 @@ export function AssignmentsEditor({ data, layerKeyByDomain }: { data: Data; laye
       </section>
 
       {editGeo && (
-        <GeoEditModal intervention={editGeo} clusters={data.clusters} layerKey={layerKeyByDomain[editGeo.domain]} busy={busy}
+        <GeoEditModal intervention={editGeo} clusters={data.clusters} users={users} layerKey={layerKeyByDomain[editGeo.domain]} busy={busy}
           onClose={() => setEditGeo(null)}
-          onSave={async (body) => { await call(`/api/field/admin/intervention/${editGeo.id}`, "PATCH", body); setEditGeo(null); }} />
+          onSave={async (body) => { await call(`/api/field/admin/intervention/${editGeo.id}`, "PATCH", body); setEditGeo(null); }}
+          onDelete={async () => { if (!confirm(`Archive "${editGeo.title}"? It disappears from /field (soft-delete, reversible in DB).`)) return; await call(`/api/field/admin/intervention/${editGeo.id}`, "DELETE"); setEditGeo(null); }} />
       )}
     </div>
   );
 }
 
-function GeoEditModal({ intervention, clusters, layerKey, busy, onClose, onSave }: { intervention: Intervention; clusters: Cluster[]; layerKey?: string; busy: boolean; onClose: () => void; onSave: (body: unknown) => void }) {
+function GeoEditModal({ intervention, clusters, users, layerKey, busy, onClose, onSave, onDelete }: { intervention: Intervention; clusters: Cluster[]; users: User[]; layerKey?: string; busy: boolean; onClose: () => void; onSave: (body: unknown) => void; onDelete: () => void }) {
   const needsSettlement = intervention.unit === "settlement";
+  const [title, setTitle] = useState(intervention.title);
+  const [ownerId, setOwnerId] = useState(intervention.ownerId);
+  const [status, setStatus] = useState(intervention.status);
   const [clusterId, setClusterId] = useState(intervention.clusterId ?? "");
   const [settlementId, setSettlementId] = useState(intervention.settlementId ?? "");
   const [facilityId, setFacilityId] = useState(intervention.facilityId ?? "");
@@ -119,8 +124,19 @@ function GeoEditModal({ intervention, clusters, layerKey, busy, onClose, onSave 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={onClose}>
       <div className="w-full max-w-md rounded-t-2xl bg-white p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 flex items-start justify-between"><h3 className="text-base font-semibold text-stone-900">{intervention.title}</h3><button onClick={onClose} className="text-stone-400 hover:text-stone-600"><X size={20} /></button></div>
+        <div className="mb-3 flex items-start justify-between"><h3 className="text-base font-semibold text-stone-900">Edit intervention</h3><button onClick={onClose} className="text-stone-400 hover:text-stone-600"><X size={20} /></button></div>
         <div className="space-y-3">
+          <label className="block"><span className="mb-1 block text-xs font-medium text-stone-500">Name</span>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} className="inp" />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block"><span className="mb-1 block text-xs font-medium text-stone-500">Owner (RP)</span>
+              <select value={ownerId} onChange={(e) => setOwnerId(e.target.value)} className="inp">{!users.some((u) => u.id === ownerId) && <option value={ownerId}>{intervention.ownerName}</option>}{users.map((u) => <option key={u.id} value={u.id}>{u.name}{u.designation !== "Other" ? ` · ${u.designation}` : ""}</option>)}</select>
+            </label>
+            <label className="block"><span className="mb-1 block text-xs font-medium text-stone-500">Status</span>
+              <select value={status} onChange={(e) => setStatus(e.target.value)} className="inp"><option value="Active">Active</option><option value="Paused">Paused</option><option value="Complete">Complete</option></select>
+            </label>
+          </div>
           <label className="block"><span className="mb-1 block text-xs font-medium text-stone-500">Cluster</span>
             <select value={clusterId} onChange={(e) => { setClusterId(e.target.value); setSettlementId(""); setFacilityId(""); loadGeo(e.target.value); }} className="inp"><option value="">—</option>{clusters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
           </label>
@@ -137,9 +153,12 @@ function GeoEditModal({ intervention, clusters, layerKey, busy, onClose, onSave 
             </label>
           )}
         </div>
-        <div className="mt-4 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50">Cancel</button>
-          <button disabled={busy} onClick={() => onSave({ clusterId: clusterId || null, settlementId: needsSettlement ? (settlementId || null) : undefined, facilityId: facilityId || null })} className="rounded-lg bg-stone-900 px-3 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50">Save</button>
+        <div className="mt-4 flex items-center justify-between gap-2">
+          <button disabled={busy} onClick={onDelete} className="text-xs font-medium text-red-500 hover:text-red-700">Archive</button>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50">Cancel</button>
+            <button disabled={busy} onClick={() => onSave({ title, ownerId, status, clusterId: clusterId || null, settlementId: needsSettlement ? (settlementId || null) : undefined, facilityId: facilityId || null })} className="rounded-lg bg-stone-900 px-3 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50">Save</button>
+          </div>
         </div>
         <style>{`.inp{height:2.25rem;width:100%;border:1px solid rgb(231 229 228);border-radius:0.5rem;padding:0 0.6rem;font-size:0.875rem;outline:none}.inp:focus{border-color:rgb(168 162 158)}`}</style>
       </div>
