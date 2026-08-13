@@ -3,14 +3,15 @@ import { readFile } from "fs/promises";
 import path from "path";
 import { get, list } from "@vercel/blob";
 import { auth } from "@/lib/auth";
-import { isSuperAdmin } from "@/lib/roleGuard";
+import { buildRbacContext, can } from "@/lib/rbac";
 
 // Serves scouting-day HTML docs (embedded in an iframe by /recruitment/[slug]):
 // hand-committed ones from content/recruitment/, generated ones from the
-// private blob store. Candidate PII — super-admin only.
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
+// private blob store. Candidate PII — RBAC-gated on `recruitment.read`.
+export async function GET(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const session = await auth();
-  if (!isSuperAdmin(session)) return Response.json({ error: "Not found" }, { status: 404 });
+  const ctx = await buildRbacContext(session, { req });
+  if (!(await can(ctx, "recruitment", "read"))) return Response.json({ error: "Not found" }, { status: 404 });
 
   const { slug } = await params;
   if (!/^[a-z0-9-]+$/.test(slug)) return Response.json({ error: "Not found" }, { status: 404 });

@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { UserSearch } from "lucide-react";
 import { get, list } from "@vercel/blob";
 import { auth } from "@/lib/auth";
-import { isSuperAdmin } from "@/lib/roleGuard";
+import { buildRbacContext, can } from "@/lib/rbac";
 import UploadForm from "./UploadForm";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,8 @@ function parseDoc(slug: string, html: string): DocEntry {
 
 export default async function RecruitmentPage() {
   const session = await auth();
-  if (!isSuperAdmin(session)) notFound();
+  const ctx = await buildRbacContext(session, { surface: "recruitment.list" });
+  if (!(await can(ctx, "recruitment", "list"))) notFound();
 
   const docs: DocEntry[] = [];
   try {

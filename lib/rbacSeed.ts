@@ -146,6 +146,13 @@ export const RESOURCE_ACTIONS: Record<string, readonly string[]> = {
   // Caregiver practices — gates the admin TAXONOMY editor + phase-2 reads.
   // On-visit CAPTURE reuses pitstop_event.update (it's a visit action).
   caregiver_practice: [...STANDARD_ACTIONS],
+  // Recruitment (/recruitment) — scouting-desk docs generated from CVs.
+  // Candidate PII, so seed defaults to super-admin only (excluded from admin,
+  // viewer, member, partner, budget-admin). Grant to other roles from the
+  // /settings/roles UI when needed. `list` = index page + generate dropdown,
+  // `read` = view a doc + read/write its shared team-scoring state, `create` =
+  // upload a CV + generate a new doc, `delete` = remove a doc (no route yet).
+  recruitment: ["list", "read", "create", "delete"],
 };
 
 export type RoleGrant = Record<string, ScopeRule>; // "resource.action" → rule
@@ -166,6 +173,9 @@ const ADMIN_EXCLUDED = new Set<string>([
   "role.list", "role.read", "role.update",
   // Catalog refresh 2026-05-22 — admin still gets these via city/team scope at the
   // role row; keeping admin = ALL for new resources unless we add exclusions later.
+  // Recruitment holds candidate PII — super-admin only by default. Admins can be
+  // granted individual actions from the /settings/roles UI when needed.
+  "recruitment.list", "recruitment.read", "recruitment.create", "recruitment.delete",
 ]);
 
 const ADMIN_GRANTS: RoleGrant = (() => {
@@ -399,7 +409,7 @@ const MEMBER_GRANTS: RoleGrant = {
 
 const VIEWER_GRANTS: RoleGrant = (() => {
   const out: RoleGrant = {};
-  const SENSITIVE = new Set(["audit_log", "review_portal", "budget", "system"]);
+  const SENSITIVE = new Set(["audit_log", "review_portal", "budget", "system", "recruitment"]);
   for (const [resource, actions] of Object.entries(RESOURCE_ACTIONS)) {
     if (SENSITIVE.has(resource)) continue;
     for (const action of actions) {

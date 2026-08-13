@@ -3,7 +3,7 @@ import path from "path";
 import { notFound } from "next/navigation";
 import { list } from "@vercel/blob";
 import { auth } from "@/lib/auth";
-import { isSuperAdmin } from "@/lib/roleGuard";
+import { buildRbacContext, can } from "@/lib/rbac";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +27,8 @@ async function docExists(slug: string): Promise<boolean> {
 
 export default async function RecruitmentDocPage({ params }: { params: Promise<{ slug: string }> }) {
   const session = await auth();
-  if (!isSuperAdmin(session)) notFound();
+  const ctx = await buildRbacContext(session, { surface: "recruitment.doc" });
+  if (!(await can(ctx, "recruitment", "read"))) notFound();
 
   const { slug } = await params;
   if (!/^[a-z0-9-]+$/.test(slug)) notFound();

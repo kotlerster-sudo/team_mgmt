@@ -4,7 +4,7 @@ import path from "path";
 import Anthropic from "@anthropic-ai/sdk";
 import { del, get, list, put } from "@vercel/blob";
 import { auth } from "@/lib/auth";
-import { isSuperAdmin } from "@/lib/roleGuard";
+import { buildRbacContext, can } from "@/lib/rbac";
 import { extractCv } from "@/lib/recruitment/extractCv";
 import { renderScoutingDoc, type ScoutDocData } from "@/lib/recruitment/renderDoc";
 
@@ -71,7 +71,8 @@ async function uniqueSlug(base: string): Promise<string> {
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const session = await auth();
-  if (!isSuperAdmin(session)) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const ctx = await buildRbacContext(session, { req: request });
+  if (!(await can(ctx, "recruitment", "create"))) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const body = await request.json().catch(() => null);
   const title = String(body?.title || "").trim();

@@ -1,13 +1,14 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
-import { isSuperAdmin } from "@/lib/roleGuard";
+import { buildRbacContext, can } from "@/lib/rbac";
 import prisma from "@/lib/prisma";
 
 // Shared team state for a scouting doc. GET returns the current blob +
 // version + who last touched it (for the "updated by X" chip and poll-based
 // merging); PUT upserts the whole blob, stamps the updater, and bumps the
 // version. Last-write-wins — good enough for a 2-3 person scouting desk.
-// Candidate PII, so both are super-admin gated (mirroring the parent route).
+// Both are gated on `recruitment.read` — anyone who can open the doc is
+// entitled to score on the shared blob; there's no separate "annotate" grant.
 
 export const runtime = "nodejs";
 
@@ -15,9 +16,10 @@ function slugOk(s: string) {
   return /^[a-z0-9-]+$/.test(s);
 }
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const session = await auth();
-  if (!isSuperAdmin(session)) return Response.json({ error: "Not found" }, { status: 404 });
+  const ctx = await buildRbacContext(session, { req });
+  if (!(await can(ctx, "recruitment", "read"))) return Response.json({ error: "Not found" }, { status: 404 });
 
   const { slug } = await params;
   if (!slugOk(slug)) return Response.json({ error: "Not found" }, { status: 404 });
@@ -45,7 +47,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const session = await auth();
-  if (!isSuperAdmin(session)) return Response.json({ error: "Not found" }, { status: 404 });
+  const ctx = await buildRbacContext(session, { req });
+  if (!(await can(ctx, "recruitment", "read"))) return Response.json({ error: "Not found" }, { status: 404 });
 
   const { slug } = await params;
   if (!slugOk(slug)) return Response.json({ error: "Not found" }, { status: 404 });

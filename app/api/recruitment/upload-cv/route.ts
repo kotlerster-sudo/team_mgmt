@@ -1,7 +1,7 @@
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { isSuperAdmin } from "@/lib/roleGuard";
+import { buildRbacContext, can } from "@/lib/rbac";
 
 const PREFIX = "recruitment/cv-tmp/";
 const MAX_BYTES = 15 * 1024 * 1024;
@@ -10,7 +10,8 @@ const MAX_BYTES = 15 * 1024 * 1024;
 // Routing the file through this function instead would cap it at Vercel's
 // 4.5 MB request-body limit, which scanned CVs routinely exceed.
 //
-// Candidate PII — private store, super-admin only, deleted after doc generation.
+// Candidate PII — private store, gated on `recruitment.create`, deleted after
+// doc generation.
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const body = (await request.json()) as HandleUploadBody;
 
@@ -21,7 +22,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         request,
         onBeforeGenerateToken: async (pathname) => {
           const session = await auth();
-          if (!isSuperAdmin(session)) throw new Error("Not found");
+          const ctx = await buildRbacContext(session, { req: request });
+          if (!(await can(ctx, "recruitment", "create"))) throw new Error("Not found");
           // generate/route.ts trusts this prefix when validating CV references.
           if (!pathname.startsWith(PREFIX)) throw new Error("Invalid upload path");
           return {
