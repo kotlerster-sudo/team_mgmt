@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, Plus, Trash2, ArrowUp, ArrowDown, RefreshCw, Database, X, ListChecks } from "lucide-react";
+import { ChevronLeft, Plus, Trash2, ArrowUp, ArrowDown, RefreshCw, Database, X, ListChecks, Users } from "lucide-react";
 
 type SetupRow = { id: string; order: number; stepKey: string; title: string; slaDays: number | null; startSlaDays: number | null; blockedByKey: string | null; formKind: string | null; formSchema: any };
 type VisitRow = { id: string; order: number; stepKey: string; title: string; mandatory: boolean; formKind: string | null; formSchema: any };
@@ -66,7 +66,12 @@ export function BackendConsole({ domains }: { domains: Domain[] }) {
         <p><b>SetupStepTemplate</b> → ordered setup steps (SLA + blocked-by + form) → materialise into <b>FieldStep(Setup)</b>.</p>
         <p><b>VisitStepTemplate</b> → recurring visit steps (mandatory + form) → materialise into <b>FieldStep(Visit)</b>.</p>
         <p><b>FieldVisit</b> / <b>FieldVisitStep</b> → each cadence visit + its per-step ticks.</p>
-        <p className="pt-1 text-stone-400">Template edits apply to new interventions. Use “Resync visit recipe” to push visit-step edits onto existing live interventions.</p>
+        <p className="pt-1 text-stone-400">Template edits apply to new interventions. Use “Resync to live” to push edits onto existing interventions.</p>
+      </div>
+
+      {/* Shared catalogs / actions */}
+      <div className="flex flex-wrap gap-2">
+        <Link href="/field/backend/caregiver" className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"><Users size={14} /> Caregiver practices</Link>
       </div>
 
       {/* Domain tabs */}
@@ -235,8 +240,8 @@ function FormItemsModal({ step, kind, busy, onClose, onSave }: { step: SetupRow 
 
         {formKind === "caregiver_practices" ? (
           <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
-            Caregiver-practice items live in the shared practices catalog (categories → practices), not on this step.
-            Manage them in the <a href="/settings/control-plane" className="font-medium underline">Control plane → Caregiver practices</a> tab.
+            Caregiver-practice items are a shared catalog (categories → practices), not per-step.
+            Edit them in <a href="/field/backend/caregiver" className="font-medium underline">Backend → Caregiver practices</a>.
             This step just launches that catalog during a visit.
           </div>
         ) : formKind === "checklist" ? (
