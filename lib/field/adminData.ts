@@ -26,6 +26,22 @@ export async function loadAvailableDomains(): Promise<{ domain: string; label: s
     .map((d) => ({ domain: d.domain, label: d.label ?? d.domain, unit: d.assessmentLevel === "settlement" ? "settlement" : "cluster" }));
 }
 
+/** Small lists for the "create intervention" modal. */
+export async function loadCreatePickers(): Promise<{
+  clusters: { id: string; name: string }[];
+  users: { id: string; name: string; designation: string }[];
+  layerKeyByDomain: Record<string, string>;
+}> {
+  const [clusters, users, layers] = await Promise.all([
+    prisma.cluster.findMany({ where: { deletedAt: null }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.user.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, designation: true } }),
+    prisma.facilityLayerConfig.findMany({ where: { isActive: true }, select: { layerKey: true, needsDomain: true } }),
+  ]);
+  const layerKeyByDomain: Record<string, string> = {};
+  for (const l of layers) if (l.needsDomain) layerKeyByDomain[l.needsDomain] = l.layerKey;
+  return { clusters, users: users.map((u) => ({ id: u.id, name: u.name ?? "—", designation: u.designation })), layerKeyByDomain };
+}
+
 export async function loadFieldBackend(): Promise<DomainBackend[]> {
   const configs = await prisma.fieldDomainConfig.findMany({ orderBy: { sortOrder: "asc" } });
   const out: DomainBackend[] = [];

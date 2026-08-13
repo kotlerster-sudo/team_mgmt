@@ -15,12 +15,15 @@ type Domain = {
 
 const FORM_KINDS = ["", "checklist", "questionnaire", "caregiver_practices"];
 
-export function BackendConsole({ domains, available }: { domains: Domain[]; available: { domain: string; label: string; unit: string }[] }) {
+type Pickers = { clusters: { id: string; name: string }[]; users: { id: string; name: string; designation: string }[]; layerKeyByDomain: Record<string, string> };
+
+export function BackendConsole({ domains, available, pickers }: { domains: Domain[]; available: { domain: string; label: string; unit: string }[]; pickers: Pickers }) {
   const router = useRouter();
   const [active, setActive] = useState(domains[0]?.config.domain ?? "");
   const [busy, setBusy] = useState(false);
   const [formEditor, setFormEditor] = useState<{ kind: "setup" | "visit"; step: SetupRow | VisitRow } | null>(null);
   const [addingDomain, setAddingDomain] = useState(false);
+  const [creating, setCreating] = useState(false);
   const d = domains.find((x) => x.config.domain === active) ?? domains[0];
 
   async function call(url: string, method: string, body?: unknown) {
@@ -73,6 +76,7 @@ export function BackendConsole({ domains, available }: { domains: Domain[]; avai
       {/* Shared catalogs / actions */}
       <div className="flex flex-wrap gap-2">
         <Link href="/field/backend/caregiver" className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"><Users size={14} /> Caregiver practices</Link>
+        <button onClick={() => setCreating(true)} className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"><Plus size={14} /> New intervention</button>
       </div>
 
       {/* Domain tabs */}
@@ -185,6 +189,16 @@ export function BackendConsole({ domains, available }: { domains: Domain[]; avai
         </div>
       </section>
 
+      {creating && (
+        <CreateInterventionModal
+          domains={domains}
+          pickers={pickers}
+          busy={busy}
+          onClose={() => setCreating(false)}
+          onCreate={async (body) => { const r = await call(`/api/field/admin/intervention`, "POST", body); if (r?.ok) { alert(`Created — ${r.setupSteps} setup + ${r.visitSteps} visit steps materialised`); setCreating(false); } }}
+        />
+      )}
+
       {addingDomain && (
         <AddDomainModal
           available={available}
@@ -211,6 +225,63 @@ export function BackendConsole({ domains, available }: { domains: Domain[]; avai
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <label className="block"><span className="mb-1 block text-xs font-medium text-stone-500">{label}</span>{children}</label>;
+}
+
+// Create a new intervention: pick domain, geography, owner, mode → materialises steps.
+function CreateInterventionModal({ domains, pickers, busy, onClose, onCreate }: { domains: Domain[]; pickers: Pickers; busy: boolean; onClose: () => void; onCreate: (body: unknown) => void }) {
+  const [domain, setDomain] = useState(domains[0]?.config.domain ?? "");
+  const cfg = domains.find((d) => d.config.domain === domain)?.config;
+  const [title, setTitle] = useState("");
+  const [clusterId, setClusterId] = useState("");
+  const [settlementId, setSettlementId] = useState("");
+  const [facilityId, setFacilityId] = useState("");
+  const [ownerId, setOwnerId] = useState("");
+  const [mode, setMode] = useState<"setup" | "live">("setup");
+  const [anchor, setAnchor] = useState(() => new Date().toISOString().slice(0, 10));
+  const [geo, setGeo] = useState<{ settlements: { id: string; name: string }[]; facilities: { id: string; name: string }[] }>({ settlements: [], facilities: [] });
+
+  const layerKey = pickers.layerKeyByDomain[domain];
+  const needsSettlement = cfg?.unit === "settlement";
+
+  const loadGeo = async (cid: string) => {
+    setSettlementId(""); setFacilityId("");
+    if (!cid) return setGeo({ settlements: [], facilities: [] });
+    const r = await fetch(`/api/field/admin/geo?clusterId=${cid}${layerKey ? `&layerKey=${layerKey}` : ""}`).then((x) => x.json()).catch(() => ({ settlements: [], facilities: [] }));
+    setGeo({ settlements: r.settlements ?? [], facilities: r.facilities ?? [] });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={onClose}>
+      <div className="max-h-[88vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-start justify-between"><h3 className="text-base font-semibold text-stone-900">New intervention</h3><button onClick={onClose} className="text-stone-400 hover:text-stone-600"><X size={20} /></button></div>
+        <div className="space-y-3">
+          <Field label="Domain"><select value={domain} onChange={(e) => { setDomain(e.target.value); setClusterId(""); setGeo({ settlements: [], facilities: [] }); }} className="inp">{domains.map((d) => <option key={d.config.domain} value={d.config.domain}>{d.config.label}</option>)}</select></Field>
+          <Field label="Name"><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Creche — Ambedkar Nagar" className="inp" /></Field>
+          <Field label="Cluster"><select value={clusterId} onChange={(e) => { setClusterId(e.target.value); loadGeo(e.target.value); }} className="inp"><option value="">—</option>{pickers.clusters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
+          {needsSettlement && clusterId && (
+            <Field label="Settlement"><select value={settlementId} onChange={(e) => setSettlementId(e.target.value)} className="inp"><option value="">—</option>{geo.settlements.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
+          )}
+          {layerKey && clusterId && geo.facilities.length > 0 && (
+            <Field label="Facility (optional — links caregiver capture)"><select value={facilityId} onChange={(e) => setFacilityId(e.target.value)} className="inp"><option value="">—</option>{geo.facilities.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</select></Field>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Owner (RP)"><select value={ownerId} onChange={(e) => setOwnerId(e.target.value)} className="inp"><option value="">me</option>{pickers.users.map((u) => <option key={u.id} value={u.id}>{u.name}{u.designation && u.designation !== "Other" ? ` · ${u.designation}` : ""}</option>)}</select></Field>
+            <Field label="Anchor date"><input type="date" value={anchor} onChange={(e) => setAnchor(e.target.value)} className="inp" /></Field>
+          </div>
+          <Field label="Start as">
+            <div className="flex gap-2">
+              <button onClick={() => setMode("setup")} className={`flex-1 rounded-lg border px-3 py-1.5 text-sm ${mode === "setup" ? "border-stone-900 bg-stone-900 text-white" : "border-stone-200 text-stone-600"}`}>Setting up</button>
+              <button onClick={() => setMode("live")} disabled={!cfg?.hasLivePhase} className={`flex-1 rounded-lg border px-3 py-1.5 text-sm disabled:opacity-40 ${mode === "live" ? "border-stone-900 bg-stone-900 text-white" : "border-stone-200 text-stone-600"}`}>Live (existing)</button>
+            </div>
+          </Field>
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50">Cancel</button>
+          <button disabled={busy || !title.trim() || (needsSettlement && !settlementId) || (!needsSettlement && !clusterId)} onClick={() => onCreate({ domain, title, ownerId: ownerId || undefined, mode, anchorAt: anchor, settlementId: settlementId || null, clusterId: clusterId || null, facilityId: facilityId || null })} className="rounded-lg bg-stone-900 px-3 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50">Create</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // Create a new /field domain. Pick a needsDomain (so interventions link) or type one.
