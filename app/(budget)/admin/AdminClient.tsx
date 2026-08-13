@@ -398,9 +398,9 @@ function CostRegistryTab({ costs, isSeeded, city, domainOrder, domainLabels, nee
           <>
             <select value={editDisplayGroup ?? "coverage"} onChange={e => setEditDisplayGroup(e.target.value)}
               className="mt-1 w-full text-xs border border-stone-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-sky-500">
-              <option value="geography">Geography & Scale</option>
-              <option value="facilities">Facilities</option>
-              <option value="coverage">Coverage & Beneficiaries</option>
+              {(Object.keys(PROG_GROUP_LABELS) as ProgGroup[]).map(g => (
+                <option key={g} value={g}>{PROG_GROUP_LABELS[g]}</option>
+              ))}
             </select>
             <select value={editNeedsDomain ?? ""} onChange={e => setEditNeedsDomain(e.target.value || null)}
               className="mt-1 w-full text-xs border border-stone-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-sky-500">
@@ -807,9 +807,9 @@ function CostRegistryTab({ costs, isSeeded, city, domainOrder, domainLabels, nee
                   <span className="text-xs text-stone-500">Section (in analysis)</span>
                   <select value={newProgGroup} onChange={e => setNewProgGroup(e.target.value)}
                     className="mt-0.5 w-full border border-stone-300 rounded px-2 py-1 text-sm focus:outline-none">
-                    <option value="geography">Geography & Scale</option>
-                    <option value="facilities">Facilities</option>
-                    <option value="coverage">Coverage & Beneficiaries</option>
+                    {(Object.keys(PROG_GROUP_LABELS) as ProgGroup[]).map(g => (
+                      <option key={g} value={g}>{PROG_GROUP_LABELS[g]}</option>
+                    ))}
                   </select>
                 </label>
                 <label className="sm:col-span-2">
@@ -1351,6 +1351,15 @@ function parseIndicativeSalary(hint: string | null | undefined): number {
   return nums.length ? Math.round(nums.reduce((a, b) => a + b, 0) / nums.length) : 0;
 }
 
+type ProgGroup = "geography" | "facilities" | "coverage" | "capacity";
+
+const PROG_GROUP_LABELS: Record<ProgGroup, string> = {
+  geography: "Geography & Scale",
+  facilities: "Facilities",
+  coverage: "Coverage & Beneficiaries",
+  capacity: "Capacity & Infrastructure",
+};
+
 type GeoItem = { id: string; name: string };
 type GeoLevel = "city" | "zone" | "cluster" | "settlement";
 type ScenarioMetric = "need" | "addressable" | "existing" | "plan" | "gap";
@@ -1626,19 +1635,18 @@ function CostAnalysisTab({ templates, costs, domains, city, zones, cityBudgets }
 
   // All inp.* items grouped by displayGroup and sorted in logical order
   const progByGroup = useMemo(() => {
-    const groups: Record<"geography" | "facilities" | "coverage", { key: string; label: string }[]> = {
-      geography: [], facilities: [], coverage: [],
+    const groups: Record<ProgGroup, { key: string; label: string }[]> = {
+      geography: [], facilities: [], coverage: [], capacity: [],
     };
     for (const c of costs) {
       if (!c.itemKey.startsWith("inp.")) continue;
       const key = c.itemKey.slice(4);
       const label = c.notes ?? key.replace(/_/g, " ");
-      const g = (c.displayGroup ?? "coverage") as "geography" | "facilities" | "coverage";
+      const raw = c.displayGroup ?? "coverage";
+      const g: ProgGroup = raw in groups ? (raw as ProgGroup) : "coverage";
       groups[g].push({ key, label });
     }
-    groups.geography.sort(sortProg);
-    groups.facilities.sort(sortProg);
-    groups.coverage.sort(sortProg);
+    for (const g of Object.values(groups)) g.sort(sortProg);
     return groups;
   }, [costs]);
 
@@ -2311,6 +2319,23 @@ function CostAnalysisTab({ templates, costs, domains, city, zones, cityBudgets }
             ))}
           </div>
         </div>
+
+        {progByGroup.capacity.some(g => isVisibleInputKey(g.key)) && <div className="border-t border-stone-100" />}
+
+        {/* 4. Capacity & Infrastructure — drives the parametric capex formulas */}
+        {progByGroup.capacity.some(g => isVisibleInputKey(g.key)) && (
+          <div>
+            <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest mb-2">{PROG_GROUP_LABELS.capacity}</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              {progByGroup.capacity.filter(g => isVisibleInputKey(g.key)).map(({ key, label }) => (
+                <label key={key} className="block">
+                  <span className="text-xs text-stone-500">{label}</span>
+                  {inpField(key)}
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Per-unit summary */}
