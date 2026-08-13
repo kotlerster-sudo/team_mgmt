@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { requireFieldAdmin } from "@/lib/field/access";
-import { loadFieldBackend } from "@/lib/field/adminData";
+import { loadFieldBackend, loadAvailableDomains } from "@/lib/field/adminData";
 import { BackendConsole } from "./_components/BackendConsole";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +9,6 @@ export const dynamic = "force-dynamic";
 // with a live-data snapshot. Admin-only.
 export default async function FieldBackendPage() {
   if (!(await requireFieldAdmin())) redirect("/field");
-  const domains = await loadFieldBackend();
-  return <BackendConsole domains={JSON.parse(JSON.stringify(domains))} />;
+  const [domains, available] = await Promise.all([loadFieldBackend(), loadAvailableDomains()]);
+  return <BackendConsole domains={JSON.parse(JSON.stringify(domains))} available={available} />;
 }

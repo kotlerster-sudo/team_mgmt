@@ -1,5 +1,6 @@
 // Edit a FieldDomainConfig (label / geo unit / cadence / overall SLA / live phase).
 //   PATCH { label?, unit?, overallSlaDays?, cadenceCount?, cadencePeriod?, hasLivePhase?, isActive? }
+//   DELETE — remove the domain config (only when it has no interventions).
 import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireFieldAdmin } from "@/lib/field/access";
@@ -18,5 +19,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ do
   if (typeof b.isActive === "boolean") data.isActive = b.isActive;
 
   await prisma.fieldDomainConfig.update({ where: { domain }, data });
+  return Response.json({ ok: true });
+}
+
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ domain: string }> }) {
+  if (!(await requireFieldAdmin())) return Response.json({ error: "Forbidden" }, { status: 403 });
+  const { domain } = await params;
+  const inUse = await prisma.goal.count({ where: { needsDomain: domain, deletedAt: null, fieldSteps: { some: {} } } });
+  if (inUse > 0) return Response.json({ error: `In use by ${inUse} intervention(s) — deactivate instead` }, { status: 409 });
+  await prisma.setupStepTemplate.deleteMany({ where: { domain } });
+  await prisma.visitStepTemplate.deleteMany({ where: { domain } });
+  await prisma.fieldDomainConfig.delete({ where: { domain } });
   return Response.json({ ok: true });
 }

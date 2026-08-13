@@ -14,6 +14,18 @@ export type DomainBackend = {
 export type SetupRow = { id: string; order: number; stepKey: string; title: string; slaDays: number | null; startSlaDays: number | null; blockedByKey: string | null; formKind: string | null; formSchema: unknown };
 export type VisitRow = { id: string; order: number; stepKey: string; title: string; mandatory: boolean; formKind: string | null; formSchema: unknown };
 
+/** needsDomains that aren't yet configured for /field — candidates for "Add domain". */
+export async function loadAvailableDomains(): Promise<{ domain: string; label: string; unit: string }[]> {
+  const [configured, all] = await Promise.all([
+    prisma.fieldDomainConfig.findMany({ select: { domain: true } }),
+    prisma.needsFormulaConfig.findMany({ where: { isActive: true }, orderBy: { sortOrder: "asc" }, select: { domain: true, label: true, assessmentLevel: true } }),
+  ]);
+  const taken = new Set(configured.map((c) => c.domain));
+  return all
+    .filter((d) => !taken.has(d.domain))
+    .map((d) => ({ domain: d.domain, label: d.label ?? d.domain, unit: d.assessmentLevel === "settlement" ? "settlement" : "cluster" }));
+}
+
 export async function loadFieldBackend(): Promise<DomainBackend[]> {
   const configs = await prisma.fieldDomainConfig.findMany({ orderBy: { sortOrder: "asc" } });
   const out: DomainBackend[] = [];

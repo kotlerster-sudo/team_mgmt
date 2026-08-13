@@ -15,11 +15,12 @@ type Domain = {
 
 const FORM_KINDS = ["", "checklist", "questionnaire", "caregiver_practices"];
 
-export function BackendConsole({ domains }: { domains: Domain[] }) {
+export function BackendConsole({ domains, available }: { domains: Domain[]; available: { domain: string; label: string; unit: string }[] }) {
   const router = useRouter();
   const [active, setActive] = useState(domains[0]?.config.domain ?? "");
   const [busy, setBusy] = useState(false);
   const [formEditor, setFormEditor] = useState<{ kind: "setup" | "visit"; step: SetupRow | VisitRow } | null>(null);
+  const [addingDomain, setAddingDomain] = useState(false);
   const d = domains.find((x) => x.config.domain === active) ?? domains[0];
 
   async function call(url: string, method: string, body?: unknown) {
@@ -75,13 +76,12 @@ export function BackendConsole({ domains }: { domains: Domain[] }) {
       </div>
 
       {/* Domain tabs */}
-      {domains.length > 1 && (
-        <div className="flex gap-2">
-          {domains.map((dm) => (
-            <button key={dm.config.domain} onClick={() => setActive(dm.config.domain)} className={`rounded-lg px-3 py-1.5 text-sm font-medium ${dm.config.domain === active ? "bg-stone-900 text-white" : "bg-stone-100 text-stone-600"}`}>{dm.config.label}</button>
-          ))}
-        </div>
-      )}
+      <div className="flex flex-wrap items-center gap-2">
+        {domains.map((dm) => (
+          <button key={dm.config.domain} onClick={() => setActive(dm.config.domain)} className={`rounded-lg px-3 py-1.5 text-sm font-medium ${dm.config.domain === active ? "bg-stone-900 text-white" : "bg-stone-100 text-stone-600"} ${!dm.config.isActive ? "opacity-50" : ""}`}>{dm.config.label}</button>
+        ))}
+        <button onClick={() => setAddingDomain(true)} className="inline-flex items-center gap-1 rounded-lg border border-dashed border-stone-300 px-3 py-1.5 text-sm font-medium text-stone-500 hover:bg-stone-50"><Plus size={14} /> Add domain</button>
+      </div>
 
       {/* Live-data snapshot */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
@@ -95,7 +95,13 @@ export function BackendConsole({ domains }: { domains: Domain[] }) {
 
       {/* Domain config */}
       <section className="rounded-xl border border-stone-200 bg-white p-4 space-y-3">
-        <h2 className="text-sm font-semibold text-stone-700">Domain config <span className="ml-1 font-mono text-xs text-stone-400">{d.config.domain}</span></h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-stone-700">Domain config <span className="ml-1 font-mono text-xs text-stone-400">{d.config.domain}</span></h2>
+          <div className="flex items-center gap-3 text-xs">
+            <label className="flex items-center gap-1 text-stone-500"><input type="checkbox" defaultChecked={d.config.isActive} onChange={(e) => patchDomain({ isActive: e.target.checked })} /> active</label>
+            <button disabled={busy} onClick={async () => { if (!confirm(`Delete domain "${d.config.label}"? Only works if it has no interventions.`)) return; const r = await call(`/api/field/admin/domain/${d.config.domain}`, "DELETE"); if (r?.ok) setActive(domains.find((x) => x.config.domain !== d.config.domain)?.config.domain ?? ""); }} className="text-stone-400 hover:text-red-500">Delete</button>
+          </div>
+        </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <Field label="Label"><input defaultValue={d.config.label} onBlur={(e) => e.target.value !== d.config.label && patchDomain({ label: e.target.value })} className="inp" /></Field>
           <Field label="Geo unit"><select defaultValue={d.config.unit} onChange={(e) => patchDomain({ unit: e.target.value })} className="inp"><option value="settlement">settlement</option><option value="cluster">cluster</option></select></Field>
@@ -179,6 +185,15 @@ export function BackendConsole({ domains }: { domains: Domain[] }) {
         </div>
       </section>
 
+      {addingDomain && (
+        <AddDomainModal
+          available={available}
+          busy={busy}
+          onClose={() => setAddingDomain(false)}
+          onCreate={async (body) => { const r = await call(`/api/field/admin/domain`, "POST", body); if (r?.ok) { setActive(r.domain); setAddingDomain(false); } }}
+        />
+      )}
+
       {formEditor && (
         <FormItemsModal
           step={formEditor.step}
@@ -196,6 +211,53 @@ export function BackendConsole({ domains }: { domains: Domain[] }) {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <label className="block"><span className="mb-1 block text-xs font-medium text-stone-500">{label}</span>{children}</label>;
+}
+
+// Create a new /field domain. Pick a needsDomain (so interventions link) or type one.
+function AddDomainModal({ available, busy, onClose, onCreate }: { available: { domain: string; label: string; unit: string }[]; busy: boolean; onClose: () => void; onCreate: (body: unknown) => void }) {
+  const [domain, setDomain] = useState(available[0]?.domain ?? "");
+  const picked = available.find((a) => a.domain === domain);
+  const [label, setLabel] = useState(available[0]?.label ?? "");
+  const [unit, setUnit] = useState(available[0]?.unit ?? "settlement");
+  const [cadenceCount, setCadenceCount] = useState<string>("1");
+  const [cadencePeriod, setCadencePeriod] = useState("month");
+  const [overallSlaDays, setOverallSlaDays] = useState<string>("");
+  const [hasLivePhase, setHasLivePhase] = useState(true);
+
+  const onPick = (dm: string) => {
+    setDomain(dm);
+    const a = available.find((x) => x.domain === dm);
+    if (a) { setLabel(a.label); setUnit(a.unit); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={onClose}>
+      <div className="w-full max-w-md rounded-t-2xl bg-white p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-start justify-between"><h3 className="text-base font-semibold text-stone-900">Add domain</h3><button onClick={onClose} className="text-stone-400 hover:text-stone-600"><X size={20} /></button></div>
+        <div className="space-y-3">
+          <Field label="Domain (needsDomain key)">
+            {available.length > 0 ? (
+              <select value={domain} onChange={(e) => onPick(e.target.value)} className="inp">{available.map((a) => <option key={a.domain} value={a.domain}>{a.label} ({a.domain})</option>)}</select>
+            ) : (
+              <input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="e.g. ChildrenCentre" className="inp" />
+            )}
+          </Field>
+          <Field label="Label"><input value={label} onChange={(e) => setLabel(e.target.value)} className="inp" /></Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Geo unit"><select value={unit} onChange={(e) => setUnit(e.target.value)} className="inp"><option value="settlement">settlement</option><option value="cluster">cluster</option></select></Field>
+            <Field label="Overall SLA (days)"><input type="number" value={overallSlaDays} onChange={(e) => setOverallSlaDays(e.target.value)} className="inp" /></Field>
+            <Field label="Cadence count"><input type="number" value={cadenceCount} onChange={(e) => setCadenceCount(e.target.value)} className="inp" /></Field>
+            <Field label="Cadence period"><select value={cadencePeriod} onChange={(e) => setCadencePeriod(e.target.value)} className="inp"><option value="month">month</option><option value="week">week</option></select></Field>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-stone-600"><input type="checkbox" checked={hasLivePhase} onChange={(e) => setHasLivePhase(e.target.checked)} /> has a live (visit) phase {picked ? `— ${picked.label}` : ""}</label>
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50">Cancel</button>
+          <button disabled={busy || !domain} onClick={() => onCreate({ domain, label, unit, cadenceCount: cadenceCount === "" ? null : Number(cadenceCount), cadencePeriod, overallSlaDays: overallSlaDays === "" ? null : Number(overallSlaDays), hasLivePhase })} className="rounded-lg bg-stone-900 px-3 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50">Create</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function FormCell({ value, schema, onChange, onEdit }: { value: string | null; schema: any; onChange: (v: string | null) => void; onEdit: () => void }) {
