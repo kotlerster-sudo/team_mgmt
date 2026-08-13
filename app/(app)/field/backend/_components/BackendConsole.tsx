@@ -3,10 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, Plus, Trash2, ArrowUp, ArrowDown, RefreshCw, Database } from "lucide-react";
+import { ChevronLeft, Plus, Trash2, ArrowUp, ArrowDown, RefreshCw, Database, X, ListChecks } from "lucide-react";
 
-type SetupRow = { id: string; order: number; stepKey: string; title: string; slaDays: number | null; startSlaDays: number | null; blockedByKey: string | null; formKind: string | null; formItemCount: number };
-type VisitRow = { id: string; order: number; stepKey: string; title: string; mandatory: boolean; formKind: string | null; formItemCount: number };
+type SetupRow = { id: string; order: number; stepKey: string; title: string; slaDays: number | null; startSlaDays: number | null; blockedByKey: string | null; formKind: string | null; formSchema: any };
+type VisitRow = { id: string; order: number; stepKey: string; title: string; mandatory: boolean; formKind: string | null; formSchema: any };
 type Domain = {
   config: { domain: string; label: string; unit: string; overallSlaDays: number | null; cadenceCount: number | null; cadencePeriod: string | null; hasLivePhase: boolean; isActive: boolean };
   setupSteps: SetupRow[]; visitSteps: VisitRow[];
@@ -19,6 +19,7 @@ export function BackendConsole({ domains }: { domains: Domain[] }) {
   const router = useRouter();
   const [active, setActive] = useState(domains[0]?.config.domain ?? "");
   const [busy, setBusy] = useState(false);
+  const [formEditor, setFormEditor] = useState<{ kind: "setup" | "visit"; step: SetupRow | VisitRow } | null>(null);
   const d = domains.find((x) => x.config.domain === active) ?? domains[0];
 
   async function call(url: string, method: string, body?: unknown) {
@@ -104,7 +105,10 @@ export function BackendConsole({ domains }: { domains: Domain[] }) {
       <section className="space-y-2">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-stone-700">Setup steps <span className="text-stone-400">({d.setupSteps.length})</span></h2>
-          <button disabled={busy} onClick={() => addStep("setup")} className="inline-flex items-center gap-1 rounded-lg border border-stone-300 px-2.5 py-1 text-xs font-medium text-stone-700 hover:bg-stone-50"><Plus size={13} /> Add</button>
+          <div className="flex gap-2">
+            <button disabled={busy} onClick={async () => { if (!confirm("Push setup-template changes onto existing interventions? Completion state is preserved.")) return; const r = await call(`/api/field/admin/resync-setup`, "POST", { domain: d.config.domain }); if (r?.ok) alert(`Resynced ${r.goals} interventions · +${r.added} / ~${r.updated} / -${r.removed}`); }} className="inline-flex items-center gap-1 rounded-lg border border-stone-300 px-2.5 py-1 text-xs font-medium text-stone-700 hover:bg-stone-50"><RefreshCw size={12} /> Resync to live</button>
+            <button disabled={busy} onClick={() => addStep("setup")} className="inline-flex items-center gap-1 rounded-lg border border-stone-300 px-2.5 py-1 text-xs font-medium text-stone-700 hover:bg-stone-50"><Plus size={13} /> Add</button>
+          </div>
         </div>
         <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
           <table className="w-full text-sm">
@@ -128,7 +132,7 @@ export function BackendConsole({ domains }: { domains: Domain[] }) {
                       {d.setupSteps.filter((o) => o.id !== s.id).map((o) => <option key={o.id} value={o.stepKey}>{o.title}</option>)}
                     </select>
                   </td>
-                  <td className="px-2"><FormSelect value={s.formKind} onChange={(v) => patchStep("setup", s.id, { formKind: v })} count={s.formItemCount} /></td>
+                  <td className="px-2"><FormCell value={s.formKind} schema={s.formSchema} onChange={(v) => patchStep("setup", s.id, { formKind: v })} onEdit={() => setFormEditor({ kind: "setup", step: s })} /></td>
                   <td className="px-2"><button disabled={busy} onClick={() => confirm("Delete this step?") && delStep("setup", s.id)} className="text-stone-300 hover:text-red-500"><Trash2 size={14} /></button></td>
                 </tr>
               ))}
@@ -161,7 +165,7 @@ export function BackendConsole({ domains }: { domains: Domain[] }) {
                   </td>
                   <td className="px-2"><input defaultValue={s.title} onBlur={(e) => e.target.value !== s.title && patchStep("visit", s.id, { title: e.target.value })} className="w-64 rounded border border-transparent px-1 py-0.5 hover:border-stone-200 focus:border-stone-300 focus:outline-none" /></td>
                   <td className="px-2"><input type="checkbox" defaultChecked={s.mandatory} onChange={(e) => patchStep("visit", s.id, { mandatory: e.target.checked })} /></td>
-                  <td className="px-2"><FormSelect value={s.formKind} onChange={(v) => patchStep("visit", s.id, { formKind: v })} count={s.formItemCount} /></td>
+                  <td className="px-2"><FormCell value={s.formKind} schema={s.formSchema} onChange={(v) => patchStep("visit", s.id, { formKind: v })} onEdit={() => setFormEditor({ kind: "visit", step: s })} /></td>
                   <td className="px-2"><button disabled={busy} onClick={() => confirm("Delete this step?") && delStep("visit", s.id)} className="text-stone-300 hover:text-red-500"><Trash2 size={14} /></button></td>
                 </tr>
               ))}
@@ -169,6 +173,16 @@ export function BackendConsole({ domains }: { domains: Domain[] }) {
           </table>
         </div>
       </section>
+
+      {formEditor && (
+        <FormItemsModal
+          step={formEditor.step}
+          kind={formEditor.kind}
+          busy={busy}
+          onClose={() => setFormEditor(null)}
+          onSave={async (schema) => { await patchStep(formEditor.kind, formEditor.step.id, { formSchema: schema }); setFormEditor(null); }}
+        />
+      )}
 
       <style>{`.inp{height:2.25rem;width:100%;border:1px solid rgb(231 229 228);border-radius:0.5rem;padding:0 0.6rem;font-size:0.875rem;outline:none}.inp:focus{border-color:rgb(168 162 158)}`}</style>
     </div>
@@ -179,13 +193,103 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <label className="block"><span className="mb-1 block text-xs font-medium text-stone-500">{label}</span>{children}</label>;
 }
 
-function FormSelect({ value, onChange, count }: { value: string | null; onChange: (v: string | null) => void; count: number }) {
+function FormCell({ value, schema, onChange, onEdit }: { value: string | null; schema: any; onChange: (v: string | null) => void; onEdit: () => void }) {
+  const count = schema?.items?.length ?? schema?.fields?.length ?? 0;
+  const editable = value === "checklist" || value === "questionnaire";
   return (
     <span className="inline-flex items-center gap-1">
       <select defaultValue={value ?? ""} onChange={(e) => onChange(e.target.value || null)} className="rounded border border-transparent px-1 py-0.5 hover:border-stone-200 focus:border-stone-300 focus:outline-none">
         {FORM_KINDS.map((k) => <option key={k} value={k}>{k || "—"}</option>)}
       </select>
-      {count > 0 && <span className="text-[10px] text-stone-400">{count}</span>}
+      {(editable || value === "caregiver_practices") && (
+        <button onClick={onEdit} title="Edit form" className="inline-flex items-center gap-0.5 rounded border border-stone-200 px-1 py-0.5 text-[10px] text-stone-500 hover:bg-stone-50">
+          <ListChecks size={11} />{count > 0 ? count : ""}
+        </button>
+      )}
     </span>
+  );
+}
+
+// Editor for a step's form contents. Checklist → items (text/category/non-neg/NA);
+// questionnaire → fields; caregiver_practices → managed in the practices catalog.
+function FormItemsModal({ step, kind, busy, onClose, onSave }: { step: SetupRow | VisitRow; kind: "setup" | "visit"; busy: boolean; onClose: () => void; onSave: (schema: any) => void }) {
+  const formKind = step.formKind;
+  const [schema, setSchema] = useState<any>(() => JSON.parse(JSON.stringify(step.formSchema ?? (formKind === "checklist" ? { scored: false, items: [] } : { fields: [] }))));
+
+  const items: any[] = schema.items ?? [];
+  const fields: any[] = schema.fields ?? [];
+  const setItems = (next: any[]) => setSchema((s: any) => ({ ...s, items: next }));
+  const setFields = (next: any[]) => setSchema((s: any) => ({ ...s, fields: next }));
+  const slugify = (t: string, i: number) => (t.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || `item-${i}`);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={onClose}>
+      <div className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-white p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-base font-semibold text-stone-900">{step.title}</h3>
+            <p className="text-xs text-stone-500">Form: {formKind}</p>
+          </div>
+          <button onClick={onClose} className="text-stone-400 hover:text-stone-600"><X size={20} /></button>
+        </div>
+
+        {formKind === "caregiver_practices" ? (
+          <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+            Caregiver-practice items live in the shared practices catalog (categories → practices), not on this step.
+            Manage them in the <a href="/settings/control-plane" className="font-medium underline">Control plane → Caregiver practices</a> tab.
+            This step just launches that catalog during a visit.
+          </div>
+        ) : formKind === "checklist" ? (
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm text-stone-600">
+              <input type="checkbox" checked={!!schema.scored} onChange={(e) => setSchema((s: any) => ({ ...s, scored: e.target.checked }))} />
+              Scored (OK / Fail / N-A per item; a failed non-negotiable raises a follow-up)
+            </label>
+            <div className="space-y-1.5">
+              {items.map((it, i) => (
+                <div key={i} className="flex items-start gap-1.5 rounded-lg border border-stone-100 p-2">
+                  <span className="mt-1.5 text-xs text-stone-300">{i + 1}</span>
+                  <div className="flex-1 space-y-1">
+                    <input value={it.text ?? ""} placeholder="Item text" onChange={(e) => setItems(items.map((x, j) => j === i ? { ...x, text: e.target.value, key: x.key || slugify(e.target.value, i) } : x))} className="w-full rounded border border-stone-200 px-2 py-1 text-sm outline-none focus:border-stone-400" />
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-stone-500">
+                      <input value={it.category ?? ""} placeholder="Category" onChange={(e) => setItems(items.map((x, j) => j === i ? { ...x, category: e.target.value } : x))} className="w-40 rounded border border-stone-200 px-2 py-0.5 outline-none focus:border-stone-400" />
+                      {schema.scored && <label className="flex items-center gap-1"><input type="checkbox" checked={!!it.nonNegotiable} onChange={(e) => setItems(items.map((x, j) => j === i ? { ...x, nonNegotiable: e.target.checked } : x))} /> non-neg</label>}
+                      {schema.scored && <label className="flex items-center gap-1"><input type="checkbox" checked={!!it.naAllowed} onChange={(e) => setItems(items.map((x, j) => j === i ? { ...x, naAllowed: e.target.checked } : x))} /> N/A ok</label>}
+                    </div>
+                  </div>
+                  <button onClick={() => setItems(items.filter((_, j) => j !== i))} className="mt-1 text-stone-300 hover:text-red-500"><Trash2 size={13} /></button>
+                </div>
+              ))}
+            </div>
+            <button onClick={() => setItems([...items, { key: `item-${items.length + 1}`, text: "", category: "" }])} className="inline-flex items-center gap-1 text-xs font-medium text-stone-600 hover:text-stone-900"><Plus size={13} /> Add item</button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {fields.map((f, i) => (
+              <div key={i} className="flex items-start gap-1.5 rounded-lg border border-stone-100 p-2">
+                <div className="flex-1 space-y-1">
+                  <input value={f.label ?? ""} placeholder="Question / label" onChange={(e) => setFields(fields.map((x, j) => j === i ? { ...x, label: e.target.value, key: x.key || slugify(e.target.value, i) } : x))} className="w-full rounded border border-stone-200 px-2 py-1 text-sm outline-none focus:border-stone-400" />
+                  <div className="flex items-center gap-2 text-xs">
+                    <select value={f.type ?? "text"} onChange={(e) => setFields(fields.map((x, j) => j === i ? { ...x, type: e.target.value } : x))} className="rounded border border-stone-200 px-1 py-0.5">
+                      {["text", "number", "bool", "select"].map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    {f.type === "select" && <input value={(f.options ?? []).join(", ")} placeholder="option a, option b" onChange={(e) => setFields(fields.map((x, j) => j === i ? { ...x, options: e.target.value.split(",").map((o) => o.trim()).filter(Boolean) } : x))} className="flex-1 rounded border border-stone-200 px-2 py-0.5 outline-none focus:border-stone-400" />}
+                  </div>
+                </div>
+                <button onClick={() => setFields(fields.filter((_, j) => j !== i))} className="mt-1 text-stone-300 hover:text-red-500"><Trash2 size={13} /></button>
+              </div>
+            ))}
+            <button onClick={() => setFields([...fields, { key: `q-${fields.length + 1}`, label: "", type: "text" }])} className="inline-flex items-center gap-1 text-xs font-medium text-stone-600 hover:text-stone-900"><Plus size={13} /> Add question</button>
+          </div>
+        )}
+
+        {formKind !== "caregiver_practices" && (
+          <div className="mt-4 flex justify-end gap-2">
+            <button onClick={onClose} className="rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50">Cancel</button>
+            <button disabled={busy} onClick={() => onSave(schema)} className="rounded-lg bg-stone-900 px-3 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50">Save form</button>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

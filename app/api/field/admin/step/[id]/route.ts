@@ -18,6 +18,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const data: Record<string, unknown> = {};
   if (typeof b.title === "string") data.title = b.title;
   if (b.formKind === null || ["checklist", "questionnaire", "caregiver_practices"].includes(b.formKind)) data.formKind = b.formKind || null;
+  // Full form schema (checklist items / questionnaire fields). null clears it.
+  if (b.formSchema !== undefined) data.formSchema = b.formSchema === null ? undefined : b.formSchema;
   // setup-only fields
   if (b.slaDays === null || Number.isFinite(b.slaDays)) data.slaDays = b.slaDays;
   if (b.startSlaDays === null || Number.isFinite(b.startSlaDays)) data.startSlaDays = b.startSlaDays;
