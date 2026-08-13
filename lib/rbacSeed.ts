@@ -153,6 +153,12 @@ export const RESOURCE_ACTIONS: Record<string, readonly string[]> = {
   // `read` = view a doc + read/write its shared team-scoring state, `create` =
   // upload a CV + generate a new doc, `delete` = remove a doc (no route yet).
   recruitment: ["list", "read", "create", "delete"],
+  // Field-ops unified backend (/field/backend) — configure domains, step
+  // templates, forms, interventions, facilities, geography & RP assignment.
+  // Super-admin/admin get it by default (below); grant to a programme lead's
+  // role from /settings/roles to delegate field-backend access without making
+  // them a super-admin. Checked by requireFieldAdmin (lib/field/access.ts).
+  field: ["manage"],
 };
 
 export type RoleGrant = Record<string, ScopeRule>; // "resource.action" → rule

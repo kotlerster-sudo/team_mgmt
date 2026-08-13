@@ -18,12 +18,21 @@ export async function getFieldSession(): Promise<FieldSession | null> {
   return { userId, email: session.user.email ?? null };
 }
 
-/** Require an admin for the /field backend console. Returns userId or null. */
+/**
+ * Gate the /field backend console. Allowed for admins/super-admins (as before)
+ * OR any role granted the `field.manage` permission via /settings/roles — so
+ * a programme lead can manage the field backend without being a super-admin.
+ * Returns userId or null.
+ */
 export async function requireFieldAdmin(): Promise<string | null> {
   const session = await auth();
   const userId = session?.user?.id;
-  if (!userId || !isAdminUser(session)) return null;
-  return userId;
+  if (!userId) return null;
+  if (isAdminUser(session)) return userId;
+  const { buildRbacContext, can } = await import("@/lib/rbac");
+  const ctx = await buildRbacContext(session);
+  if (ctx && (await can(ctx, "field", "manage"))) return userId;
+  return null;
 }
 
 /** Whether this session may see /field (env global, admin, or allowlist). Safe to call in the layout. */
