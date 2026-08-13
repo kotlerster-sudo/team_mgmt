@@ -127,7 +127,14 @@ function GeoEditModal({ intervention, clusters, layerKey, busy, onClose, onSave 
             </label>
           )}
           {layerKey && (
-            <label className="block"><span className="mb-1 block text-xs font-medium text-stone-500">Facility (optional)</span>
+            <label className="block"><span className="mb-1 flex items-center justify-between text-xs font-medium text-stone-500">Facility (optional)
+              <button type="button" disabled={!clusterId} onClick={async () => {
+                const name = prompt("New facility name:")?.trim();
+                if (!name) return;
+                const r = await fetch(`/api/field/admin/facility`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, layerKey, clusterId, settlementId: settlementId || null }) }).then((x) => x.json()).catch(() => null);
+                if (r?.ok) { setGeo((g) => ({ ...g, facilities: [...g.facilities, r.facility] })); setFacilityId(r.facility.id); } else alert(r?.error ?? "Failed");
+              }} className="font-normal text-stone-500 underline disabled:opacity-40 disabled:no-underline">+ new</button>
+            </span>
               <select value={facilityId} onChange={(e) => setFacilityId(e.target.value)} className="inp"><option value="">{intervention.facilityName ?? "—"}</option>{geo.facilities.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</select>
             </label>
           )}

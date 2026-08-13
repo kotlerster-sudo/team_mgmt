@@ -262,8 +262,17 @@ function CreateInterventionModal({ domains, pickers, busy, onClose, onCreate }: 
           {needsSettlement && clusterId && (
             <Field label="Settlement"><select value={settlementId} onChange={(e) => setSettlementId(e.target.value)} className="inp"><option value="">—</option>{geo.settlements.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
           )}
-          {layerKey && clusterId && geo.facilities.length > 0 && (
-            <Field label="Facility (optional — links caregiver capture)"><select value={facilityId} onChange={(e) => setFacilityId(e.target.value)} className="inp"><option value="">—</option>{geo.facilities.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</select></Field>
+          {layerKey && clusterId && (
+            <label className="block"><span className="mb-1 flex items-center justify-between text-xs font-medium text-stone-500">Facility (optional — links caregiver capture)
+              <button type="button" onClick={async () => {
+                const name = prompt("New facility name:")?.trim() || title.trim();
+                if (!name) return;
+                const r = await fetch(`/api/field/admin/facility`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, layerKey, clusterId, settlementId: settlementId || null }) }).then((x) => x.json()).catch(() => null);
+                if (r?.ok) { setGeo((g) => ({ ...g, facilities: [...g.facilities, r.facility] })); setFacilityId(r.facility.id); } else alert(r?.error ?? "Failed");
+              }} className="font-normal text-stone-500 underline">+ new</button>
+            </span>
+              <select value={facilityId} onChange={(e) => setFacilityId(e.target.value)} className="inp"><option value="">—</option>{geo.facilities.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</select>
+            </label>
           )}
           <div className="grid grid-cols-2 gap-3">
             <Field label="Owner (RP)"><select value={ownerId} onChange={(e) => setOwnerId(e.target.value)} className="inp"><option value="">me</option>{pickers.users.map((u) => <option key={u.id} value={u.id}>{u.name}{u.designation && u.designation !== "Other" ? ` · ${u.designation}` : ""}</option>)}</select></Field>
