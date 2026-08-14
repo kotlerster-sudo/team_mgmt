@@ -62,6 +62,14 @@ export default async function RecruitmentDocPage({ params }: { params: Promise<{
   const snap = day?.snapshotJson as { candidates?: unknown[] } | null | undefined;
   const poolSize = Array.isArray(snap?.candidates) ? snap.candidates.length : 0;
 
+  // Cache-buster for the iframe src. Without this, router.refresh() re-runs
+  // the server component but the iframe's src attribute is unchanged, so
+  // React never re-mounts it and the browser never re-fetches the doc —
+  // append/regenerate look like they did nothing until the user hard-reloads.
+  // JSON.stringify length flips on any snapshot mutation (add candidate,
+  // re-score, re-order, new axes), which is exactly the signal we want.
+  const iframeVersion = day?.snapshotJson ? JSON.stringify(day.snapshotJson).length : 0;
+
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center gap-3 border-b border-stone-200 bg-white px-4 py-2">
@@ -86,7 +94,7 @@ export default async function RecruitmentDocPage({ params }: { params: Promise<{
           />
         </div>
       </header>
-      <iframe src={`/api/recruitment/${slug}`} title="Scouting desk" className="block w-full flex-1" />
+      <iframe src={`/api/recruitment/${slug}?v=${iframeVersion}`} title="Scouting desk" className="block w-full flex-1" />
     </div>
   );
 }
