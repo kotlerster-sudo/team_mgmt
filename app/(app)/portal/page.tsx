@@ -135,8 +135,11 @@ export default async function PortalPage() {
           </Link>
         )}
 
-        {/* Recruitment */}
-        {canRecruit && !budgetOnly && (
+        {/* Recruitment — RBAC-only: if `recruitment.list` is granted, show it,
+             even to budget-admins. The default budget-admin restricted-chooser
+             behaviour is preserved because they have no recruitment grant by
+             default; opting in via /settings/roles opts in the card here. */}
+        {canRecruit && (
           <Link
             href="/recruitment"
             className="group flex flex-col gap-3 p-6 bg-white hover:bg-stone-50 border border-stone-200 hover:border-stone-300 rounded-2xl shadow-sm transition-all hover:shadow-md"
