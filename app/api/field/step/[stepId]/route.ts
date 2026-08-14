@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { assertFieldGoalAccess } from "@/lib/field/access";
+import { checklistGate } from "@/lib/field/stepGate";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ stepId: string }> }) {
   const session = await auth();
@@ -14,19 +15,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ste
   const body = await req.json().catch(() => ({}));
   const action: string = body?.action ?? "";
 
-  const step = await prisma.fieldStep.findFirst({ where: { id: stepId, kind: "Setup", deletedAt: null }, select: { id: true, goalId: true } });
+  const step = await prisma.fieldStep.findFirst({ where: { id: stepId, kind: "Setup", deletedAt: null }, select: { id: true, goalId: true, formKind: true, formSchema: true, answers: true } });
   if (!step) return Response.json({ error: "Not found" }, { status: 404 });
   if (!(await assertFieldGoalAccess(userId, step.goalId))) return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const now = new Date();
   const data: Record<string, unknown> = {};
   switch (action) {
-    case "complete":
+    case "complete": {
+      // Guard: a checklist step can't close until its gate is satisfied (client
+      // disables the button too, but this is the real enforcement).
+      const answers = body.answers !== undefined ? body.answers : step.answers;
+      const gate = checklistGate(step.formKind, step.formSchema, answers);
+      if (!gate.canComplete) return Response.json({ error: gate.reason ?? "Not ready to complete" }, { status: 400 });
       data.status = "Done";
       data.completedAt = now;
       data.completedById = userId;
       if (body.answers !== undefined) data.answers = body.answers;
       break;
+    }
     case "reopen":
       data.status = "InProgress";
       data.completedAt = null;

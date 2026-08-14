@@ -56,6 +56,10 @@ export async function loadInterventions(userId: string, clusterId?: string): Pro
   const where: Prisma.GoalWhereInput = {
     deletedAt: null,
     needsDomain: { in: [...domains.keys()] },
+    // Only interventions created through /field (createIntervention stamps
+    // fieldAnchorAt). Excludes legacy /operations goals that merely share a
+    // needsDomain value and were never materialised with FieldStep rows.
+    fieldAnchorAt: { not: null },
     ...(clusterId ? goalInClusterFilter(clusterId) : {}),
   };
   const goals = await prisma.goal.findMany({ where, include: GOAL_INCLUDE });
@@ -180,7 +184,7 @@ export type InterventionDetail = {
 export async function loadIntervention(goalId: string): Promise<InterventionDetail | null> {
   const domains = await activeFieldDomains();
   const goal = await prisma.goal.findFirst({
-    where: { id: goalId, deletedAt: null },
+    where: { id: goalId, deletedAt: null, fieldAnchorAt: { not: null } },
     include: {
       fieldSteps: { where: { deletedAt: null }, orderBy: { order: "asc" } },
       needsSettlement: { select: { name: true } },

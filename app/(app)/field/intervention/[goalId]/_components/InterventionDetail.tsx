@@ -8,6 +8,7 @@ import {
   Plus, X, ClipboardCheck,
 } from "lucide-react";
 import { CaregiverPracticeCapture } from "@/components/caregiver/CaregiverPracticeCapture";
+import { checklistGate } from "@/lib/field/stepGate";
 
 // ── Types (dates arrive as ISO strings across the server→client boundary) ─────
 type FormField = { key: string; label?: string; text?: string; type?: string; options?: string[]; category?: string | null; nonNegotiable?: boolean; naAllowed?: boolean };
@@ -327,16 +328,15 @@ function FollowUpsPanel({ goalId, followups, post, busy }: { goalId: string; fol
 function StepFormModal({ step, onClose, onSave }: { step: SetupStep | VisitStep; onClose: () => void; onSave: (answers: any, complete: boolean) => void | Promise<void> }) {
   const kind = step.formKind;
   const schema = step.formSchema ?? {};
-  const scored = kind === "checklist" && (schema.scored === true || (schema.items ?? []).some((it: FormField) => typeof it.nonNegotiable === "boolean"));
+  const scored = kind === "checklist" && schema.scored === true;
   const [answers, setAnswers] = useState<any>(
     step.answers ?? (scored ? { marks: {} } : kind === "checklist" ? { checked: {} } : {}),
   );
 
-  // A scored step can't be marked done until every non-negotiable item is rated.
-  const unratedNonNeg = scored
-    ? (schema.items ?? []).filter((it: FormField) => it.nonNegotiable && !answers?.marks?.[it.key]).length
-    : 0;
-  const canMarkDone = unratedNonNeg === 0;
+  // Checklist completion gate (scored: rate every non-neg; plain: check every
+  // non-neg + at least one item). Same rule the API enforces server-side.
+  const gate = checklistGate(kind, schema, answers);
+  const canMarkDone = gate.canComplete;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={onClose}>
@@ -373,15 +373,15 @@ function StepFormModal({ step, onClose, onSave }: { step: SetupStep | VisitStep;
         )}
 
         <div className="mt-4 flex items-center justify-end gap-2">
-          {!canMarkDone && (
-            <span className="mr-auto text-xs font-medium text-amber-700">{unratedNonNeg} non-negotiable{unratedNonNeg > 1 ? "s" : ""} to rate</span>
+          {!canMarkDone && gate.reason && (
+            <span className="mr-auto text-xs font-medium text-amber-700">{gate.reason}</span>
           )}
           {kind !== "caregiver_practices" && (
             <button onClick={() => onSave(answers, false)} className="rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50">Save</button>
           )}
           <button
             disabled={!canMarkDone}
-            title={canMarkDone ? undefined : "Rate every non-negotiable item first"}
+            title={canMarkDone ? undefined : gate.reason ?? undefined}
             onClick={() => onSave(answers, true)}
             className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -418,7 +418,7 @@ function ChecklistBody({ items, scored, answers, setAnswers }: { items: FormFiel
                 <li key={it.key}>
                   <label className="flex items-start gap-2.5 rounded-lg px-1 py-1.5 text-sm text-stone-700 hover:bg-stone-50">
                     <input type="checkbox" checked={!!answers?.checked?.[it.key]} onChange={(e) => toggle(it.key, e.target.checked)} className="mt-0.5" />
-                    <span>{it.text ?? it.label ?? it.key}</span>
+                    <span>{it.text ?? it.label ?? it.key}{it.nonNegotiable && <span className="ml-1 text-[10px] font-semibold text-red-500">NON-NEG</span>}</span>
                   </label>
                 </li>
               ))}

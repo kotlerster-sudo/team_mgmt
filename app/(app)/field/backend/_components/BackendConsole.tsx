@@ -407,7 +407,7 @@ function FormItemsModal({ step, kind, busy, onClose, onSave }: { step: SetupRow 
                     <input value={it.text ?? ""} placeholder="Item text" onChange={(e) => setItems(items.map((x, j) => j === i ? { ...x, text: e.target.value, key: x.key || slugify(e.target.value, i) } : x))} className="w-full rounded border border-stone-200 px-2 py-1 text-sm outline-none focus:border-stone-400" />
                     <div className="flex flex-wrap items-center gap-2 text-xs text-stone-500">
                       <input value={it.category ?? ""} placeholder="Category" onChange={(e) => setItems(items.map((x, j) => j === i ? { ...x, category: e.target.value } : x))} className="w-40 rounded border border-stone-200 px-2 py-0.5 outline-none focus:border-stone-400" />
-                      {schema.scored && <label className="flex items-center gap-1"><input type="checkbox" checked={!!it.nonNegotiable} onChange={(e) => setItems(items.map((x, j) => j === i ? { ...x, nonNegotiable: e.target.checked } : x))} /> non-neg</label>}
+                      <label className="flex items-center gap-1"><input type="checkbox" checked={!!it.nonNegotiable} onChange={(e) => setItems(items.map((x, j) => j === i ? { ...x, nonNegotiable: e.target.checked } : x))} /> non-neg</label>
                       {schema.scored && <label className="flex items-center gap-1"><input type="checkbox" checked={!!it.naAllowed} onChange={(e) => setItems(items.map((x, j) => j === i ? { ...x, naAllowed: e.target.checked } : x))} /> N/A ok</label>}
                     </div>
                   </div>
