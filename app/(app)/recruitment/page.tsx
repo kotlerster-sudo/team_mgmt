@@ -2,7 +2,7 @@ import { readdir, readFile } from "fs/promises";
 import path from "path";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Briefcase, MapPin, UserSearch } from "lucide-react";
+import { Briefcase, KeyRound, Languages, MapPin, UserSearch } from "lucide-react";
 import { get, list } from "@vercel/blob";
 import { auth } from "@/lib/auth";
 import { buildRbacContext, can } from "@/lib/rbac";
@@ -125,13 +125,24 @@ export default async function RecruitmentPage() {
       </div>
       <p className="text-sm text-stone-500 mb-4">Scouting desks for interview days. Scores and notes sync across the team.</p>
 
-      <div className="flex items-center gap-3 mb-6 text-sm">
+      <div className="flex items-center gap-3 mb-6 text-sm flex-wrap">
         <Link href="/recruitment/jobs" className="inline-flex items-center gap-1.5 text-stone-500 hover:text-sky-600">
           <Briefcase className="w-4 h-4" /> Job descriptions
         </Link>
         <span className="text-stone-300">·</span>
         <Link href="/recruitment/locations" className="inline-flex items-center gap-1.5 text-stone-500 hover:text-sky-600">
           <MapPin className="w-4 h-4" /> Locations
+        </Link>
+        <span className="ml-auto text-stone-300 hidden sm:inline">·</span>
+        {/* Account-settings links — placed here so users who only see /recruitment
+            (e.g. budget-admins granted recruitment.* access, who don't get the
+            sidebar app nav) can still reach their account settings. */}
+        <Link href="/settings" className="inline-flex items-center gap-1.5 text-stone-400 hover:text-stone-700">
+          <KeyRound className="w-3.5 h-3.5" /> Change password
+        </Link>
+        <span className="text-stone-300">·</span>
+        <Link href="/settings/language" className="inline-flex items-center gap-1.5 text-stone-400 hover:text-stone-700">
+          <Languages className="w-3.5 h-3.5" /> Language
         </Link>
       </div>
 
