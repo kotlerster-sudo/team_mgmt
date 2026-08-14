@@ -220,3 +220,65 @@ export function buildSystemPrompt(job: JobSnapshot): string {
     OUTPUT_SCHEMA,
   ].join("\n");
 }
+
+// ── Append-CVs mode ──────────────────────────────────────────────────────────
+
+const APPEND_BASE_VOICE = `You are a senior talent scout EXTENDING an existing scouting-day pool with additional CVs. The recruiter has already scouted an initial pool; your job is to score the new candidates on the SAME axes and rubric as the original pool so they slot in cleanly beside the existing entries.
+
+You will receive the role context, the axes and rubric already in play, one-line summaries of the existing candidates for calibration, and the new CVs (text extract, or page images for scanned CVs). Return ONLY a JSON object — no markdown fences, no commentary — matching the schema at the bottom of this prompt.`;
+
+const APPEND_OUTPUT_SCHEMA = `Output schema (exact shape — only new candidates, no headlines/everyone/axes):
+
+{
+  "candidates": [
+    {
+      "id": string,          // kebab-case short id from the name; MUST be unique from every existing-candidate id supplied above
+      "code": string,        // application/reference number from the CV if present, else the next number after the existing pool
+      "name": string,
+      "pos": string,         // profile phrase (football-position metaphor if theme=football; plain profile line otherwise)
+      "meta": string,        // "~5 yrs · City · Highest qualification, Institution"
+      "attrs": [number x6],  // 0–100 per FIXED axis (see axes rule above). Do NOT reinterpret the axes.
+      "flags": [["r"|"y", string]], // 1–3 flags. May use <b>.
+      "scout": string,       // 60–110 word scout's report. May use <b>.
+      "qs": [string]         // 5 sharp interview questions, each anchored in something specific in THIS CV.
+    }
+  ]
+}
+
+Rules:
+- Score consistently with the existing pool — a candidate matching the strongest existing profile should score similarly, not automatically top the pool.
+- ids MUST be unique from the existing ones; add a suffix if a name collides.
+- The only HTML allowed anywhere is <b>…</b>.`;
+
+/**
+ * Append-mode SYSTEM prompt. Reuses the JD + rubric + scrutinise blocks so
+ * scoring stays consistent with the original pool. Axes are locked to the
+ * doc's existing axes regardless of the JD's lockedAxes field.
+ */
+export function buildAppendSystemPrompt(
+  job: JobSnapshot,
+  existingAxes: string[],
+  existingCandidateSummaries: string[],
+): string {
+  const axesLine = `Fixed radar axes (locked from the original pool): ${existingAxes.map((a) => `"${a}"`).join(", ")}. Score each new candidate 0–100 on each axis with an honest spread. Do not invent new axes.`;
+  const poolLine = existingCandidateSummaries.length
+    ? `Existing pool (${existingCandidateSummaries.length} candidates already scouted — DO NOT re-score, only calibrate against):\n${existingCandidateSummaries.map((s) => `- ${s}`).join("\n")}`
+    : "No existing candidates in the pool yet.";
+  return [
+    APPEND_BASE_VOICE,
+    "",
+    themeBlock(job.theme),
+    "",
+    jdBlock(job),
+    "",
+    rubricBlock(job),
+    "",
+    scrutiniseBlock(job),
+    "",
+    axesLine,
+    "",
+    poolLine,
+    "",
+    APPEND_OUTPUT_SCHEMA,
+  ].join("\n");
+}
