@@ -1,10 +1,11 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { CalendarClock, Target, BarChart3, FileText, ClipboardCheck, Sprout, GraduationCap } from "lucide-react";
+import { CalendarClock, Target, BarChart3, FileText, ClipboardCheck, Sprout, GraduationCap, UserSearch } from "lucide-react";
 import Avatar from "@/components/Avatar";
 import SignOutButton from "@/components/SignOutButton";
 import { SurfaceProvider } from "@/components/rbac/RbacProviders";
+import { buildRbacContext, can } from "@/lib/rbac";
 import { getSeedingAccess } from "@/lib/seeding/access";
 import { getSchoolPlanAccess } from "@/lib/schoolPlan/access";
 import { isBudgetAdmin } from "@/lib/roleGuard";
@@ -18,6 +19,10 @@ export default async function PortalPage() {
   const schoolPlans = await getSchoolPlanAccess(session);
   // budget-admins get a restricted chooser: Budget + Seeding only.
   const budgetOnly = isBudgetAdmin(session);
+  // Recruitment card — gated on the same recruitment.list grant that used to
+  // gate the nav-bar entry.
+  const rbacCtx = await buildRbacContext(session);
+  const canRecruit = await can(rbacCtx, "recruitment", "list");
 
   return (
     <SurfaceProvider id="portal.view">
@@ -126,6 +131,22 @@ export default async function PortalPage() {
             <div>
               <p className="text-stone-800 font-semibold text-base">School Plans</p>
               <p className="text-stone-400 text-xs mt-0.5 leading-relaxed">After-school centres · Pilot plans · Tracker · Budget</p>
+            </div>
+          </Link>
+        )}
+
+        {/* Recruitment */}
+        {canRecruit && !budgetOnly && (
+          <Link
+            href="/recruitment"
+            className="group flex flex-col gap-3 p-6 bg-white hover:bg-stone-50 border border-stone-200 hover:border-stone-300 rounded-2xl shadow-sm transition-all hover:shadow-md"
+          >
+            <div className="w-10 h-10 rounded-xl bg-sky-50 flex items-center justify-center">
+              <UserSearch className="w-5 h-5 text-sky-600" />
+            </div>
+            <div>
+              <p className="text-stone-800 font-semibold text-base">Recruitment</p>
+              <p className="text-stone-400 text-xs mt-0.5 leading-relaxed">Job descriptions · Locations · CV → scouting desks</p>
             </div>
           </Link>
         )}
