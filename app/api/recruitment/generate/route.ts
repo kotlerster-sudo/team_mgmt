@@ -5,48 +5,50 @@ import Anthropic from "@anthropic-ai/sdk";
 import { del, get, list, put } from "@vercel/blob";
 import { auth } from "@/lib/auth";
 import { buildRbacContext, can } from "@/lib/rbac";
+import prisma from "@/lib/prisma";
 import { extractCv } from "@/lib/recruitment/extractCv";
 import { renderScoutingDoc, type ScoutDocData } from "@/lib/recruitment/renderDoc";
+import {
+  buildSystemPrompt,
+  jobSnapshotFromRow,
+  type JobSnapshot,
+} from "@/lib/recruitment/systemPrompt";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const SYSTEM = `You are a senior talent scout producing a "scouting desk" briefing for an interview day at a non-profit field-operations organisation (urban settlement work in Indian cities: elderly care, homelessness, welfare rights, food, water, sanitation, creches).
-
-The briefing uses a football-scouting metaphor throughout: candidates are trialists, the role is a shirt, the hiring manager is the selector. Witty but never at the expense of substance — every claim must be grounded in the CV evidence, and unverifiable or suspicious claims become flags, not jokes.
-
-You will receive the role context and one CV per candidate (text extract, or page images for scanned CVs). Return ONLY a JSON object — no markdown fences, no commentary — with this exact shape:
-
-{
-  "docTitle": string,        // browser tab title, e.g. "RP Trials · Chennai Urban — Scouting Day"
-  "matchday": string,        // e.g. "Matchday · Thu 30 July 2026" (use the interview date given)
-  "titleA": string,          // headline line 1, e.g. "RP Trials"
-  "titleB": string,          // headline line 2 — a football-club twist on the team/city, e.g. "Chennai Urban FC"
-  "sub": string,             // e.g. "8 trialists · 1 shirt · position: <b>Resource Person (box-to-box)</b>"
-  "axes": [string x6],       // 6 radar axis labels, UPPERCASE, max 7 chars each. Pick axes that discriminate THIS pool for THIS role, e.g. ["FIELD","RANGE","DOCS","DEPTH","STABLE","CHN FIT"]
-  "headlines": [string],     // 5–8 ticker headlines, UPPERCASE tabloid-transfer-news style, each surfacing a REAL cross-pool pattern or a candidate-specific alert
-  "everyone": [string],      // 2–4 paragraphs of probes to put to EVERY candidate, each starting "<b>1. Name of test:</b> …". Derive from patterns across the pool (e.g. many hold Manager titles → motivation probe)
-  "candidates": [
-    {
-      "id": string,          // kebab-case short id from the name
-      "code": string,        // application/reference number from the CV if present, else "01".."NN"
-      "name": string,
-      "pos": string,         // football position metaphor capturing their profile, e.g. "Box-to-box grafter", "Veteran captain · systems brain", "Hyped academy prospect"
-      "meta": string,        // "~5 yrs · City · Highest qualification, Institution"
-      "attrs": [number x6],  // 0–100 per axis, honest spread — do not cluster everyone at 60–80
-      "flags": [["r"|"y", string]], // 1–3 flags. "r" = serious (unexplained gaps, overlapping employment dates, likely misrepresentation, conflict-of-interest optics). "y" = caution (relocation, title inversion, thin urban experience, retention risk). May use <b>.
-      "scout": string,       // 60–110 word scout's report: what the evidence actually shows, strongest asset, core doubt. May use <b> for emphasis. Reference concrete numbers/orgs from the CV.
-      "qs": [string]         // 5 sharp interview questions, each anchored in something specific in THIS CV: verify suspicious claims first, then depth probes, then fit/practicals (relocation, salary, motivation). Include a "PRE-WORK (internal): …" item if something must be checked before the interview.
-    }
-  ]
+// ── One-off / legacy fallback JD ─────────────────────────────────────────────
+// When the upload form doesn't pick a saved JD (jobless one-off runs, or the
+// legacy `context` free-text path), we synthesise a minimal JobSnapshot from
+// the request fields so the prompt template still has something to render.
+// The scouting-day row still gets written; `jobId` stays null.
+function fallbackSnapshot(title: string, context: string): JobSnapshot {
+  return {
+    title: title || "Unspecified role",
+    seniority: null,
+    dayToDay: "",
+    mustHaves: [],
+    niceToHaves: [],
+    hardDisqualifiers: [],
+    salaryBand: null,
+    theme: "football",
+    notes: context,
+    redFlagRules: [],
+    yellowFlagRules: [],
+    scrutiniseFor: [],
+    lockedAxes: [],
+    location: {
+      city: "—",
+      state: null,
+      country: "IN",
+      primaryLanguage: null,
+      localReferenceOrgs: [],
+      localRedFlags: [],
+      mobilityDefault: null,
+      notes: "",
+    },
+  };
 }
-
-Rules:
-- Order candidates from strongest to weakest overall read.
-- Scrutinise every CV for: date overlaps between roles, unexplained gaps, designation inflation, donor-facing language masking thin field time, org-hopping patterns. These drive flags and questions.
-- The only HTML allowed anywhere is <b>…</b>.
-- attrs must reflect the evidence: a candidate with no urban field experience scores low on the field axis even if otherwise impressive.
-- Questions are for the interviewer to read aloud — direct, specific, no filler.`;
 
 async function uniqueSlug(base: string): Promise<string> {
   const taken = new Set<string>();
@@ -57,8 +59,17 @@ async function uniqueSlug(base: string): Promise<string> {
       if (m) taken.add(m[1]);
     }
   } catch {
-    /* blob store unreachable — fs check below still applies */
+    /* blob store unreachable — fs + DB check below still apply */
   }
+  // Also reserve slugs already taken by DB rows (scouting days created from a
+  // previous generate that succeeded to DB but where the blob store was
+  // unreachable — we don't want to collide on the next run).
+  const rows = await prisma.recruitmentScoutingDay.findMany({
+    select: { slug: true },
+    where: { slug: { startsWith: base } },
+  });
+  for (const r of rows) taken.add(r.slug);
+
   let slug = base;
   for (let n = 2; ; n++) {
     const onFs = await access(path.join(process.cwd(), "content", "recruitment", `${slug}.html`))
@@ -78,6 +89,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const title = String(body?.title || "").trim();
   const date = String(body?.date || "").trim();
   const context = String(body?.context || "").trim();
+  const jobId = typeof body?.jobId === "string" && body.jobId ? String(body.jobId) : null;
   const cvs: { url: string; name: string }[] = Array.isArray(body?.cvs) ? body.cvs : [];
   if (!title || cvs.length === 0) {
     return NextResponse.json({ error: "Title and at least one CV are required" }, { status: 400 });
@@ -89,6 +101,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
   }
 
+  // Resolve the JD snapshot — either a saved JD, or a minimal fallback derived
+  // from the request body. Snapshot is frozen into RecruitmentScoutingDay.jobSnapshotJson
+  // below so subsequent JD edits don't retroactively rewrite this scouting day.
+  let snapshot: JobSnapshot;
+  if (jobId) {
+    const job = await prisma.recruitmentJob.findUnique({
+      where: { id: jobId },
+      include: { location: true },
+    });
+    if (!job) return NextResponse.json({ error: "Selected JD not found" }, { status: 404 });
+    if (job.archivedAt) return NextResponse.json({ error: "Selected JD is archived" }, { status: 400 });
+    snapshot = jobSnapshotFromRow(job, job.location);
+  } else {
+    snapshot = fallbackSnapshot(title, context);
+  }
+
   // 1. Pull + extract each CV
   const userContent: Anthropic.ContentBlockParam[] = [
     {
@@ -96,7 +124,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       text: [
         `Interview-day title: ${title}`,
         date ? `Interview date: ${date}` : null,
-        context ? `Additional context from the selector:\n${context}` : null,
         `Number of candidates: ${cvs.length}`,
       ]
         .filter(Boolean)
@@ -126,7 +153,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const stream = client.messages.stream({
     model: "claude-opus-4-7",
     max_tokens: 24_000,
-    system: SYSTEM,
+    system: buildSystemPrompt(snapshot),
     messages: [{ role: "user", content: userContent }],
   });
   const msg = await stream.finalMessage();
@@ -147,16 +174,31 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
   data.selector = session!.user?.name || "The Selector";
 
-  // 3. Render + persist to the private doc store
+  // 3. Render + persist. Blob = render cache; DB row = source of truth.
   const base =
     title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "scouting-day";
   const slug = await uniqueSlug(base);
   const html = renderScoutingDoc(slug, data);
-  await put(`recruitment/docs/${slug}.html`, html, {
+  const putResult = await put(`recruitment/docs/${slug}.html`, html, {
     access: "private",
     addRandomSuffix: false,
     allowOverwrite: true,
     contentType: "text/html; charset=utf-8",
+  });
+
+  await prisma.recruitmentScoutingDay.create({
+    data: {
+      slug,
+      jobId,
+      matchday: date ? new Date(date) : null,
+      title,
+      // Cast: Prisma's JSON input type is picky about our structured shapes; DB
+      // just stores JSONB. Same trick as RecruitmentScoutState.stateJson.
+      jobSnapshotJson: snapshot as unknown as never,
+      snapshotJson: data as unknown as never,
+      renderedBlobUrl: putResult.url,
+      createdById: session!.user?.id ?? null,
+    },
   });
 
   // 4. Clean up temp CVs (best-effort)

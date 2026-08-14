@@ -1,15 +1,24 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { upload } from "@vercel/blob/client";
 import { FileUp, Loader2, Sparkles } from "lucide-react";
 
 type Phase = "idle" | "uploading" | "scouting";
 
-export default function UploadForm() {
+export type JobPickerRow = {
+  id: string;
+  slug: string;
+  title: string;
+  city: string;
+};
+
+export default function UploadForm({ jobs }: { jobs: JobPickerRow[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [jobId, setJobId] = useState<string>(jobs[0]?.id ?? "");
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
   const [context, setContext] = useState("");
@@ -20,6 +29,7 @@ export default function UploadForm() {
   const fileInput = useRef<HTMLInputElement>(null);
 
   const busy = phase !== "idle";
+  const jobless = jobId === "";
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -53,7 +63,14 @@ export default function UploadForm() {
       const res = await fetch("/api/recruitment/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: title.trim(), date, context: context.trim(), cvs }),
+        body: JSON.stringify({
+          title: title.trim(),
+          date,
+          // Only send context when there is no JD; a picked JD supplies its own notes.
+          context: jobless ? context.trim() : "",
+          jobId: jobless ? null : jobId,
+          cvs,
+        }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || "Generation failed");
@@ -80,6 +97,26 @@ export default function UploadForm() {
   return (
     <form onSubmit={submit} className="mb-6 rounded-xl border border-stone-200 bg-white p-4 space-y-3">
       <p className="text-sm font-medium text-stone-800">New scouting desk</p>
+
+      <div>
+        <label className="block text-[10px] font-semibold text-stone-400 uppercase tracking-wide mb-0.5">Job description</label>
+        <select
+          value={jobId}
+          onChange={(e) => setJobId(e.target.value)}
+          disabled={busy}
+          className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm text-stone-800 focus:outline-none focus:ring-2 focus:ring-sky-300 disabled:bg-stone-50"
+        >
+          {jobs.map((j) => (
+            <option key={j.id} value={j.id}>{j.title} · {j.city}</option>
+          ))}
+          <option value="">— One-off (no saved JD)</option>
+        </select>
+        <p className="mt-1 text-[11px] text-stone-400">
+          Pick a JD from the library, or run a one-off with free-text context.{" "}
+          <Link href="/recruitment/jobs" className="text-sky-600 hover:underline">Manage JDs →</Link>
+        </p>
+      </div>
+
       <div className="grid gap-3 sm:grid-cols-2">
         <input
           value={title}
@@ -96,14 +133,18 @@ export default function UploadForm() {
           className="rounded-lg border border-stone-200 px-3 py-2 text-sm text-stone-600 focus:outline-none focus:ring-2 focus:ring-sky-300 disabled:bg-stone-50"
         />
       </div>
-      <textarea
-        value={context}
-        onChange={(e) => setContext(e.target.value)}
-        placeholder="Context for the scout — role, city, what you're hiring for, anything to watch for (optional)"
-        rows={2}
-        disabled={busy}
-        className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-sky-300 disabled:bg-stone-50"
-      />
+
+      {jobless && (
+        <textarea
+          value={context}
+          onChange={(e) => setContext(e.target.value)}
+          placeholder="Context for the scout — role, city, what you're hiring for, anything to watch for"
+          rows={2}
+          disabled={busy}
+          className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-sky-300 disabled:bg-stone-50"
+        />
+      )}
+
       <div>
         <input
           ref={fileInput}

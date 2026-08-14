@@ -159,6 +159,9 @@ model User {
   schoolPlanMemberships     SchoolPlanMember[]             @relation("SchoolPlanMemberUser")
   // Shared team state for recruitment scouting docs
   recruitmentScoutUpdates   RecruitmentScoutState[]        @relation("RecruitmentScoutUpdater")
+  // Recruitment JD library + scouting days (Phase 1)
+  recruitmentJobsCreated    RecruitmentJob[]               @relation("RecruitmentJobCreator")
+  recruitmentScoutingDays   RecruitmentScoutingDay[]       @relation("RecruitmentScoutingDayCreator")
   // Field-ops surface (/field) — the minimal RP spine
   fieldStepsCompleted       FieldStep[]                    @relation("FieldStepCompleter")
   fieldVisitsArrived        FieldVisit[]                   @relation("FieldVisitArriver")
@@ -4677,7 +4680,7 @@ model SchoolPlanMember {
 /// Shared team state for a recruitment scouting doc (/recruitment/[slug]).
 /// One row per doc slug; the client PUTs the full state blob (scores, verdicts,
 /// notes, question-asked ticks). `version` bumps on every write so pollers can
-/// detect teammate edits. Super-admin only, gated in the API route.
+/// detect teammate edits. Gated in the API route via `recruitment.read`.
 model RecruitmentScoutState {
   slug        String   @id
   stateJson   Json     @default("{}")
@@ -4686,6 +4689,101 @@ model RecruitmentScoutState {
   updatedAt   DateTime @updatedAt
   updatedById String?
   updatedBy   User?    @relation("RecruitmentScoutUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+}
+
+/// Recruitment location — city-level context shared across many JDs for the same
+/// city. Carries language, salary bands, local reference orgs and location-
+/// specific red flags so five Chennai JDs don't restate "Tamil-primary, own
+/// two-wheeler". Promoted to a first-class row so we can grow it (mobility
+/// defaults, seasonal caveats, etc.) without touching every JD.
+model RecruitmentLocation {
+  id                  String    @id @default(cuid())
+  slug                String    @unique
+  city                String
+  state               String?
+  country             String    @default("IN")
+  primaryLanguage     String?   // "Tamil", "Kannada", "Hindi", …
+  // Free-form JSON keyed by seniority band, e.g. { entry: "₹18-22k/mo", mid: "…" }.
+  // Kept opaque here so orgs pick their own bands without a schema change.
+  localSalaryBands    Json?
+  localReferenceOrgs  String[]  @default([]) // orgs a serious candidate could plausibly cite
+  localRedFlags       String[]  @default([]) // "commercial-only banking background", …
+  mobilityDefault     String?   // "own-two-wheeler" | "public-transport" | "none"
+  notes               String    @default("")
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  archivedAt          DateTime?
+
+  jobs RecruitmentJob[]
+}
+
+/// A saved job description — reusable across many scouting days. Rubric fields
+/// (redFlagRules/yellowFlagRules/scrutiniseFor/lockedAxes) are populated but
+/// only wired into the SYSTEM prompt from Phase 3 — Phase 1 uses generic
+/// defaults. A JD is snapshot-frozen into every scouting day at generation time
+/// (see RecruitmentScoutingDay.jobSnapshotJson) so subsequent JD edits don't
+/// retroactively change old scouting docs.
+model RecruitmentJob {
+  id                  String    @id @default(cuid())
+  slug                String    @unique
+  title               String
+  seniority           String?   // entry | mid | senior | lead
+  locationId          String
+  location            RecruitmentLocation @relation(fields: [locationId], references: [id])
+
+  dayToDay            String    @default("") // markdown — what the role actually does
+  mustHaves           String[]  @default([])
+  niceToHaves         String[]  @default([])
+  hardDisqualifiers   String[]  @default([])
+  salaryBand          String?   // free-text; private — read-gated separately if needed
+
+  theme               String    @default("football") // football | neutral
+  notes               String    @default("")         // free-text extra context (replaces upload-form `context`)
+
+  // Rubric — nullable/empty falls back to generic defaults inside the prompt template.
+  redFlagRules        String[]  @default([]) // role-specific red flags (Phase 3 wiring)
+  yellowFlagRules     String[]  @default([]) // role-specific yellow flags (Phase 3 wiring)
+  scrutiniseFor       String[]  @default([]) // extra things to look for (Phase 3 wiring)
+  lockedAxes          String[]  @default([]) // 6 fixed radar axes; empty = model picks per pool
+
+  // Populated when the JD was extracted from an uploaded doc (Phase 2).
+  sourceDocUrl        String?
+  extractedAt         DateTime?
+
+  createdById         String?
+  createdBy           User?     @relation("RecruitmentJobCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  archivedAt          DateTime?
+
+  scoutingDays RecruitmentScoutingDay[]
+}
+
+/// A scouting day = one JD + one CV pool → one HTML doc. Rendered HTML still
+/// lives in the private blob store (`recruitment/docs/<slug>.html`); this row
+/// is the DB-side source of truth so we can re-render if the template changes
+/// and later extract per-candidate scoring rows for cross-day comparability
+/// without re-generating. `jobId` is nullable so legacy blob-only docs still
+/// show up in listings.
+model RecruitmentScoutingDay {
+  id              String   @id @default(cuid())
+  slug            String   @unique
+  jobId           String?
+  job             RecruitmentJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  matchday        DateTime?
+  title           String
+  // The full JD frozen at generation time so subsequent JD edits don't rewrite
+  // the doc's provenance. Same snapshot-on-use pattern as CentreCatalog.snapshot.
+  jobSnapshotJson Json?
+  // Full ScoutDocData (candidates + axes + headlines + …). The HTML is a render
+  // of this; Phase 3 extracts per-candidate rows from here for comparability.
+  snapshotJson    Json
+  renderedBlobUrl String?
+  createdById     String?
+  createdBy       User?    @relation("RecruitmentScoutingDayCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt       DateTime @default(now())
+
+  @@index([jobId])
 }
 
 // ════════════════════════════════════════════════════════════════════════════
