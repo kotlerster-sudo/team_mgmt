@@ -8,6 +8,7 @@ import { auth } from "@/lib/auth";
 import { buildRbacContext, can } from "@/lib/rbac";
 import prisma from "@/lib/prisma";
 import UploadForm from "./UploadForm";
+import DocCard from "./DocCard";
 
 export const dynamic = "force-dynamic";
 
@@ -22,9 +23,10 @@ type DocEntry = {
   city: string | null;
   createdAt: number; // unix ms for sorting
   isLegacy: boolean;
+  isCommitted: boolean;
 };
 
-function parseHtmlDoc(slug: string, html: string, createdAt: number): DocEntry {
+function parseHtmlDoc(slug: string, html: string, createdAt: number, isCommitted: boolean): DocEntry {
   return {
     slug,
     title: html.match(/<title>([^<]*)<\/title>/i)?.[1]?.trim() ?? slug,
@@ -34,6 +36,7 @@ function parseHtmlDoc(slug: string, html: string, createdAt: number): DocEntry {
     city: null,
     createdAt,
     isLegacy: true,
+    isCommitted,
   };
 }
 
@@ -41,6 +44,7 @@ export default async function RecruitmentPage() {
   const session = await auth();
   const ctx = await buildRbacContext(session, { surface: "recruitment.list" });
   if (!(await can(ctx, "recruitment", "list"))) notFound();
+  const canDelete = await can(ctx, "recruitment", "delete");
 
   // 1. DB rows: the source of truth going forward. Each carries its JD chip.
   const dbRows = await prisma.recruitmentScoutingDay.findMany({
@@ -63,6 +67,7 @@ export default async function RecruitmentPage() {
     city: r.job?.location.city ?? null,
     createdAt: +r.createdAt,
     isLegacy: false,
+    isCommitted: false,
   }));
 
   // 2. Legacy blob-only docs (generated before Phase 1 landed). Same fs+blob
@@ -80,7 +85,7 @@ export default async function RecruitmentPage() {
         const slug = b.pathname.replace(/^recruitment\/docs\//, "").replace(/\.html$/, "");
         const got = await get(b.url, { access: "private" });
         const html = got?.statusCode === 200 ? await new Response(got.stream).text() : "";
-        return parseHtmlDoc(slug, html, +new Date(b.uploadedAt));
+        return parseHtmlDoc(slug, html, +new Date(b.uploadedAt), false);
       }),
     );
     docs.push(...legacy);
@@ -94,7 +99,7 @@ export default async function RecruitmentPage() {
         .filter((f) => !knownSlugs.has(f.replace(/\.html$/, "")))
         .map(async (f) => {
           const html = await readFile(path.join(DIR, f), "utf8");
-          return parseHtmlDoc(f.replace(/\.html$/, ""), html, 0); // no timestamp on disk — sort last
+          return parseHtmlDoc(f.replace(/\.html$/, ""), html, 0, true); // committed → not deletable
         }),
     );
     docs.push(...committed);
@@ -137,38 +142,7 @@ export default async function RecruitmentPage() {
       ) : (
         <div className="space-y-2">
           {docs.map((d) => (
-            <Link
-              key={d.slug}
-              href={`/recruitment/${d.slug}`}
-              className="block rounded-xl border border-stone-200 bg-white px-4 py-3.5 hover:border-sky-300 hover:bg-sky-50/40 transition-colors"
-            >
-              <p className="text-sm font-medium text-stone-800">{d.title}</p>
-              <div className="mt-1 flex items-center gap-2 flex-wrap text-[11px] text-stone-400">
-                {d.matchday && <span>{d.matchday}</span>}
-                {d.jobTitle && (
-                  <>
-                    <span className="text-stone-300">·</span>
-                    <span className="inline-flex items-center gap-0.5">
-                      <Briefcase className="w-3 h-3" /> {d.jobTitle}
-                    </span>
-                  </>
-                )}
-                {d.city && (
-                  <>
-                    <span className="text-stone-300">·</span>
-                    <span className="inline-flex items-center gap-0.5">
-                      <MapPin className="w-3 h-3" /> {d.city}
-                    </span>
-                  </>
-                )}
-                {d.isLegacy && (
-                  <>
-                    <span className="text-stone-300">·</span>
-                    <span className="px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-500">legacy</span>
-                  </>
-                )}
-              </div>
-            </Link>
+            <DocCard key={d.slug} entry={d} canDelete={canDelete} />
           ))}
         </div>
       )}

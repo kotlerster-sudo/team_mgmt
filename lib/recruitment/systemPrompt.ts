@@ -282,3 +282,34 @@ export function buildAppendSystemPrompt(
     APPEND_OUTPUT_SCHEMA,
   ].join("\n");
 }
+
+// ── Regenerate mode ──────────────────────────────────────────────────────────
+
+const REGENERATE_BASE_VOICE = `You are RE-SCOUTING an entire candidate pool. Some candidates come with fresh CVs (text/image blocks); others come with prior scout notes that describe them (treat those notes as the evidence about them — that's all we have on them).
+
+Produce a fresh scouting doc reflecting the full pool: pick 6 axes that discriminate THIS pool, score everyone (both prior and new candidates) on those axes, write fresh headlines and "everyone" probes. Existing candidates carry an id you MUST reuse verbatim in your output (so the team's saved scores/notes stay linked). New candidates get fresh kebab-case ids.
+
+Where a prior candidate's evidence is thin (only a short scout note, no CV), score conservatively and flag it — do not invent new details.`;
+
+/**
+ * Regenerate-mode SYSTEM prompt. Full doc refresh — axes/headlines/everyone
+ * are all re-picked to reflect the full new pool. Existing candidate ids are
+ * preserved for team-score continuity.
+ */
+export function buildRegenerateSystemPrompt(job: JobSnapshot): string {
+  return [
+    REGENERATE_BASE_VOICE,
+    "",
+    themeBlock(job.theme),
+    "",
+    jdBlock(job),
+    "",
+    rubricBlock(job),
+    "",
+    scrutiniseBlock(job),
+    "",
+    axesRule(job),
+    "",
+    OUTPUT_SCHEMA,
+  ].join("\n");
+}
