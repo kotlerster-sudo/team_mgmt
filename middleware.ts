@@ -105,9 +105,17 @@ export default async function middleware(req: NextRequest) {
   }
 
   // budget-admin: budget + seeding sections, the portal chooser, and account
-  // settings. Everything else redirects to the portal (Budget + Seeding tiles).
+  // settings. Also /recruitment when granted via RBAC — the page/API themselves
+  // gate on recruitment.* so an ungranted budget-admin still gets a 404 there,
+  // but this middleware runs before RBAC and would otherwise short-circuit the
+  // redirect back to /portal. Everything else redirects to the portal.
   if (role === "budget-admin") {
-    const BUDGET_PREFIXES = ["/portal", "/budget", "/seeding", "/admin", "/api/budget", "/api/admin/budget", "/settings", "/api/account"];
+    const BUDGET_PREFIXES = [
+      "/portal", "/budget", "/seeding", "/admin",
+      "/api/budget", "/api/admin/budget",
+      "/settings", "/api/account",
+      "/recruitment", "/api/recruitment",
+    ];
     if (!BUDGET_PREFIXES.some((p) => pathname.startsWith(p))) {
       return NextResponse.redirect(new URL("/portal", req.url));
     }
