@@ -13,6 +13,12 @@ export interface ScoutCandidate {
   flags: [string, string][]; // [severity "r"|"y", text (may contain <b>)]
   scout: string; // prose scout report (may contain <b>)
   qs: string[]; // interview questions
+  // Persisted-only (stripped by cleanCandidate before HTML rendering).
+  // Populated server-side after LLM output by pairing on cvIndex → the CV
+  // text extract this candidate came from. Enables high-fidelity regenerate
+  // (see lib/recruitment/scoutingDayOps.ts). Never rendered to HTML.
+  cvIndex?: number;
+  cvText?: string;
 }
 
 export interface ScoutDocData {

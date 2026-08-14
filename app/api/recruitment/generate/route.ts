@@ -131,6 +131,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     },
   ];
 
+  // Track the extracted text per CV in the same order as `cvs` — the LLM
+  // will return cvIndex per candidate so we can attach the right blob back.
+  const extractedTexts: string[] = [];
   for (let i = 0; i < cvs.length; i++) {
     // Private blobs need the store token — a plain fetch of the URL 401s.
     const got = await get(cvs[i].url, { access: "private" });
@@ -139,6 +142,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
     const buffer = Buffer.from(await new Response(got.stream).arrayBuffer());
     const { text, images } = await extractCv(buffer);
+    extractedTexts.push(text || "");
     userContent.push({ type: "text", text: `=== CV ${i + 1} of ${cvs.length}: ${cvs[i].name} ===\n${text || "(scanned — see page images below)"}` });
     for (const img of images) {
       userContent.push({
@@ -173,6 +177,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Model returned no candidates — try again" }, { status: 502 });
   }
   data.selector = session!.user?.name || "The Selector";
+
+  // Attach each candidate's original CV text back to the row via cvIndex.
+  // Kept in snapshotJson only — cleanCandidate in renderDoc.ts drops it before
+  // HTML rendering. Falls back to empty string if the LLM omitted cvIndex or
+  // pointed out of range; regenerate degrades to scout prose in that case.
+  data.candidates = data.candidates.map((c) => {
+    const idx = typeof c.cvIndex === "number" ? c.cvIndex : 0;
+    const cvText = idx >= 1 && idx <= extractedTexts.length ? extractedTexts[idx - 1] : "";
+    return { ...c, cvIndex: idx || undefined, cvText };
+  });
 
   // 3. Render + persist. Blob = render cache; DB row = source of truth.
   const base =

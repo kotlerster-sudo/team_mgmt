@@ -4,18 +4,20 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { upload } from "@vercel/blob/client";
 import { FileUp, Loader2, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { decideMode, describeMode } from "@/lib/recruitment/decideMode";
 
 type AddPhase = "idle" | "uploading" | "scouting";
-type Mode = "append" | "regenerate";
 
 export default function ScoutingDayActions({
   slug,
+  poolSize,
   canAddCvs,
   canDelete,
   addDisabledReason,
   deleteDisabledReason,
 }: {
   slug: string;
+  poolSize: number;
   canAddCvs: boolean;
   canDelete: boolean;
   addDisabledReason: string;
@@ -68,7 +70,14 @@ export default function ScoutingDayActions({
       ) : null}
       {deleteError && <span className="text-[11px] text-red-500">{deleteError}</span>}
 
-      {addOpen && <AddCvsModal slug={slug} onClose={() => setAddOpen(false)} onDone={() => { setAddOpen(false); router.refresh(); }} />}
+      {addOpen && (
+        <AddCvsModal
+          slug={slug}
+          poolSize={poolSize}
+          onClose={() => setAddOpen(false)}
+          onDone={() => { setAddOpen(false); router.refresh(); }}
+        />
+      )}
     </div>
   );
 }
@@ -76,25 +85,27 @@ export default function ScoutingDayActions({
 // ── Add-CVs modal ──────────────────────────────────────────────────────────
 
 function AddCvsModal({
-  slug, onClose, onDone,
+  slug, poolSize, onClose, onDone,
 }: {
   slug: string;
+  poolSize: number;
   onClose: () => void;
   onDone: () => void;
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
-  const [mode, setMode] = useState<Mode>("append");
   const [phase, setPhase] = useState<AddPhase>("idle");
   const [progress, setProgress] = useState("");
   const [error, setError] = useState<string | null>(null);
   const busy = phase !== "idle";
 
+  // Mirror the server's decision so the recruiter knows what will happen —
+  // decideMode() is shared between client and server for exactly this.
+  const previewMode = files.length > 0 ? decideMode(poolSize, files.length) : null;
+  const previewLine = previewMode ? describeMode(previewMode, poolSize, files.length) : null;
+
   const submit = async () => {
-    if (busy) return;
-    // Append requires new CVs; regenerate can run with zero (fresh axes on
-    // existing pool). API validates too.
-    if (mode === "append" && files.length === 0) return;
+    if (busy || files.length === 0) return;
     setError(null);
     try {
       setPhase("uploading");
@@ -120,19 +131,16 @@ function AddCvsModal({
       }
 
       setPhase("scouting");
-      setProgress(mode === "append"
-        ? "Scoring the new candidates on the existing pool's axes…"
-        : "Re-scouting the full pool with fresh axes…");
-      const endpoint = mode === "append"
-        ? `/api/recruitment/${slug}/add-cvs`
-        : `/api/recruitment/${slug}/regenerate`;
-      const res = await fetch(endpoint, {
+      setProgress(previewMode === "regenerate"
+        ? "Re-scouting the full pool with fresh axes…"
+        : "Scoring the new candidates on the existing pool's axes…");
+      const res = await fetch(`/api/recruitment/${slug}/add-cvs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cvs }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || (mode === "append" ? "Add failed" : "Regenerate failed"));
+      if (!res.ok) throw new Error(json.error || "Add failed");
       onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -140,13 +148,6 @@ function AddCvsModal({
       setProgress("");
     }
   };
-
-  const submitLabel =
-    mode === "append"
-      ? "Score & append"
-      : files.length > 0
-        ? "Regenerate with all candidates"
-        : "Regenerate on existing pool";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -159,23 +160,9 @@ function AddCvsModal({
           </button>
         </div>
 
-        {/* Mode toggle */}
-        <div className="space-y-2">
-          <label className={`flex items-start gap-2.5 rounded-lg border p-3 cursor-pointer ${mode === "append" ? "border-sky-300 bg-sky-50/40" : "border-stone-200 hover:border-stone-300"}`}>
-            <input type="radio" name="mode" checked={mode === "append"} onChange={() => setMode("append")} disabled={busy} className="mt-0.5" />
-            <div className="flex-1">
-              <p className="text-sm font-medium text-stone-800">Append</p>
-              <p className="text-[11px] text-stone-500">Score the new CVs on this desk&apos;s existing axes and slot them in beside the current pool — headlines and prior candidates stay untouched.</p>
-            </div>
-          </label>
-          <label className={`flex items-start gap-2.5 rounded-lg border p-3 cursor-pointer ${mode === "regenerate" ? "border-amber-300 bg-amber-50/40" : "border-stone-200 hover:border-stone-300"}`}>
-            <input type="radio" name="mode" checked={mode === "regenerate"} onChange={() => setMode("regenerate")} disabled={busy} className="mt-0.5" />
-            <div className="flex-1">
-              <p className="text-sm font-medium text-stone-800">Regenerate with all candidates</p>
-              <p className="text-[11px] text-stone-500">Re-scout the full pool from scratch — fresh axes, headlines and re-scored existing candidates (using their prior scout notes as evidence, since original CVs aren&apos;t kept). Team scores/notes survive because candidate ids are preserved.</p>
-            </div>
-          </label>
-        </div>
+        <p className="text-[11px] text-stone-500">
+          Whether we append to the existing pool or re-scout the whole thing is decided automatically based on pool size and how many CVs you&apos;re adding.
+        </p>
 
         <input
           ref={fileInput}
@@ -193,14 +180,15 @@ function AddCvsModal({
           className="inline-flex items-center gap-2 rounded-lg border border-dashed border-stone-300 px-3 py-2 text-sm text-stone-600 hover:border-sky-300 hover:text-sky-700 transition-colors disabled:opacity-50"
         >
           <FileUp className="w-4 h-4" />
-          {files.length > 0
-            ? `${files.length} CV${files.length > 1 ? "s" : ""} selected`
-            : mode === "regenerate"
-              ? "Select CV PDFs (optional)"
-              : "Select CV PDFs"}
+          {files.length > 0 ? `${files.length} CV${files.length > 1 ? "s" : ""} selected` : "Select CV PDFs"}
         </button>
         {files.length > 0 && (
           <p className="text-xs text-stone-400 truncate">{files.map((f) => f.name).join(" · ")}</p>
+        )}
+        {previewLine && (
+          <div className={`text-[11px] rounded-lg border px-3 py-2 ${previewMode === "regenerate" ? "border-amber-200 bg-amber-50 text-amber-800" : "border-sky-200 bg-sky-50 text-sky-800"}`}>
+            {previewLine}
+          </div>
         )}
         {error && <p className="text-xs text-red-600">{error}</p>}
         <div className="flex items-center justify-end gap-2 pt-1">
@@ -209,11 +197,11 @@ function AddCvsModal({
           )}
           <button
             onClick={submit}
-            disabled={busy || (mode === "append" && files.length === 0)}
-            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50 ${mode === "regenerate" ? "bg-amber-600 hover:bg-amber-700" : "bg-sky-600 hover:bg-sky-700"}`}
+            disabled={busy || files.length === 0}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-700 disabled:opacity-50"
           >
             {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-            {busy ? progress : submitLabel}
+            {busy ? progress : "Add"}
           </button>
         </div>
         {phase === "scouting" && (

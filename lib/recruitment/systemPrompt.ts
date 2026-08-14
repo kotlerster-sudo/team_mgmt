@@ -136,7 +136,8 @@ const OUTPUT_SCHEMA = `Output schema (exact shape):
       "attrs": [number x6],  // 0–100 per axis, honest spread — do not cluster everyone at 60–80
       "flags": [["r"|"y", string]], // 1–3 flags. "r" = serious, "y" = caution. May use <b>.
       "scout": string,       // 60–110 word scout's report: what the evidence shows, strongest asset, core doubt. May use <b>. Reference concrete numbers/orgs from the CV.
-      "qs": [string]         // 5 sharp interview questions, each anchored in something specific in THIS CV: verify suspicious claims first, then depth probes, then fit/practicals. May include a "PRE-WORK (internal): …" item.
+      "qs": [string],        // 5 sharp interview questions, each anchored in something specific in THIS CV: verify suspicious claims first, then depth probes, then fit/practicals. May include a "PRE-WORK (internal): …" item.
+      "cvIndex": number      // REQUIRED. The 1-based index of the CV this candidate came from (1..N, matching the "CV i of N: filename" markers in the user content).
     }
   ]
 }
@@ -145,7 +146,8 @@ General rules:
 - Order candidates from strongest to weakest overall read.
 - The only HTML allowed anywhere is <b>…</b>.
 - attrs must reflect the evidence: a candidate weak on a role-critical dimension scores low on that axis even if otherwise impressive.
-- Questions are for the interviewer to read aloud — direct, specific, no filler.`;
+- Questions are for the interviewer to read aloud — direct, specific, no filler.
+- cvIndex must correctly identify which of the N input CVs each candidate came from; the server pairs the extracted CV text back onto the candidate row using it.`;
 
 // ── Block builders ───────────────────────────────────────────────────────────
 
@@ -240,7 +242,8 @@ const APPEND_OUTPUT_SCHEMA = `Output schema (exact shape — only new candidates
       "attrs": [number x6],  // 0–100 per FIXED axis (see axes rule above). Do NOT reinterpret the axes.
       "flags": [["r"|"y", string]], // 1–3 flags. May use <b>.
       "scout": string,       // 60–110 word scout's report. May use <b>.
-      "qs": [string]         // 5 sharp interview questions, each anchored in something specific in THIS CV.
+      "qs": [string],        // 5 sharp interview questions, each anchored in something specific in THIS CV.
+      "cvIndex": number      // REQUIRED. 1-based index of the NEW CV this candidate came from (1..N of the "NEW CV i of N" markers above).
     }
   ]
 }
@@ -248,7 +251,8 @@ const APPEND_OUTPUT_SCHEMA = `Output schema (exact shape — only new candidates
 Rules:
 - Score consistently with the existing pool — a candidate matching the strongest existing profile should score similarly, not automatically top the pool.
 - ids MUST be unique from the existing ones; add a suffix if a name collides.
-- The only HTML allowed anywhere is <b>…</b>.`;
+- The only HTML allowed anywhere is <b>…</b>.
+- cvIndex must identify which NEW CV each candidate came from; the server uses it to attach the extracted text to the candidate row.`;
 
 /**
  * Append-mode SYSTEM prompt. Reuses the JD + rubric + scrutinise blocks so

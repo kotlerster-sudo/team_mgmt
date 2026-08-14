@@ -53,9 +53,14 @@ export default async function RecruitmentDocPage({ params }: { params: Promise<{
   // Legacy blob-only + hand-committed docs cannot — no snapshot to extend.
   const day = await prisma.recruitmentScoutingDay.findUnique({
     where: { slug },
-    select: { id: true, title: true },
+    select: { id: true, title: true, snapshotJson: true },
   });
   const committed = await isCommittedDoc(slug);
+
+  // Pool size drives the append-vs-regenerate rule (server-side); we pass it
+  // in so the modal can preview the choice for the user before they submit.
+  const snap = day?.snapshotJson as { candidates?: unknown[] } | null | undefined;
+  const poolSize = Array.isArray(snap?.candidates) ? snap.candidates.length : 0;
 
   return (
     <div className="flex h-full flex-col">
@@ -73,6 +78,7 @@ export default async function RecruitmentDocPage({ params }: { params: Promise<{
         <div className="ml-auto">
           <ScoutingDayActions
             slug={slug}
+            poolSize={poolSize}
             canAddCvs={canAddCvs && !!day}
             canDelete={canDelete && !committed}
             addDisabledReason={committed ? "Hand-committed doc" : !day ? "Legacy doc — no snapshot to extend" : ""}
