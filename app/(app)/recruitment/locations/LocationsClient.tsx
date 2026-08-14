@@ -74,7 +74,10 @@ export default function LocationsClient({
   canDelete: boolean;
 }) {
   const router = useRouter();
-  const [rows] = useState<LocationRow[]>(initial);
+  // Read rows straight from the prop — the parent server component re-fetches
+  // on router.refresh() and passes a fresh `initial` array. Snapshotting into
+  // useState locks in the mount-time value and never updates on refresh.
+  const rows = initial;
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");

@@ -55,6 +55,12 @@ export async function POST(req: NextRequest) {
     slug = `${base}-${n}`;
   }
 
+  // `sourceDocUrl` + `extractedAt` are set when a JD came out of the doc-upload
+  // extraction flow (POST /api/recruitment/jobs/extract). Manual JDs leave them null.
+  const sourceDocUrl = typeof body.sourceDocUrl === "string" && body.sourceDocUrl.startsWith("https://")
+    ? body.sourceDocUrl
+    : null;
+
   const row = await prisma.recruitmentJob.create({
     data: {
       slug,
@@ -72,6 +78,8 @@ export async function POST(req: NextRequest) {
       yellowFlagRules: coerceStringArray(body.yellowFlagRules),
       scrutiniseFor: coerceStringArray(body.scrutiniseFor),
       lockedAxes: coerceStringArray(body.lockedAxes),
+      sourceDocUrl,
+      extractedAt: sourceDocUrl ? new Date() : null,
       createdById: session!.user?.id ?? null,
     },
     include: { location: true },
