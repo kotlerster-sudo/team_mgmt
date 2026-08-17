@@ -4951,6 +4951,9 @@ model FieldDomainConfig {
   cadenceCount   Int?
   cadencePeriod  String? // "week" | "month"
   hasLivePhase   Boolean  @default(true)
+  // Whether steps in this domain may attach the `caregiver_practices` form
+  // (the shared quality-of-care observation catalog). Creche-only today.
+  caregiverForm  Boolean  @default(false)
   sortOrder      Int      @default(0)
   isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())

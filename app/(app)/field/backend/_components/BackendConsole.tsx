@@ -9,12 +9,15 @@ import { NewFacilityModal } from "./NewFacilityModal";
 type SetupRow = { id: string; order: number; stepKey: string; title: string; slaDays: number | null; startSlaDays: number | null; blockedByKey: string | null; formKind: string | null; formSchema: any };
 type VisitRow = { id: string; order: number; stepKey: string; title: string; mandatory: boolean; formKind: string | null; formSchema: any };
 type Domain = {
-  config: { domain: string; label: string; unit: string; overallSlaDays: number | null; cadenceCount: number | null; cadencePeriod: string | null; hasLivePhase: boolean; isActive: boolean };
+  config: { domain: string; label: string; unit: string; overallSlaDays: number | null; cadenceCount: number | null; cadencePeriod: string | null; hasLivePhase: boolean; caregiverForm: boolean; isActive: boolean };
   setupSteps: SetupRow[]; visitSteps: VisitRow[];
   counts: { interventions: number; setupSteps: number; visitRecipe: number; visits: number; openFollowups: number };
 };
 
-const FORM_KINDS = ["", "checklist", "questionnaire", "caregiver_practices"];
+// Forms any step can carry. `caregiver_practices` is intentionally excluded here:
+// it's a live-visit observation (never a setup step) and only for domains whose
+// config opts in (config.caregiverForm) — appended per-cell below.
+const BASE_FORM_KINDS = ["", "checklist", "questionnaire"];
 
 type Pickers = { clusters: { id: string; name: string }[]; users: { id: string; name: string; designation: string }[]; layerKeyByDomain: Record<string, string> };
 
@@ -48,6 +51,10 @@ export function BackendConsole({ domains, available, pickers }: { domains: Domai
   const delStep = (kind: "setup" | "visit", id: string) => call(`/api/field/admin/step/${id}?kind=${kind}`, "DELETE");
   const addStep = (kind: "setup" | "visit") => call(`/api/field/admin/step`, "POST", { op: "create", kind, domain: d.config.domain, title: "New step" });
   const reorder = (kind: "setup" | "visit", ids: string[]) => call(`/api/field/admin/step`, "POST", { op: "reorder", kind, domain: d.config.domain, orderedIds: ids });
+
+  // Setup steps never get caregiver-practices; visit steps do only when the
+  // domain opts in. (Caregiver observation is a live-phase activity.)
+  const visitFormKinds = d.config.caregiverForm ? [...BASE_FORM_KINDS, "caregiver_practices"] : BASE_FORM_KINDS;
 
   const move = (kind: "setup" | "visit", rows: { id: string }[], idx: number, dir: -1 | 1) => {
     const j = idx + dir;
@@ -115,6 +122,7 @@ export function BackendConsole({ domains, available, pickers }: { domains: Domai
           <Field label="Cadence count"><input type="number" defaultValue={d.config.cadenceCount ?? ""} onBlur={(e) => patchDomain({ cadenceCount: e.target.value === "" ? null : Number(e.target.value) })} className="inp" /></Field>
           <Field label="Cadence period"><select defaultValue={d.config.cadencePeriod ?? ""} onChange={(e) => patchDomain({ cadencePeriod: e.target.value || null })} className="inp"><option value="">—</option><option value="week">week</option><option value="month">month</option></select></Field>
           <Field label="Has live phase"><label className="flex h-9 items-center gap-2 text-sm text-stone-600"><input type="checkbox" defaultChecked={d.config.hasLivePhase} onChange={(e) => patchDomain({ hasLivePhase: e.target.checked })} /> live cadence</label></Field>
+          <Field label="Caregiver practices"><label className="flex h-9 items-center gap-2 text-sm text-stone-600"><input type="checkbox" defaultChecked={d.config.caregiverForm} onChange={(e) => patchDomain({ caregiverForm: e.target.checked })} /> offer on visit forms</label></Field>
         </div>
       </section>
 
@@ -149,7 +157,7 @@ export function BackendConsole({ domains, available, pickers }: { domains: Domai
                       {d.setupSteps.filter((o) => o.id !== s.id).map((o) => <option key={o.id} value={o.stepKey}>{o.title}</option>)}
                     </select>
                   </td>
-                  <td className="px-2"><FormCell value={s.formKind} schema={s.formSchema} onChange={(v) => patchStep("setup", s.id, { formKind: v })} onEdit={() => setFormEditor({ kind: "setup", step: s })} /></td>
+                  <td className="px-2"><FormCell value={s.formKind} schema={s.formSchema} options={BASE_FORM_KINDS} onChange={(v) => patchStep("setup", s.id, { formKind: v })} onEdit={() => setFormEditor({ kind: "setup", step: s })} /></td>
                   <td className="px-2"><button disabled={busy} onClick={() => confirm("Delete this step?") && delStep("setup", s.id)} className="text-stone-300 hover:text-red-500"><Trash2 size={14} /></button></td>
                 </tr>
               ))}
@@ -182,7 +190,7 @@ export function BackendConsole({ domains, available, pickers }: { domains: Domai
                   </td>
                   <td className="px-2"><input defaultValue={s.title} onBlur={(e) => e.target.value !== s.title && patchStep("visit", s.id, { title: e.target.value })} className="w-64 rounded border border-transparent px-1 py-0.5 hover:border-stone-200 focus:border-stone-300 focus:outline-none" /></td>
                   <td className="px-2"><input type="checkbox" defaultChecked={s.mandatory} onChange={(e) => patchStep("visit", s.id, { mandatory: e.target.checked })} /></td>
-                  <td className="px-2"><FormCell value={s.formKind} schema={s.formSchema} onChange={(v) => patchStep("visit", s.id, { formKind: v })} onEdit={() => setFormEditor({ kind: "visit", step: s })} /></td>
+                  <td className="px-2"><FormCell value={s.formKind} schema={s.formSchema} options={visitFormKinds} onChange={(v) => patchStep("visit", s.id, { formKind: v })} onEdit={() => setFormEditor({ kind: "visit", step: s })} /></td>
                   <td className="px-2"><button disabled={busy} onClick={() => confirm("Delete this step?") && delStep("visit", s.id)} className="text-stone-300 hover:text-red-500"><Trash2 size={14} /></button></td>
                 </tr>
               ))}
@@ -347,13 +355,16 @@ function AddDomainModal({ available, busy, onClose, onCreate }: { available: { d
   );
 }
 
-function FormCell({ value, schema, onChange, onEdit }: { value: string | null; schema: any; onChange: (v: string | null) => void; onEdit: () => void }) {
+function FormCell({ value, schema, options, onChange, onEdit }: { value: string | null; schema: any; options: string[]; onChange: (v: string | null) => void; onEdit: () => void }) {
   const count = schema?.items?.length ?? schema?.fields?.length ?? 0;
   const editable = value === "checklist" || value === "questionnaire";
+  // Keep an already-set value selectable even if it's no longer an offered
+  // option (e.g. a legacy caregiver step after the domain toggle was turned off).
+  const opts = value && !options.includes(value) ? [...options, value] : options;
   return (
     <span className="inline-flex items-center gap-1">
       <select defaultValue={value ?? ""} onChange={(e) => onChange(e.target.value || null)} className="rounded border border-transparent px-1 py-0.5 hover:border-stone-200 focus:border-stone-300 focus:outline-none">
-        {FORM_KINDS.map((k) => <option key={k} value={k}>{k || "—"}</option>)}
+        {opts.map((k) => <option key={k} value={k}>{k || "—"}</option>)}
       </select>
       {(editable || value === "caregiver_practices") && (
         <button onClick={onEdit} title="Edit form" className="inline-flex items-center gap-0.5 rounded border border-stone-200 px-1 py-0.5 text-[10px] text-stone-500 hover:bg-stone-50">

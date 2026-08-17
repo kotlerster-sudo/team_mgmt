@@ -6,7 +6,7 @@ import { activeFieldDomains } from "@/lib/field/access";
 export type DomainBackend = {
   config: {
     domain: string; label: string; unit: string; overallSlaDays: number | null;
-    cadenceCount: number | null; cadencePeriod: string | null; hasLivePhase: boolean; isActive: boolean;
+    cadenceCount: number | null; cadencePeriod: string | null; hasLivePhase: boolean; caregiverForm: boolean; isActive: boolean;
   };
   setupSteps: SetupRow[];
   visitSteps: VisitRow[];
@@ -86,7 +86,7 @@ export async function loadFieldBackend(): Promise<DomainBackend[]> {
       prisma.actionPoint.count({ where: { status: "open", goal: { needsDomain: c.domain } } }),
     ]);
     out.push({
-      config: { domain: c.domain, label: c.label, unit: c.unit, overallSlaDays: c.overallSlaDays, cadenceCount: c.cadenceCount, cadencePeriod: c.cadencePeriod, hasLivePhase: c.hasLivePhase, isActive: c.isActive },
+      config: { domain: c.domain, label: c.label, unit: c.unit, overallSlaDays: c.overallSlaDays, cadenceCount: c.cadenceCount, cadencePeriod: c.cadencePeriod, hasLivePhase: c.hasLivePhase, caregiverForm: c.caregiverForm, isActive: c.isActive },
       setupSteps: setup.map((s) => ({ id: s.id, order: s.order, stepKey: s.stepKey, title: s.title, slaDays: s.slaDays, startSlaDays: s.startSlaDays, blockedByKey: s.blockedByKey, formKind: s.formKind, formSchema: s.formSchema })),
       visitSteps: visit.map((s) => ({ id: s.id, order: s.order, stepKey: s.stepKey, title: s.title, mandatory: s.mandatory, formKind: s.formKind, formSchema: s.formSchema })),
       counts: { interventions, setupSteps, visitRecipe, visits, openFollowups },

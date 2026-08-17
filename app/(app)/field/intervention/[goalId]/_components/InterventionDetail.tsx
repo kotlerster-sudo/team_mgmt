@@ -348,7 +348,7 @@ function StepFormModal({ step, onClose, onSave }: { step: SetupStep | VisitStep;
 
         {kind === "caregiver_practices" ? (
           <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
-            Caregiver-practices observation capture opens here. (Full observation grid — salvaged from the existing capture flow — wires in next.) For now, mark the step done once observed.
+            Caregiver-practice observation happens on a live visit, not here. Open this step during a visit to record it.
           </div>
         ) : kind === "checklist" ? (
           <ChecklistBody items={schema.items ?? []} scored={scored} answers={answers} setAnswers={setAnswers} />

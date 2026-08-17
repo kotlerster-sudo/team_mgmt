@@ -1,5 +1,5 @@
 // Edit a FieldDomainConfig (label / geo unit / cadence / overall SLA / live phase).
-//   PATCH { label?, unit?, overallSlaDays?, cadenceCount?, cadencePeriod?, hasLivePhase?, isActive? }
+//   PATCH { label?, unit?, overallSlaDays?, cadenceCount?, cadencePeriod?, hasLivePhase?, caregiverForm?, isActive? }
 //   DELETE — remove the domain config (only when it has no interventions).
 import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
@@ -16,6 +16,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ do
   if (b.overallSlaDays === null || Number.isFinite(b.overallSlaDays)) data.overallSlaDays = b.overallSlaDays;
   if (b.cadenceCount === null || Number.isFinite(b.cadenceCount)) data.cadenceCount = b.cadenceCount;
   if (typeof b.hasLivePhase === "boolean") data.hasLivePhase = b.hasLivePhase;
+  if (typeof b.caregiverForm === "boolean") data.caregiverForm = b.caregiverForm;
   if (typeof b.isActive === "boolean") data.isActive = b.isActive;
 
   await prisma.fieldDomainConfig.update({ where: { domain }, data });
