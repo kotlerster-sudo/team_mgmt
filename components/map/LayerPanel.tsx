@@ -33,6 +33,9 @@ interface LayerPanelProps {
   schoolTypes: Set<string>;
   onSchoolTypesChange: (types: Set<string>) => void;
   schoolCount: number;
+  canteenMaxKm: number;
+  onCanteenMaxKmChange: (km: number) => void;
+  canteenCount: number;
   healthTypes: Set<string>;
   onHealthTypesChange: (types: Set<string>) => void;
   healthCount: number;
@@ -96,6 +99,9 @@ export default function LayerPanel({
   schoolTypes,
   onSchoolTypesChange,
   schoolCount,
+  canteenMaxKm,
+  onCanteenMaxKmChange,
+  canteenCount,
   healthTypes,
   onHealthTypesChange,
   healthCount,
@@ -442,6 +448,55 @@ export default function LayerPanel({
                           className="w-full accent-green-600 h-1.5"
                         />
                         <div className="flex justify-between text-[10px] text-green-400 mt-0.5">
+                          <span>0.5 km</span>
+                          <span>10 km</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Indira Canteens layer (Bangalore only) */}
+            {activeCity === "bangalore" && (
+              <div>
+                <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5">
+                  Food
+                </p>
+                <div className="space-y-1">
+                  <button
+                    onClick={() => onToggle("canteens")}
+                    className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left transition-colors ${
+                      visibleLayers.has("canteens") ? "bg-slate-100 text-slate-800" : "text-slate-400 hover:bg-slate-50"
+                    }`}
+                  >
+                    <span
+                      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                      style={{ background: "#ea580c", opacity: visibleLayers.has("canteens") ? 1 : 0.3 }}
+                    />
+                    <span className="flex-1 text-xs font-medium">Indira Canteens</span>
+                    <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full ${visibleLayers.has("canteens") ? "bg-slate-200 text-slate-600" : "bg-slate-100 text-slate-300"}`}>
+                      {canteenCount}
+                    </span>
+                  </button>
+                  {visibleLayers.has("canteens") && (
+                    <div className="px-2.5 py-2 bg-orange-50 rounded-lg space-y-2">
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-orange-600">Max distance</span>
+                          <span className="text-xs font-bold text-orange-800">{canteenMaxKm} km</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0.5}
+                          max={10}
+                          step={0.5}
+                          value={canteenMaxKm}
+                          onChange={e => onCanteenMaxKmChange(parseFloat(e.target.value))}
+                          className="w-full accent-orange-600 h-1.5"
+                        />
+                        <div className="flex justify-between text-[10px] text-orange-400 mt-0.5">
                           <span>0.5 km</span>
                           <span>10 km</span>
                         </div>

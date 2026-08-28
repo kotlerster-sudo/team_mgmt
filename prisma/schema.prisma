@@ -1349,6 +1349,7 @@ model Settlement {
   goalOutcomes          GoalOutcome[]
   schools               SettlementSchool[]
   healthCentres         SettlementHealthCentre[]
+  canteens              SettlementCanteen[]
   layerFeatures         LayerFeature[]
   // Layer 2 facility indicators
   facilityIndicators    FacilityIndicator[]
@@ -1357,6 +1358,32 @@ model Settlement {
   caregiverObservations CaregiverPracticeObservation[]
 
   @@index([partnerOrgId])
+}
+
+// Indira Canteen (Karnataka govt subsidised-meal canteen) mapped to nearby settlements
+model IndiraCanteen {
+  id        String   @id @default(cuid())
+  name      String
+  lat       Float
+  lng       Float
+  kgisCode  String?  @unique // KGISCode from the govt KML — stable external id
+  address   String?
+  createdAt DateTime @default(now())
+
+  settlements SettlementCanteen[]
+}
+
+// Junction: settlement ↔ Indira canteen with haversine distance
+model SettlementCanteen {
+  id           String @id @default(cuid())
+  settlementId String
+  canteenId    String
+  distanceKm   Float
+
+  settlement Settlement    @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  canteen    IndiraCanteen @relation(fields: [canteenId], references: [id], onDelete: Cascade)
+
+  @@unique([settlementId, canteenId])
 }
 
 // Government / programme health centre
