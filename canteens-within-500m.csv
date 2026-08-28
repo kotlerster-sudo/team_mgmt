@@ -1,0 +1,108 @@
+canteen,settlement,cluster,zone,distance_m,is_nearest
+"Indira Canteen Byrasandra (40x40)","Kaveramma temple","Jayanagar","South",82,yes
+"Indira Canteen Jagareevanram Nagar","Janata Colony","JJR Nagar","Central",100,yes
+"Indira Canteen Jagareevanram Nagar","Vinayaka Nagar","JJR Nagar","Central",159,no
+"Indira Canteen Jagareevanram Nagar","Devarajurs Nagar","JJR Nagar","Central",167,no
+"Indira Canteen Jagareevanram Nagar","Boomatha Seva Sangha","JJR Nagar","Central",316,no
+"Indira Canteen Jagareevanram Nagar","Farookhiya Nagar I & II","JJR Nagar","Central",350,no
+"Indira Canteen Jagareevanram Nagar","Arfath Nagar I & II","JJR Nagar","Central",437,no
+"Indira Canteen Jagareevanram Nagar","7th & 8th Mn Rd Padarayanapura","JJR Nagar","Central",486,no
+"Indira Canteen H.M.T","Ashraya Nagar","Peenya - West","West",112,yes
+"Indira Canteen Chalavadipalya","Anandapuram I & II","KR Market","Central",117,yes
+"Indira Canteen Chalavadipalya","Giripuram","KR Market","Central",145,no
+"Indira Canteen Chalavadipalya","Old Pension Mohalla","KR Market","Central",159,no
+"Indira Canteen Chalavadipalya","Adimoola Compound","KR Market","Central",182,no
+"Indira Canteen Chalavadipalya","Anjaneya Temple","KR Market","Central",231,no
+"Indira Canteen Chalavadipalya","Velmurugapuram","KR Market","Central",239,no
+"Indira Canteen Chalavadipalya","Tippu Nagar","KR Market","Central",253,no
+"Indira Canteen Chalavadipalya","Cheluvadipalya","KR Market","Central",257,no
+"Indira Canteen Chalavadipalya","Sidhartha Nagar","KR Market","Central",306,no
+"Indira Canteen Chalavadipalya","Bhangi Colony","KR Market","Central",369,no
+"Indira Canteen Chalavadipalya","Bhakshi Garden I & II","KR Market","Central",428,no
+"Indira Canteen Chalavadipalya","Anjanappa Garden I & II","KR Market","Central",432,no
+"Indira Canteen Chalavadipalya","Saw Mill Lane","KR Market","Central",433,no
+"Indira Canteen Chalavadipalya","Jolly Mohalla","KR Market","Central",484,no
+"Indira Canteen Peenya industrial area","Near Ambi circle","Peenya North","North",123,yes
+"Indira Canteen Peenya industrial area","Ambi Circle Water Tank Park","Peenya North","North",284,no
+"Indira Canteen Peenya industrial area","Sathi circle","Peenya North","North",488,no
+"Indira Canteen Chokkasandra","Chokkasandra Village","Dasarahalli","West",129,yes
+"Indira Canteen Chokkasandra","Muniswamy Ground","Dasarahalli","West",244,no
+"Indira Canteen Chokkasandra","Ashwathpura","Dasarahalli","West",309,no
+"Indira Canteen K.R. Market","New Tharagupet","KR Market","Central",142,yes
+"Indira Canteen Binnypet","Ashwath Nagar","JJR Nagar","Central",147,yes
+"Indira Canteen Binnypet","Vinny Colony","JJR Nagar","Central",188,no
+"Indira Canteen Binnypet","Gopalpura","Majestic","North",202,no
+"Indira Canteen Binnypet","Keshava Nagar","JJR Nagar","Central",262,no
+"Indira Canteen Binnypet","Minerva Mill","Majestic","North",369,no
+"Indira Canteen Binnypet","VST colony","Majestic","North",499,no
+"Indira Canteen Chamrajpet","Velmurugapuram","KR Market","Central",174,yes
+"Indira Canteen Chamrajpet","Cheluvadipalya","KR Market","Central",227,no
+"Indira Canteen Chamrajpet","Anandapuram I & II","KR Market","Central",230,no
+"Indira Canteen Chamrajpet","Old Pension Mohalla","KR Market","Central",231,no
+"Indira Canteen Chamrajpet","Giripuram","KR Market","Central",265,no
+"Indira Canteen Chamrajpet","Adimoola Compound","KR Market","Central",301,no
+"Indira Canteen Chamrajpet","Sidhartha Nagar","KR Market","Central",323,no
+"Indira Canteen Chamrajpet","Saw Mill Lane","KR Market","Central",342,no
+"Indira Canteen Chamrajpet","Bhakshi Garden I & II","KR Market","Central",342,no
+"Indira Canteen Chamrajpet","Anjaneya Temple","KR Market","Central",356,no
+"Indira Canteen Chamrajpet","Jolly Mohalla","KR Market","Central",356,no
+"Indira Canteen Chamrajpet","Tippu Nagar","KR Market","Central",369,no
+"Indira Canteen Chamrajpet","Bhangi Colony","KR Market","Central",416,no
+"Indira Canteen Sudamnagar (30X50, option 1)","Gurappa Garden","KR Market","Central",186,yes
+"Indira Canteen Sudamnagar (30X50, option 1)","Vinoba nagar","KR Market","Central",279,no
+"Indira Canteen Sudamnagar (30X50, option 1)","Ramanna Garden","KR Market","Central",490,no
+"Indira Canteen Vasanthapura","Vasanthapura","Nagarbhavi","Central",196,yes
+"Indira Canteen Vasanthapura","Yadalamma Nagar","Nagarbhavi","Central",327,no
+"Indira Canteen Ejipura","Samatha nagar","Koramangala","South",209,yes
+"Indira Canteen Ejipura","Shastri Nagar","Koramangala","South",380,no
+"Indira Canteen Ullalu","New Colony II (Venkatappa layout)","Ullalu","West",222,yes
+"Indira Canteen Ullalu","New Colony","Ullalu","West",247,no
+"Indira Canteen Ullalu","Ambedkar Nagar","Yeshwantpur","West",498,no
+"Indira Canteen Rajagopalnagar","Maruthi Nagar A","Peenya North","North",242,yes
+"Indira Canteen Rajagopalnagar","Maruthi Nagar B","Peenya North","North",297,no
+"Indira Canteen Rajagopalnagar","Maruthi Nagar near Bilal Masjid","Peenya North","North",297,no
+"Indira Canteen Hegganahalli","Maruthi Nagar A","Peenya North","North",246,yes
+"Indira Canteen Hegganahalli","Maruthi Nagar B","Peenya North","North",482,no
+"Indira Canteen Hegganahalli","Maruthi Nagar near Bilal Masjid","Peenya North","North",482,no
+"Indira Canteen Uttarahalli","Bhuvaneshwari nagar","Nagarbhavi","Central",278,yes
+"Indira Canteen Dattathreya Temple (30x50, option 2)","Valluvarpurm","Majestic","North",293,yes
+"Indira Canteen Subhashnagar","Swathanthra Nagar","Majestic","North",303,yes
+"Indira Canteen Subhashnagar","Hanumanthapura","Majestic","North",335,no
+"Indira Canteen Subhashnagar","Srirampura","Majestic","North",365,no
+"Indira Canteen Subhashnagar","Rasaldhar Street","Majestic","North",409,no
+"Indira Canteen Subhashnagar","Hanumanthappa Colony","Majestic","North",457,no
+"Indira Canteen Subhashnagar","Vivekananda Nagar","Majestic","North",476,no
+"Indira Canteen Subhashnagar","RKS","Majestic","North",491,no
+"Indira Canteen Cottonpet","Nagamma Nagar","JJR Nagar","Central",304,yes
+"Indira Canteen Cottonpet","Bhangi Colony","KR Market","Central",381,no
+"Indira Canteen Cottonpet","Keshava Nagar","JJR Nagar","Central",410,no
+"Indira Canteen Cottonpet","Sidhartha Nagar","KR Market","Central",433,no
+"Indira Canteen Cottonpet","Vinny Colony","JJR Nagar","Central",482,no
+"Indira Canteen Nayandanahalli","Gangondanahalli","Nagarbhavi","Central",323,yes
+"Indira Canteen Nayandanahalli","Devegowda slum","Nagarbhavi","Central",394,no
+"Indira Canteen Nayandanahalli","Patankot","Nagarbhavi","Central",399,no
+"Indira Canteen T. Dasarahalli","Ashwathpura","Dasarahalli","West",325,yes
+"Indira Canteen Rayapuram","JJR Nagar South","Rayapuram","Central",342,yes
+"Indira Canteen Rayapuram","JJR Nagar North","Rayapuram","Central",472,no
+"Indira Canteen Kengeri","Shivanagar colony","Kengeri","West",355,yes
+"Indira Canteen Hosahalli","Gada","JJR Nagar","Central",362,yes
+"Indira Canteen Hosahalli","Arfath Nagar I & II","JJR Nagar","Central",474,no
+"Indira Canteen Moodalapalya","Nanjarasappa Badavane","Nagarbhavi","Central",372,yes
+"Indira Canteen Dattathreya Temple","Vivekananda block","Majestic","North",391,yes
+"Indira Canteen Dattathreya Temple","Anjaneya block","Majestic","North",431,no
+"Indira Canteen Dattathreya Temple","Valluvarpurm","Majestic","North",453,no
+"Indira Canteen nagarabhavi","Patankot","Nagarbhavi","Central",395,yes
+"Indira Canteen nagarabhavi","Devegowda slum","Nagarbhavi","Central",451,no
+"Indira Canteen nagarabhavi","Gangondanahalli","Nagarbhavi","Central",473,no
+"Indira Canteen Rajarajeshwarinagar","Bangarappa Gudde","Nagarbhavi","Central",396,yes
+"Indira Canteen Lakshmidevinagar","Bheemshakthi Slum","Yeshwantpur","West",401,yes
+"Indira Canteen Kodigehalli","Behind UIDAI","Sanjaynagar","North",426,yes
+"Indira Canteen Kodigehalli","Muneshwara Temple Area","Sanjaynagar","North",466,no
+"Indira Canteen Sudduguntepalya (40x40)","Siddarth nagar","Anekal","South",435,yes
+"Indira Canteen Gurappanapalya","Urs colony","Jayanagar","South",440,yes
+"Indira Canteen Mahalakshmipura","Bheemshakthi Slum","Yeshwantpur","West",445,yes
+"Indira Canteen Vishwanatha Nagenahalli (40X40)","Bhimanna Garden","Byatarayanapura","North",449,yes
+"Indira Canteen Govindrajnagara","Thimmenahalli","Nagarbhavi","Central",462,yes
+"Indira Canteen Marenahalli","Kanaka Nagar","Nagarbhavi","Central",478,yes
+"Indira Canteen Hosakerehalli","Hosakerehalli","Nagarbhavi","Central",480,yes
+"Indira Canteen Nagavara","Veerannapalya","Byatarayanapura","North",499,yes
